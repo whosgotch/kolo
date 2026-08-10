@@ -1,0 +1,10 @@
+# Is the emulator echoing OSC title-set text back on its reply pipe? Claude Code
+# sets the title to a summary of the current prompt, and that same text has been
+# turning up inside the agent's input box.
+waitfor 90s for shortcuts
+wait 3s
+send hello, reply with just the word PONG
+wait 2s
+key enter
+wait 20s
+dump after

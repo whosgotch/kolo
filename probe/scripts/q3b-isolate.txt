@@ -1,0 +1,22 @@
+# Q3, isolated: with a permission dialog on screen, does printable text alone do
+# anything, or is it the Enter that approves? The answer decides whether Kolo can
+# ever be allowed to send Enter while a dialog is up.
+waitfor 90s for shortcuts
+wait 3s
+
+send create a file called note2.txt containing the word hello
+waitfor 90s Do you want
+dump 1-dialog-up
+
+# printable text only, no Enter
+type hi everyone, what are we working on?
+wait 3s
+dump 2-after-text-only
+
+# now the Enter, on its own
+key enter
+wait 4s
+dump 3-after-enter-only
+
+wait 8s
+dump 4-settled

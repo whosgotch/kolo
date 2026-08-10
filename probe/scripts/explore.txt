@@ -1,0 +1,13 @@
+# Question 1, first pass: what does the agent's TUI actually look like through
+# the emulator? Blind waits, because we do not yet know what strings to match on.
+wait 4s
+dump boot
+wait 4s
+dump settled
+send say PONG and nothing else
+wait 2s
+dump just-sent
+wait 6s
+dump working
+wait 15s
+dump answered

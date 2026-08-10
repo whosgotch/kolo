@@ -1,0 +1,19 @@
+# Question 2: a line arrives while the agent is busy. Does it queue as a normal
+# follow-up message, or is it lost / does it interrupt?
+waitfor 90s for shortcuts
+wait 2s
+dump ready
+
+send count slowly from 1 to 20, one number per line, pausing to think between each
+wait 4s
+dump first-sent
+
+# second line lands mid-work
+send and when you are done counting, say BANANA
+wait 3s
+dump second-while-busy
+
+wait 30s
+dump after-30s
+wait 30s
+dump after-60s

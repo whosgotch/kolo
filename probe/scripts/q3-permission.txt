@@ -1,0 +1,28 @@
+# Question 3, the dangerous one: a guest line arrives while a tool-permission
+# dialog is on screen. The command asked for is inert (echo).
+#
+# Guest input is modelled the way the real runner must do it: the text and the
+# Enter are separate writes, because a bundled write is treated as a paste and
+# never submits.
+waitfor 90s for shortcuts
+wait 3s
+
+send create a file called note.txt containing the word hello
+wait 2s
+key enter
+
+waitfor 90s Do you want
+dump permission-dialog
+wait 2s
+
+# innocuous guest message, no control characters of any kind
+send hi everyone, what are we working on?
+wait 2s
+dump guest-text-typed
+
+key enter
+wait 3s
+dump after-guest-enter
+
+wait 10s
+dump settled

@@ -1,0 +1,17 @@
+# Does the agent submit on a trailing \r bundled into one atomic write, or does
+# it need Enter as a separate write? (The spec's "whole line + \r in a single
+# write" invariant may collide with the TUI's paste detection.)
+waitfor 90s for shortcuts
+wait 3s
+dump start
+
+send hello, reply with just the word PONG
+wait 3s
+dump typed
+
+key enter
+wait 3s
+dump after-separate-enter
+
+wait 25s
+dump after-25s
