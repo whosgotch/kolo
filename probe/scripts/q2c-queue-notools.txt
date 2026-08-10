@@ -1,0 +1,27 @@
+# Question 2, clean run. The previous attempt was confounded: the agent answered
+# by running a shell loop, and stdin during a running shell command goes to that
+# command, not to the prompt — so the second line was swallowed.
+#
+# Here the agent is kept in-model, so "busy" means generating, not shelling out.
+waitfor 90s for shortcuts
+wait 3s
+
+type without using any tools at all, write a 400 word explanation of how unix pseudoterminals work
+wait 300ms
+key enter
+wait 8s
+dump 1-generating
+
+# second line arrives mid-generation
+type and when you are done, say BANANA
+wait 300ms
+key enter
+wait 2s
+dump 2-sent-while-busy
+
+wait 25s
+dump 3-t35
+wait 30s
+dump 4-t65
+wait 40s
+dump 5-t105

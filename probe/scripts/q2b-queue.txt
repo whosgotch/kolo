@@ -1,0 +1,28 @@
+# Question 2, re-run with working injection: does a line arriving mid-work queue
+# as a normal follow-up message?
+#
+# Injection is text, a short gap, then Enter as its own write — the shape finding
+# 3 forced on us. The gap is deliberate: without it the two writes can land in a
+# single read and be treated as a paste.
+waitfor 90s for shortcuts
+wait 3s
+
+type count slowly from 1 to 30, one number per line, pausing between each
+wait 300ms
+key enter
+wait 8s
+dump 1-working
+
+# second line arrives while the agent is mid-answer
+type and after you finish counting, say BANANA
+wait 300ms
+key enter
+wait 3s
+dump 2-sent-while-busy
+
+wait 25s
+dump 3-t35
+wait 30s
+dump 4-t65
+wait 30s
+dump 5-t95
