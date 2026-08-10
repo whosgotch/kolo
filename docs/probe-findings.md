@@ -84,11 +84,42 @@ write", not "text and Enter in one write". Worth checking whether an explicit
 bracketed-paste wrapper (`ESC[200~ … ESC[201~` then Enter) is more robust than
 relying on timing.
 
-## 4. Question 2 — queueing while busy: not yet answered
+## 4. Question 2 — a line arriving mid-work queues as a follow-up. Yes.
 
-Blocked by finding 3. Both test lines went into the input box instead of being
-submitted, so this never actually exercised a busy agent. It needs a re-run now
-that injection works. Not a design risk, but it is still an open question.
+With the agent generating, a second line submitted mid-answer is accepted and
+held. The TUI shows it above the prompt and the footer becomes
+`Press up to edit queued messages`:
+
+```
+  ❯ and when you are done, say BANANA
+────────────────────────────────────────
+❯ Press up to edit queued messages
+```
+
+When the current answer finishes, the queued line is picked up and answered
+normally. This is exactly the behaviour Kolo wants, and the on-screen state is
+detectable, which is a cheap source of truth for the protocol's `queued` message.
+
+**Caveat, and it is a sharp one: this only holds while the agent is "busy" in
+the model.** If the agent is busy *running a shell command*, stdin belongs to
+that command, not to the prompt. A line injected then is swallowed by the child
+process and lost outright — no queue, no echo, no error. First attempt at this
+question hit exactly that: the agent answered "count to 30" by running
+`for i in $(seq 1 30); do echo $i; sleep 1; done`, and the follow-up vanished.
+`BANANA` appeared nowhere in the capture.
+
+So the runner has three distinct agent states to tell apart, not two:
+
+| state | injecting a line does |
+|---|---|
+| idle at the prompt | submits normally |
+| busy generating | queues as a follow-up |
+| busy running a shell command | **silently lost** |
+| permission dialog up | **approves the default** (finding 5) |
+
+Two of those four are failure modes. Whatever detector Kolo grows for finding 5
+has to cover the shell-command case too, and guest messages must be held rather
+than injected in both.
 
 ## 5. Question 3 — guest input during a permission dialog: confirmed dangerous
 
