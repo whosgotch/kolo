@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/ui"
 )
 
 // writeTimeout bounds a single send to the viewer, so a connection that has
@@ -33,6 +34,7 @@ func Listen(hub *Hub, port int) (*Server, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.handleWS)
+	mux.Handle("/", http.FileServerFS(ui.FS))
 	s.srv = &http.Server{Handler: mux}
 	return s, nil
 }
