@@ -25,6 +25,14 @@ type Server struct {
 	presence *Presence
 	ln       net.Listener
 	srv      *http.Server
+
+	// ctx is cancelled by Close, which is the only thing that reaches an agent
+	// connection. net/http does not: a websocket has been hijacked out of the
+	// server's hands, and Close neither knows about it nor waits for it. Reads
+	// take this context so that shutting the hub down actually disconnects
+	// people, instead of leaving them blocked on a socket to a hub that is gone.
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // Listen binds addr and prepares to serve. addr is a host:port; use a host of
@@ -34,7 +42,8 @@ func Listen(org *Org, addr string) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub: listen: %w", err)
 	}
-	s := &Server{org: org, presence: NewPresence(), ln: ln}
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Server{org: org, presence: NewPresence(), ln: ln, ctx: ctx, cancel: cancel}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/agent", s.handleAgent)
@@ -59,7 +68,10 @@ func (s *Server) Serve() error {
 }
 
 // Close stops serving and disconnects everyone.
-func (s *Server) Close() error { return s.srv.Close() }
+func (s *Server) Close() error {
+	s.cancel()
+	return s.srv.Close()
+}
 
 // authenticate resolves the bearer token on a request to a member.
 //
@@ -93,7 +105,20 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.CloseNow()
 
-	greeting, err := readHello(r.Context(), conn)
+	// Every deadline below hangs off the server's context as well as the
+	// request's, so both a client going away and the hub shutting down end this
+	// connection.
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-r.Context().Done():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	greeting, err := readHello(ctx, conn)
 	if err != nil {
 		conn.Close(websocket.StatusPolicyViolation, "expected a hello")
 		return
@@ -102,7 +127,7 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	c := s.presence.Join(member, greeting.Agent, greeting.Machine)
 	defer s.presence.Leave(c.ID)
 
-	if err := writeJSON(r.Context(), conn, welcome{
+	if err := writeJSON(ctx, conn, welcome{
 		Type:       "welcome",
 		Org:        s.org.Name,
 		Member:     member.Person(),
@@ -115,7 +140,7 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	// it ends when the agent goes away — and ignores anything it does not
 	// recognise, so an older hub meets a newer client without either breaking.
 	for {
-		if _, _, err := conn.Read(r.Context()); err != nil {
+		if _, _, err := conn.Read(ctx); err != nil {
 			return
 		}
 	}
