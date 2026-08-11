@@ -96,7 +96,11 @@ function say(message, problem) {
 let socket = null;
 
 function connect() {
-  const ws = new WebSocket(`ws://${location.host}/ws`);
+  // The session's address carries its secret, and the stream lives beneath it,
+  // so it is derived from the page's own path rather than written down twice.
+  const base = location.pathname.replace(/\/$/, '');
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${scheme}://${location.host}${base}/ws`);
   ws.binaryType = 'arraybuffer';
   socket = ws;
 

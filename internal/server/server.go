@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,31 +28,84 @@ const writeTimeout = 10 * time.Second
 // says a line may be sent (internal/relay).
 type Guest func(nickname, text string) error
 
-// Server streams a Hub over a WebSocket on the loopback interface.
+// Server streams a Hub to browsers over a WebSocket.
 type Server struct {
 	hub   *Hub
 	guest Guest
 	ln    net.Listener
 	srv   *http.Server
+
+	// secret makes the session's address unguessable. It is the whole of the
+	// access control: anyone holding the link can watch the agent and send it
+	// messages. On loopback that hardly matters, since only this machine can
+	// reach it at all; the moment the server listens on a network it is the
+	// only thing standing between the agent and everyone else on it.
+	secret string
 }
 
-// Listen binds to port on localhost. Port 0 picks a free one, which URL then
-// reports.
+// Listen serves the session. Port 0 picks a free one, which URL then reports.
+//
+// host is the interface to bind: "127.0.0.1" reaches only this machine, and
+// "0.0.0.0" reaches anyone who can route to it. The second is a decision, not a
+// default, and the caller has to make it deliberately.
 //
 // guest may be nil, which makes the session watch-only: messages are refused
 // rather than queued.
-func Listen(hub *Hub, port int, guest Guest) (*Server, error) {
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+func Listen(hub *Hub, host string, port int, guest Guest) (*Server, error) {
+	ln, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
 	if err != nil {
 		return nil, fmt.Errorf("server: listen: %w", err)
 	}
-	s := &Server{hub: hub, guest: guest, ln: ln}
+	secret, err := newSecret()
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
+	s := &Server{hub: hub, guest: guest, ln: ln, secret: secret}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", s.handleWS)
-	mux.Handle("/", noCache(http.FileServerFS(ui.FS)))
+	// The page and the stream sit behind the secret. The assets do not: they
+	// are a copy of xterm.js and reveal nothing about the session.
+	mux.HandleFunc("GET /s/{secret}", s.handlePage)
+	mux.HandleFunc("GET /s/{secret}/ws", s.handleWS)
+	mux.Handle("/assets/", noCache(http.FileServerFS(ui.FS)))
 	s.srv = &http.Server{Handler: mux}
 	return s, nil
+}
+
+// newSecret returns an unguessable path segment.
+func newSecret() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("server: generate secret: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// authorised reports whether a request carries the session's secret. The
+// comparison is constant-time, so the secret cannot be recovered a character at
+// a time by watching how long a refusal takes.
+func (s *Server) authorised(r *http.Request) bool {
+	got := r.PathValue("secret")
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.secret)) == 1
+}
+
+// handlePage serves the viewer.
+func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
+	if !s.authorised(r) {
+		// Not "wrong secret": a wrong guess should look exactly like an address
+		// that was never a session.
+		http.NotFound(w, r)
+		return
+	}
+	page, err := ui.FS.ReadFile("index.html")
+	if err != nil {
+		http.Error(w, "viewer missing", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(page)
 }
 
 // noCache keeps a browser from showing a page baked into an older binary. The
@@ -62,9 +118,42 @@ func noCache(h http.Handler) http.Handler {
 	})
 }
 
-// URL is where the viewer connects.
+// URL is the address to open, secret included. When the server is listening on
+// every interface it reports an address another machine can actually reach,
+// rather than 0.0.0.0, which no browser can open.
 func (s *Server) URL() string {
-	return "http://" + s.ln.Addr().String() + "/"
+	addr := s.ln.Addr().(*net.TCPAddr)
+	host := addr.IP.String()
+	if addr.IP.IsUnspecified() {
+		host = localAddress()
+	}
+	return fmt.Sprintf("http://%s/s/%s", net.JoinHostPort(host, fmt.Sprint(addr.Port)), s.secret)
+}
+
+// Base is the server's address without the session's secret, for assets and for
+// tests that need to knock on the door without the key.
+func (s *Server) Base() string {
+	addr := s.ln.Addr().(*net.TCPAddr)
+	host := addr.IP.String()
+	if addr.IP.IsUnspecified() {
+		host = localAddress()
+	}
+	return "http://" + net.JoinHostPort(host, fmt.Sprint(addr.Port))
+}
+
+// Secret is the session's secret, for tests and for anything that needs to
+// rebuild the link.
+func (s *Server) Secret() string { return s.secret }
+
+// localAddress finds this machine's address on the network it is attached to,
+// by asking the routing table where it would send a packet. Nothing is sent.
+func localAddress() string {
+	conn, err := net.Dial("udp", "203.0.113.1:9")
+	if err != nil {
+		return "localhost"
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String()
 }
 
 // Serve runs until Close. It is meant to be called in its own goroutine.
@@ -80,6 +169,10 @@ func (s *Server) Close() error { return s.srv.Close() }
 
 // handleWS sends the new viewer its catch-up and then everything that follows.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	if !s.authorised(r) {
+		http.NotFound(w, r)
+		return
+	}
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
