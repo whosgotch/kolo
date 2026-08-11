@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/whosgotch/kolo/internal/hub"
@@ -34,6 +37,15 @@ func serveCmd(args []string) error {
 	}
 	s, err := hub.Listen(org, *addr)
 	if err != nil {
+		// The common way to meet this is to start a second hub without
+		// noticing the first, so say what to look for rather than only what
+		// the operating system said.
+		if errors.Is(err, syscall.EADDRINUSE) {
+			return fmt.Errorf("%w\n\nSomething is already listening there — another kolo serve, most likely.\n"+
+				"Find it with:   lsof -nP -i:%s\n"+
+				"Or use another: kolo serve -org %s -addr %s",
+				err, portOf(*addr), *orgPath, nextAddr(*addr))
+		}
 		return err
 	}
 
@@ -50,6 +62,24 @@ func serveCmd(args []string) error {
 	}()
 
 	return s.Serve()
+}
+
+// portOf is the port part of a host:port, for putting in a suggestion.
+func portOf(addr string) string {
+	if _, port, ok := strings.Cut(addr, ":"); ok {
+		return port
+	}
+	return addr
+}
+
+// nextAddr suggests the port above the one that was taken.
+func nextAddr(addr string) string {
+	host, port, ok := strings.Cut(addr, ":")
+	n, err := strconv.Atoi(port)
+	if !ok || err != nil {
+		return addr
+	}
+	return host + ":" + strconv.Itoa(n+1)
 }
 
 // tokenCmd mints credentials for one member.
