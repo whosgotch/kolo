@@ -1,6 +1,8 @@
 package term
 
 import (
+	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/hinshun/vt10x"
@@ -74,5 +76,39 @@ func TestBoldPromotesColour(t *testing.T) {
 func TestGfxIsAlreadyTranslated(t *testing.T) {
 	if got := cell(t, "\x1b(0q").Char; got != '─' {
 		t.Errorf("Char = %q, want %q", got, '─')
+	}
+}
+
+// TestWriteAcrossChunkBoundaries pins the two things Write guarantees: the
+// whole slice is reported consumed, and it makes no difference where the
+// caller's chunks happen to fall.
+//
+// Reads off a PTY split anywhere, so this is the common case rather than an
+// edge one — every box-drawing character in an agent's TUI is three bytes. The
+// round-trip tests all wrote their input in one call, which is exactly why they
+// never caught the emulator dropping split runes.
+func TestWriteAcrossChunkBoundaries(t *testing.T) {
+	input := []byte("┌───┐\r\n│ ⠂⠐ │\r\n└───┘\r\n\x1b[1m✳ bold\x1b[0m ✓")
+
+	whole := New(20, 6)
+	if n, err := whole.Write(input); n != len(input) || err != nil {
+		t.Fatalf("Write = %d, %v; want %d, nil", n, err, len(input))
+	}
+	want := whole.Snapshot()
+
+	for _, size := range []int{1, 2, 3, 5, 8, 13} {
+		t.Run(fmt.Sprintf("chunks of %d", size), func(t *testing.T) {
+			s := New(20, 6)
+			for i := 0; i < len(input); i += size {
+				chunk := input[i:min(i+size, len(input))]
+				n, err := s.Write(chunk)
+				if n != len(chunk) || err != nil {
+					t.Fatalf("Write(%d bytes) = %d, %v; want %d, nil", len(chunk), n, err, len(chunk))
+				}
+			}
+			if got := s.Snapshot(); !bytes.Equal(got, want) {
+				t.Errorf("screen differs from the same input written in one call\n got: %q\nwant: %q", got, want)
+			}
+		})
 	}
 }
