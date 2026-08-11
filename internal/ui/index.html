@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kolo</title>
+<link rel="stylesheet" href="/assets/xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; }
+  #status {
+    position: fixed; top: 0; right: 0; z-index: 1;
+    padding: 2px 8px; border-bottom-left-radius: 4px;
+    font: 12px ui-monospace, Menlo, Consolas, monospace;
+    background: #1c1c1c; color: #9aa0a6;
+  }
+  #term { height: 100%; }
+</style>
+</head>
+<body>
+<div id="status">connecting</div>
+<div id="term"></div>
+<script src="/assets/xterm.js"></script>
+<script>
+// The viewer renders the agent's terminal from its raw output. The size and a
+// repaint of the screen arrive first, so a page opened mid-session starts from
+// what the host is looking at rather than from a blank terminal.
+const status = document.getElementById('status');
+
+const term = new Terminal({
+  // Read-only in this milestone. The socket rejects anything sent back, so this
+  // is about not misleading the viewer, not about enforcement.
+  disableStdin: true,
+  cursorBlink: false,
+  fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+  fontSize: 13,
+  theme: { background: '#000000' },
+});
+term.open(document.getElementById('term'));
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => { status.textContent = 'live'; };
+
+  ws.onmessage = (ev) => {
+    // Text is a control frame, binary is terminal output.
+    if (typeof ev.data === 'string') {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'size') term.resize(msg.cols, msg.rows);
+      return;
+    }
+    term.write(new Uint8Array(ev.data));
+  };
+
+  // A viewer that falls behind is disconnected rather than served a stream with
+  // a gap in it, so reconnecting is a normal event: the next snapshot resyncs.
+  ws.onclose = () => {
+    status.textContent = 'reconnecting';
+    setTimeout(connect, 1000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+connect();
+</script>
+</body>
+</html>
