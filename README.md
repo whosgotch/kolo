@@ -18,7 +18,12 @@ $ kolo who
 ```
 
 The agent's machine dials out to the hub and is never listened to: no inbound
-port, no firewall rule, nothing to tunnel. See [docs/architecture.md](docs/architecture.md).
+port, no firewall rule, nothing to tunnel. See [docs/architecture.md](docs/architecture.md)
+for the shape and [docs/hub.md](docs/hub.md) for how to run one.
+
+Presence works today: mint a token per member, run the hub, and each member's
+`kolo run` joins it. The hub carries no TLS of its own, so reaching it across
+the internet means putting it behind something that does.
 
 ## Where it is going
 
