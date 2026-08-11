@@ -1,0 +1,13 @@
+# The state that makes the gate necessary.
+#
+# A tool-permission dialog is on screen. Enter approves the highlighted option,
+# so a guest's ordinary message — which kolo has to submit with Enter — would
+# approve a file write and throw the guest's words away (findings #5).
+#
+# The recording stops with the dialog still up. Nothing is ever approved.
+waitfor 60s for shortcuts
+wait 2s
+send create a file called note.txt containing the single word hello
+waitfor 120s Do you want to
+wait 2s
+dump dialog
