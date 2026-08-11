@@ -13,7 +13,7 @@ import (
 
 func serve(t *testing.T, hub *Hub, guest Guest) *Server {
 	t.Helper()
-	srv, err := Listen(hub, 0, guest)
+	srv, err := Listen(hub, "127.0.0.1", 0, guest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func serve(t *testing.T, hub *Hub, guest Guest) *Server {
 
 func dial(t *testing.T, ctx context.Context, srv *Server) *websocket.Conn {
 	t.Helper()
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL(), "http")+"ws", nil)
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL(), "http")+"/ws", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,18 +147,63 @@ func TestWatchOnlySessionRefusesMessages(t *testing.T) {
 func TestServesTheViewerPage(t *testing.T) {
 	srv := serve(t, NewHub(80, 24), nil)
 
-	for _, path := range []string{"", "assets/xterm.js", "assets/xterm.css"} {
-		resp, err := http.Get(srv.URL() + path)
+	for _, path := range []string{srv.URL(), srv.Base() + "/assets/xterm.js", srv.Base() + "/assets/xterm.css"} {
+		resp, err := http.Get(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			t.Errorf("GET /%s = %d, want 200", path, resp.StatusCode)
+			t.Errorf("GET %s = %d, want 200", path, resp.StatusCode)
 		}
 		if len(body) == 0 {
-			t.Errorf("GET /%s served nothing", path)
+			t.Errorf("GET %s served nothing", path)
 		}
+	}
+}
+
+// TestTheSecretIsTheDoor is the whole of the access control once the server
+// listens on a network: a link without the right secret must look exactly like
+// an address that was never a session.
+func TestTheSecretIsTheDoor(t *testing.T) {
+	srv := serve(t, NewHub(80, 24), nil)
+	base := srv.Base()
+
+	for name, path := range map[string]string{
+		"no secret":      base + "/s/",
+		"wrong secret":   base + "/s/" + strings.Repeat("a", 43),
+		"empty path":     base + "/",
+		"guessed prefix": base + "/s/" + srv.Secret()[:10],
+		"secret plus":    srv.URL() + "x",
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, err := http.Get(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusNotFound {
+				t.Errorf("GET %s = %d, want 404", path, resp.StatusCode)
+			}
+		})
+	}
+}
+
+// TestTheStreamNeedsTheSecretToo keeps the door from being walked around: the
+// page is not the only way in.
+func TestTheStreamNeedsTheSecretToo(t *testing.T) {
+	srv := serve(t, NewHub(80, 24), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	wrong := "ws" + strings.TrimPrefix(srv.Base(), "http") + "/s/" + strings.Repeat("a", 43) + "/ws"
+	conn, resp, err := websocket.Dial(ctx, wrong, nil)
+	if err == nil {
+		conn.CloseNow()
+		t.Fatal("a stream was served without the secret")
+	}
+	if resp == nil || resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %v, want 404", resp)
 	}
 }
