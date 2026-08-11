@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 
+	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/term"
 )
 
@@ -50,6 +51,28 @@ func (h *Hub) Write(p []byte) (int, error) {
 	h.screen.Write(p)
 	h.send(Message{Data: append([]byte(nil), p...)})
 	return len(p), nil
+}
+
+// State reads the agent's screen and reports whether it could take a line now.
+// It is what the relay asks before releasing anything, so it reads the same
+// screen the viewer is looking at rather than a second, separately maintained
+// one.
+func (h *Hub) State() detect.State {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return detect.Of(h.screen.Text())
+}
+
+// Announce sends the viewer a control frame describing something that happened
+// to a guest's message.
+func (h *Hub) Announce(event any) {
+	b, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.send(Message{Control: true, Data: b})
 }
 
 // Resize follows the host's terminal and tells the viewer to match.
