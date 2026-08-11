@@ -33,7 +33,8 @@ const (
 // Joining a hub adds the org's knowledge of it, not anyone's control over it.
 func runCmd(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	port := fs.Int("port", 0, "localhost port for the viewer (0 picks a free one)")
+	port := fs.Int("port", 0, "port for the viewer (0 picks a free one)")
+	lan := fs.Bool("lan", false, "let other machines on your network open the session")
 	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join (default $KOLO_HUB)")
 	token := fs.String("token", os.Getenv("KOLO_TOKEN"), "member token (default $KOLO_TOKEN)")
 	fs.Usage = func() {
@@ -58,10 +59,10 @@ func runCmd(args []string) error {
 		}
 		return fmt.Errorf("%s is not set, and %s is: joining a hub needs both", missing, other)
 	}
-	return run(argv, *port, *hubURL, *token)
+	return run(argv, *port, *lan, *hubURL, *token)
 }
 
-func run(argv []string, port int, hubURL, token string) error {
+func run(argv []string, port int, lan bool, hubURL, token string) error {
 	cols, rows := hostSize()
 
 	a, err := agent.Start(argv, cols, rows)
@@ -76,7 +77,11 @@ func run(argv []string, port int, hubURL, token string) error {
 	// asks the hub what is on screen and releases a line only while the agent
 	// is idle at its input box (internal/relay, internal/detect).
 	guests := relay.New(a, hub.State)
-	srv, err := server.Listen(hub, port, func(nickname, text string) error {
+	host := "127.0.0.1"
+	if lan {
+		host = "0.0.0.0"
+	}
+	srv, err := server.Listen(hub, host, port, func(nickname, text string) error {
 		m, err := guests.Submit(nickname, text)
 		if err != nil {
 			return err
@@ -96,6 +101,11 @@ func run(argv []string, port int, hubURL, token string) error {
 
 	// Printed before raw mode, while the terminal still ends lines by itself.
 	fmt.Printf("session live: %s\n", srv.URL())
+	if lan {
+		// Said plainly, because the link is the whole of the access control and
+		// it is travelling over a network in the clear.
+		fmt.Println("  anyone on your network who has that link can watch this agent and send it messages")
+	}
 
 	if hubURL != "" && token != "" {
 		stop := joinHub(hubURL, token, argv[0])
