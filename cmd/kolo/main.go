@@ -10,6 +10,8 @@ package main
 
 import (
 	"errors"
+	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -18,7 +20,7 @@ import (
 	"syscall"
 
 	"github.com/whosgotch/kolo/internal/agent"
-	"github.com/whosgotch/kolo/internal/term"
+	"github.com/whosgotch/kolo/internal/server"
 	hostterm "golang.org/x/term"
 )
 
@@ -29,13 +31,24 @@ const (
 	fallbackRows = 40
 )
 
+// port 0 asks the operating system for a free one, which keeps a second kolo
+// session from colliding with the first.
+var port = flag.Int("port", 0, "localhost port for the viewer")
+
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("kolo: ")
 
-	argv := os.Args[1:]
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: kolo [flags] <agent> [args...]")
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+
+	argv := flag.Args()
 	if len(argv) == 0 {
-		log.Fatal("usage: kolo <agent> [args...]")
+		flag.Usage()
+		os.Exit(2)
 	}
 	if err := run(argv); err != nil {
 		log.Fatal(err)
@@ -51,7 +64,20 @@ func run(argv []string) error {
 	}
 	defer a.Close()
 
-	screen := term.New(cols, rows)
+	hub := server.NewHub(cols, rows)
+	srv, err := server.Listen(hub, *port)
+	if err != nil {
+		return err
+	}
+	defer srv.Close()
+	go func() {
+		if err := srv.Serve(); err != nil {
+			log.Printf("server: %v", err)
+		}
+	}()
+
+	// Printed before raw mode, while the terminal still ends lines by itself.
+	fmt.Printf("session live: %s\n", srv.URL())
 
 	restore, err := rawMode()
 	if err != nil {
@@ -59,7 +85,7 @@ func run(argv []string) error {
 	}
 	defer restore()
 
-	stopResize := watchResize(a, screen)
+	stopResize := watchResize(a, hub)
 	defer stopResize()
 
 	// The host's keystrokes go straight through. This goroutine outlives the
@@ -70,7 +96,7 @@ func run(argv []string) error {
 	// Fan the agent's output out to the host and to the virtual terminal. This
 	// returns when the agent exits and its PTY closes, which a PTY master
 	// reports as an error rather than EOF, so the error is the ordinary path.
-	io.Copy(io.MultiWriter(os.Stdout, screen), a)
+	io.Copy(io.MultiWriter(os.Stdout, hub), a)
 
 	// The agent's own non-zero exit is not kolo failing.
 	var exit *exec.ExitError
@@ -107,7 +133,7 @@ func hostSize() (cols, rows int) {
 
 // watchResize keeps the agent and the virtual terminal the same size as the
 // host's, so that what a viewer is shown matches what the host sees.
-func watchResize(a *agent.Agent, screen *term.Screen) (stop func()) {
+func watchResize(a *agent.Agent, hub *server.Hub) (stop func()) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
 	go func() {
@@ -116,7 +142,7 @@ func watchResize(a *agent.Agent, screen *term.Screen) (stop func()) {
 			if err := a.Resize(cols, rows); err != nil {
 				log.Printf("resize: %v", err)
 			}
-			screen.Resize(cols, rows)
+			hub.Resize(cols, rows)
 		}
 	}()
 	return func() { signal.Stop(ch) }
