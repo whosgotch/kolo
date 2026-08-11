@@ -47,9 +47,19 @@ func Listen(hub *Hub, port int, guest Guest) (*Server, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.handleWS)
-	mux.Handle("/", http.FileServerFS(ui.FS))
+	mux.Handle("/", noCache(http.FileServerFS(ui.FS)))
 	s.srv = &http.Server{Handler: mux}
 	return s, nil
+}
+
+// noCache keeps a browser from showing a page baked into an older binary. The
+// viewer is compiled in, so it changes when kolo does, and a cached copy of it
+// is always the wrong one.
+func noCache(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		h.ServeHTTP(w, r)
+	})
 }
 
 // URL is where the viewer connects.

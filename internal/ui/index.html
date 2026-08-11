@@ -83,7 +83,9 @@ try {
   console.warn('canvas renderer unavailable, falling back to the DOM', e);
 }
 
-nickname.value = localStorage.getItem('kolo.nickname') || '';
+// Defaulted rather than left empty: the field is required, so an empty one
+// makes the send button do nothing at all, with no way for a guest to tell why.
+nickname.value = localStorage.getItem('kolo.nickname') || 'guest';
 nickname.addEventListener('change', () => localStorage.setItem('kolo.nickname', nickname.value));
 
 function say(message, problem) {
@@ -98,9 +100,13 @@ function connect() {
   ws.binaryType = 'arraybuffer';
   socket = ws;
 
-  ws.onopen = () => { status.textContent = 'live'; };
+  // Every handler checks it is still the current socket. A superseded one goes
+  // on to report its own close, which would otherwise land after the
+  // replacement opened and leave the page saying "reconnecting" while connected.
+  ws.onopen = () => { if (ws === socket) status.textContent = 'live'; };
 
   ws.onmessage = (ev) => {
+    if (ws !== socket) return;
     // Text is a control frame, binary is terminal output.
     if (typeof ev.data !== 'string') {
       term.write(new Uint8Array(ev.data));
@@ -130,6 +136,7 @@ function connect() {
   // A viewer that falls behind is disconnected rather than served a stream with
   // a gap in it, so reconnecting is a normal event: the next snapshot resyncs.
   ws.onclose = () => {
+    if (ws !== socket) return;
     status.textContent = 'reconnecting';
     setTimeout(connect, 1000);
   };
