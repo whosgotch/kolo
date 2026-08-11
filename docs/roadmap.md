@@ -65,7 +65,9 @@ Work already finished that the above depends on, or that returns later:
   dangerous rather than untidy.
 - One gap remains in that gate: the detector cannot yet recognise an agent that
   is busy running a shell command, where an injected line is silently swallowed.
-  It needs a recording to close and matters again when shared agents return.
+  Closing it means recording that state locally and reading what distinguishes
+  it; the recording itself stays out of the repository, since one is a picture
+  of somebody's session.
 
 ## Not doing
 

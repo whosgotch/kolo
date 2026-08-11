@@ -2,8 +2,14 @@
 /kolo
 /dist/
 
-# probe artifacts
+# recordings of agent sessions
+#
+# A recording is a picture of somebody's screen — their paths, their email,
+# whatever else was on it — so none of them belong in the repository. Tests use
+# written-out screens instead, and can replay a local recording on request.
 *.cast
 *.raw
+*.screen
+**/testdata/*.raw
 
 .DS_Store

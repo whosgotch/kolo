@@ -2,43 +2,104 @@ package detect
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/whosgotch/kolo/internal/term"
 )
 
-// replay renders a recording the way kolo does, so the detector is tested
-// against a screen built from the agent's real byte stream rather than against
-// the text dump sitting next to it.
-func replay(t *testing.T, name string) string {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", name+".raw"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	screen := term.New(120, 40)
-	// In chunks, because that is how the bytes arrive off a PTY.
-	for i := 0; i < len(raw); i += 64 {
-		screen.Write(raw[i:min(i+64, len(raw))])
-	}
-	return screen.Text()
-}
+// The screens below are reconstructions of the three states, written out rather
+// than recorded.
+//
+// Recordings were tried first and removed: a recording of a real session is a
+// picture of somebody's screen, carrying their email, their paths and whatever
+// else was on it, and that is not a thing to commit to a repository. What the
+// detector actually reads is the arrangement — a dialog takes the whole screen
+// and the input box is not drawn at all — and that is reproduced here without
+// anybody's session in it.
+//
+// A real recording can still be replayed locally; see TestOfARecording.
+const (
+	idleScreen = `
+╭─── Claude Code ──────────────────────────────────────────────╮
+│                                                              │
+│   Welcome back!                                              │
+│                                                              │
+╰──────────────────────────────────────────────────────────────╯
 
-func TestOfRecordings(t *testing.T) {
+────────────────────────────────────────────────────────────────
+❯ Try "explain this function"
+────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ? for shortcuts · ← for agents
+`
+
+	permissionScreen = `
+❯ create a file called note.txt
+
+⏺ Write(note.txt)
+
+────────────────────────────────────────────────────────────────
+ Create file
+ note.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  1 hello
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to create note.txt?
+ ❯ 1. Yes
+   2. Yes, allow all edits during this session (shift+tab)
+   3. No
+
+ Esc to cancel · Tab to amend
+`
+
+	trustScreen = `
+────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /tmp/scratch
+
+ Quick safety check: Is this a project you created or one you
+ trust? Claude Code'll be able to read, edit, and execute files
+ here.
+
+ ❯ 1. Yes, I trust this folder
+   2. No, exit
+
+ Enter to confirm · Esc to cancel
+`
+)
+
+func TestOf(t *testing.T) {
 	tests := []struct {
-		recording string
-		want      State
+		name   string
+		screen string
+		want   State
 	}{
-		{"idle-prompt", Idle},
-		{"permission-dialog", Dialog},
-		{"trust-dialog", Dialog},
+		{"idle at the prompt", idleScreen, Idle},
+		{"tool permission dialog", permissionScreen, Dialog},
+		{"workspace trust dialog", trustScreen, Dialog},
 	}
 	for _, tt := range tests {
-		t.Run(tt.recording, func(t *testing.T) {
-			if got := Of(replay(t, tt.recording)); got != tt.want {
-				t.Errorf("Of(%s) = %s, want %s", tt.recording, got, tt.want)
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Of(tt.screen); got != tt.want {
+				t.Errorf("Of(%s) = %s, want %s", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestTheDialogsHideTheInputBox pins the arrangement the detector depends on.
+// If a future agent drew its input box underneath a dialog, the idle marker
+// would be on screen at the same time as the dialog's, and these cases would be
+// the ones to revisit.
+func TestTheDialogsHideTheInputBox(t *testing.T) {
+	for name, screen := range map[string]string{
+		"permission": permissionScreen,
+		"trust":      trustScreen,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if strings.Contains(screen, idleFooter) {
+				t.Errorf("the %s dialog shows the input box footer, which the detector treats as idle", name)
 			}
 		})
 	}
@@ -51,7 +112,7 @@ func TestUnrecognisedScreensHold(t *testing.T) {
 		"empty":             "",
 		"blank rows":        strings.Repeat(strings.Repeat(" ", 120)+"\n", 40),
 		"another agent":     "$ some other tool\n> waiting for input\n",
-		"partial repaint":   "╭─── Claude Code v2.1.227 ───╮\n│ Welcome back!              │\n",
+		"partial repaint":   "╭─── Claude Code ───╮\n│ Welcome back!     │\n",
 		"agent output only": "Here is the answer to your question.\n",
 	}
 	for name, screen := range screens {
@@ -77,5 +138,30 @@ func TestOnlyIdleCanSend(t *testing.T) {
 		if want := s == Idle; s.CanSend() != want {
 			t.Errorf("%s.CanSend() = %v, want %v", s, s.CanSend(), want)
 		}
+	}
+}
+
+// TestOfARecording replays a real capture, which exercises the arrangements no
+// handwritten screen will think of. Recordings are not committed, because one
+// is a picture of somebody's session; make your own with cmd/kolorec and point
+// this at it:
+//
+//	KOLO_RECORDING=/tmp/rec/idle.raw KOLO_STATE=idle go test ./internal/detect
+func TestOfARecording(t *testing.T) {
+	path, want := os.Getenv("KOLO_RECORDING"), os.Getenv("KOLO_STATE")
+	if path == "" {
+		t.Skip("set KOLO_RECORDING and KOLO_STATE to replay a capture")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := term.New(120, 40)
+	// In chunks, because that is how the bytes arrive off a PTY.
+	for i := 0; i < len(raw); i += 64 {
+		screen.Write(raw[i:min(i+64, len(raw))])
+	}
+	if got := Of(screen.Text()); got.String() != want {
+		t.Errorf("Of(%s) = %s, want %s", path, got, want)
 	}
 }

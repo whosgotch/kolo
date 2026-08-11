@@ -4,13 +4,15 @@
 // against screens a real agent actually produces, not screens we imagine. This
 // drives an agent through a scripted sequence and writes down what came back:
 //
-//	kolorec -script scripts/permission-dialog.txt -out internal/detect/testdata claude
+//	kolorec -script scripts/permission-dialog.txt -out /tmp/recordings claude
 //
 // The raw log it produces replays through internal/term, so a fixture is a
 // recording of the session rather than a transcription of one.
 //
-// Recordings capture whatever is on screen, so scripts are written to keep a
-// session boring: a scratch directory, trivial prompts, nothing private.
+// Recordings capture whatever is on screen — paths, an email in a welcome box,
+// anything else that happened to be there — so they stay out of the repository
+// and out of version control. Write them somewhere temporary, look at them, and
+// keep what you learned rather than the recording.
 package main
 
 import (
