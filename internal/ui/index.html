@@ -7,18 +7,45 @@
 <link rel="stylesheet" href="/assets/xterm.css">
 <style>
   html, body { margin: 0; height: 100%; background: #000; }
+  body { display: flex; flex-direction: column; }
+  #term { flex: 1; min-height: 0; overflow: hidden; }
+  #compose {
+    display: flex; gap: 8px; align-items: center;
+    padding: 8px; border-top: 1px solid #2a2a2a; background: #0d0d0d;
+    font: 13px ui-monospace, Menlo, Consolas, monospace;
+  }
+  #compose input {
+    background: #161616; color: #ddd; border: 1px solid #2a2a2a;
+    border-radius: 4px; padding: 6px 8px; font: inherit;
+  }
+  #nickname { width: 10ch; }
+  #text { flex: 1; }
+  #compose button {
+    background: #222; color: #ddd; border: 1px solid #2a2a2a;
+    border-radius: 4px; padding: 6px 12px; font: inherit; cursor: pointer;
+  }
+  #compose button:disabled { opacity: .5; cursor: default; }
   #status {
     position: fixed; top: 0; right: 0; z-index: 1;
     padding: 2px 8px; border-bottom-left-radius: 4px;
     font: 12px ui-monospace, Menlo, Consolas, monospace;
     background: #1c1c1c; color: #9aa0a6;
   }
-  #term { height: 100%; }
+  #note { min-height: 1.4em; padding: 0 8px 8px; color: #9aa0a6;
+          font: 12px ui-monospace, Menlo, Consolas, monospace; }
+  #note.problem { color: #e88; }
 </style>
 </head>
 <body>
 <div id="status">connecting</div>
 <div id="term"></div>
+<div id="note"></div>
+<form id="compose" autocomplete="off">
+  <input id="nickname" placeholder="name" maxlength="32" required>
+  <input id="text" placeholder="send the agent a message" maxlength="2000" required>
+  <button type="submit">send</button>
+</form>
+
 <script src="/assets/xterm.js"></script>
 <script src="/assets/addon-canvas.js"></script>
 <script>
@@ -26,10 +53,15 @@
 // repaint of the screen arrive first, so a page opened mid-session starts from
 // what the host is looking at rather than from a blank terminal.
 const status = document.getElementById('status');
+const note = document.getElementById('note');
+const compose = document.getElementById('compose');
+const nickname = document.getElementById('nickname');
+const text = document.getElementById('text');
 
 const term = new Terminal({
-  // Read-only in this milestone. The socket rejects anything sent back, so this
-  // is about not misleading the viewer, not about enforcement.
+  // A guest sends words through the box below, never keystrokes into the
+  // terminal. The server drops anything else, so this is about not misleading
+  // the guest rather than about enforcement.
   disableStdin: true,
   cursorBlink: false,
   fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
@@ -51,20 +83,48 @@ try {
   console.warn('canvas renderer unavailable, falling back to the DOM', e);
 }
 
+nickname.value = localStorage.getItem('kolo.nickname') || '';
+nickname.addEventListener('change', () => localStorage.setItem('kolo.nickname', nickname.value));
+
+function say(message, problem) {
+  note.textContent = message;
+  note.classList.toggle('problem', !!problem);
+}
+
+let socket = null;
+
 function connect() {
   const ws = new WebSocket(`ws://${location.host}/ws`);
   ws.binaryType = 'arraybuffer';
+  socket = ws;
 
   ws.onopen = () => { status.textContent = 'live'; };
 
   ws.onmessage = (ev) => {
     // Text is a control frame, binary is terminal output.
-    if (typeof ev.data === 'string') {
-      const msg = JSON.parse(ev.data);
-      if (msg.type === 'size') term.resize(msg.cols, msg.rows);
+    if (typeof ev.data !== 'string') {
+      term.write(new Uint8Array(ev.data));
       return;
     }
-    term.write(new Uint8Array(ev.data));
+    const msg = JSON.parse(ev.data);
+    switch (msg.type) {
+      case 'size':
+        term.resize(msg.cols, msg.rows);
+        break;
+      case 'queued':
+        // A held message is the normal case, not a failure: the agent may be
+        // mid-answer, or asking the host to approve something.
+        say(msg.pending > 1
+          ? `${msg.nickname}: waiting, ${msg.pending} messages ahead of the agent`
+          : `${msg.nickname}: waiting for the agent to be ready`);
+        break;
+      case 'sent':
+        say(msg.pending > 0 ? `sent · ${msg.pending} still waiting` : 'sent');
+        break;
+      case 'error':
+        say(msg.reason, true);
+        break;
+    }
   };
 
   // A viewer that falls behind is disconnected rather than served a stream with
@@ -75,6 +135,20 @@ function connect() {
   };
   ws.onerror = () => ws.close();
 }
+
+compose.addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    say('not connected', true);
+    return;
+  }
+  socket.send(JSON.stringify({
+    type: 'message',
+    nickname: nickname.value,
+    text: text.value,
+  }));
+  text.value = '';
+});
 
 connect();
 </script>
