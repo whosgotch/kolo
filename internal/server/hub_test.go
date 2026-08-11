@@ -109,7 +109,11 @@ func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
 	}
 }
 
-func TestSecondViewerTakesOver(t *testing.T) {
+// TestViewersWatchTogether is the point of the whole thing: guests watch at the
+// same time. A second viewer joining must not disturb the first, which an
+// earlier take-over rule got wrong — with pages that reconnect on their own, it
+// left two viewers knocking each other offline forever.
+func TestViewersWatchTogether(t *testing.T) {
 	h := NewHub(80, 24)
 	_, first, cancelFirst := h.Subscribe()
 	defer cancelFirst()
@@ -117,17 +121,74 @@ func TestSecondViewerTakesOver(t *testing.T) {
 	_, second, cancelSecond := h.Subscribe()
 	defer cancelSecond()
 
-	if _, open := <-first; open {
-		t.Error("first viewer still receiving after being replaced")
+	if got := h.Viewers(); got != 2 {
+		t.Fatalf("Viewers() = %d, want 2", got)
 	}
+
 	h.Write([]byte("x"))
+	for name, stream := range map[string]<-chan Message{"first": first, "second": second} {
+		select {
+		case m := <-stream:
+			if string(m.Data) != "x" {
+				t.Errorf("%s viewer received %q, want %q", name, m.Data, "x")
+			}
+		case <-time.After(time.Second):
+			t.Errorf("%s viewer received nothing", name)
+		}
+	}
+}
+
+// TestOneViewerLeavingLeavesTheRest covers the other half: a viewer dropped for
+// falling behind must not take the others with it.
+func TestOneViewerLeavingLeavesTheRest(t *testing.T) {
+	h := NewHub(80, 24)
+	_, slow, cancelSlow := h.Subscribe()
+	defer cancelSlow()
+	_, keen, cancelKeen := h.Subscribe()
+	defer cancelKeen()
+
+	// Overflow the slow viewer without ever reading from it.
+	for range viewerBuffer + 10 {
+		h.Write([]byte("x"))
+		select {
+		case <-keen:
+		default:
+		}
+	}
+	if h.Viewers() != 1 {
+		t.Errorf("Viewers() = %d, want the slow one dropped and the other kept", h.Viewers())
+	}
+
+	drain(slow)
+	if _, open := <-slow; open {
+		t.Error("slow viewer was not dropped")
+	}
+
+	drain(keen)
+	h.Write([]byte("later"))
 	select {
-	case m := <-second:
-		if string(m.Data) != "x" {
-			t.Errorf("second viewer received %q", m.Data)
+	case m, open := <-keen:
+		if !open {
+			t.Error("the viewer that kept up was dropped too")
+		} else if string(m.Data) != "later" {
+			t.Errorf("the viewer that kept up received %q, want %q", m.Data, "later")
 		}
 	case <-time.After(time.Second):
-		t.Fatal("second viewer received nothing")
+		t.Error("the viewer that kept up stopped receiving")
+	}
+}
+
+// drain empties whatever is buffered without blocking.
+func drain(ch <-chan Message) {
+	for {
+		select {
+		case _, open := <-ch:
+			if !open {
+				return
+			}
+		default:
+			return
+		}
 	}
 }
 
