@@ -48,6 +48,16 @@ func runCmd(args []string) error {
 		fs.Usage()
 		os.Exit(2)
 	}
+	// Checked before anything starts. Half a configuration used to be caught
+	// after the agent was running and the viewer had printed its address, which
+	// killed a session that looked like it had come up.
+	if (*hubURL == "") != (*token == "") {
+		missing, other := "-token (or $KOLO_TOKEN)", "-hub"
+		if *hubURL == "" {
+			missing, other = "-hub (or $KOLO_HUB)", "-token"
+		}
+		return fmt.Errorf("%s is not set, and %s is: joining a hub needs both", missing, other)
+	}
 	return run(argv, *port, *hubURL, *token)
 }
 
@@ -90,10 +100,6 @@ func run(argv []string, port int, hubURL, token string) error {
 	if hubURL != "" && token != "" {
 		stop := joinHub(hubURL, token, argv[0])
 		defer stop()
-	} else if hubURL != "" || token != "" {
-		// Half a configuration is a mistake worth naming: running on anyway
-		// looks identical to being connected.
-		return fmt.Errorf("joining a hub needs both -hub and -token")
 	}
 
 	restore, err := rawMode()
