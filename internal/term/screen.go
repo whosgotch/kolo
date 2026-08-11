@@ -102,6 +102,10 @@ func (s *Screen) Resize(cols, rows int) { s.term.Resize(cols, rows) }
 // Size returns the current screen size.
 func (s *Screen) Size() (cols, rows int) { return s.term.Size() }
 
+// Text returns the screen as plain rows, one per line, with no styling. It is
+// what a detector matches against and what a recording dumps for review.
+func (s *Screen) Text() string { return s.term.String() }
+
 // style is the drawable part of a glyph: everything a repaint must restate when
 // it moves to a cell.
 type style struct {
