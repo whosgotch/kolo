@@ -11,9 +11,9 @@ import (
 	"github.com/coder/websocket"
 )
 
-func serve(t *testing.T, hub *Hub) *Server {
+func serve(t *testing.T, hub *Hub, guest Guest) *Server {
 	t.Helper()
-	srv, err := Listen(hub, 0)
+	srv, err := Listen(hub, 0, guest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func dial(t *testing.T, ctx context.Context, srv *Server) *websocket.Conn {
 func TestServeCatchesAViewerUp(t *testing.T) {
 	hub := NewHub(80, 24)
 	hub.Write([]byte("already on screen"))
-	srv := serve(t, hub)
+	srv := serve(t, hub, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -65,11 +65,62 @@ func TestServeCatchesAViewerUp(t *testing.T) {
 	}
 }
 
-// TestViewerCannotSend pins the read-only guarantee at the transport: there is
-// no path from the browser to the agent in this milestone, and the connection
-// ends rather than quietly ignoring the attempt.
-func TestViewerCannotSend(t *testing.T) {
-	srv := serve(t, NewHub(80, 24))
+// TestGuestMessageReachesTheQueue checks the one thing a viewer may send. The
+// handler stands in for the queue, and the point is what it receives: words and
+// a name, with no way to express a keystroke.
+func TestGuestMessageReachesTheQueue(t *testing.T) {
+	type got struct{ nickname, text string }
+	received := make(chan got, 1)
+	srv := serve(t, NewHub(80, 24), func(nickname, text string) error {
+		received <- got{nickname, text}
+		return nil
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn := dial(t, ctx, srv)
+
+	if err := conn.Write(ctx, websocket.MessageText,
+		[]byte(`{"type":"message","nickname":"ada","text":"what does this do?"}`)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case m := <-received:
+		if m.nickname != "ada" || m.text != "what does this do?" {
+			t.Errorf("handler got %+v", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("message never reached the handler")
+	}
+}
+
+// TestBinaryFromAViewerIsIgnored keeps the one asymmetry that matters: binary
+// is the agent's language. Bytes from a browser are never passed through.
+func TestBinaryFromAViewerIsIgnored(t *testing.T) {
+	called := make(chan struct{}, 1)
+	srv := serve(t, NewHub(80, 24), func(string, string) error {
+		called <- struct{}{}
+		return nil
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn := dial(t, ctx, srv)
+
+	if err := conn.Write(ctx, websocket.MessageBinary, []byte("\x1b[B\r")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-called:
+		t.Error("binary from a viewer was handed on as a message")
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// TestWatchOnlySessionRefusesMessages covers a server built without a queue:
+// the message is refused and the viewer is told, rather than silently dropped.
+func TestWatchOnlySessionRefusesMessages(t *testing.T) {
+	srv := serve(t, NewHub(80, 24), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -78,18 +129,23 @@ func TestViewerCannotSend(t *testing.T) {
 	if _, _, err := conn.Read(ctx); err != nil { // size frame
 		t.Fatal(err)
 	}
-	if err := conn.Write(ctx, websocket.MessageText, []byte("let me in")); err != nil {
+	if _, _, err := conn.Read(ctx); err != nil { // snapshot
 		t.Fatal(err)
 	}
-	for {
-		if _, _, err := conn.Read(ctx); err != nil {
-			return // the server hung up, as it should
-		}
+	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"message","nickname":"a","text":"hi"}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "watch-only") {
+		t.Errorf("reply = %q, want it to say the session is watch-only", data)
 	}
 }
 
 func TestServesTheViewerPage(t *testing.T) {
-	srv := serve(t, NewHub(80, 24))
+	srv := serve(t, NewHub(80, 24), nil)
 
 	for _, path := range []string{"", "assets/xterm.js", "assets/xterm.css"} {
 		resp, err := http.Get(srv.URL() + path)
