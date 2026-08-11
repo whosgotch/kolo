@@ -20,15 +20,16 @@ type Message struct {
 	Data    []byte
 }
 
-// Hub owns the virtual terminal and fans the agent's output out to the viewer.
+// Hub owns the virtual terminal and fans the agent's output out to the viewers.
 //
-// Milestone 1 serves a single viewer. A second connection takes over from the
-// first rather than being refused, so that a viewer whose browser tab died
-// without closing the socket cannot lock everyone else out.
+// Every viewer gets its own subscription. An earlier version allowed one at a
+// time and let a new connection take over from the old, which was wrong twice
+// over: guests are meant to watch together, and a page that reconnects on its
+// own turns a takeover into two viewers knocking each other offline in a loop.
 type Hub struct {
 	mu     sync.Mutex
 	screen *term.Screen
-	sub    *subscriber
+	subs   map[*subscriber]struct{}
 }
 
 type subscriber struct {
@@ -38,11 +39,18 @@ type subscriber struct {
 
 // NewHub returns a Hub whose terminal is cols x rows.
 func NewHub(cols, rows int) *Hub {
-	return &Hub{screen: term.New(cols, rows)}
+	return &Hub{screen: term.New(cols, rows), subs: map[*subscriber]struct{}{}}
 }
 
-// Write feeds agent output into the virtual terminal and on to the viewer. It
-// never fails and never blocks on the viewer: this sits in the path between the
+// Viewers is how many are currently watching.
+func (h *Hub) Viewers() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subs)
+}
+
+// Write feeds agent output into the virtual terminal and on to the viewers. It
+// never fails and never blocks on a viewer: this sits in the path between the
 // agent and the host's own terminal, so stalling here would stall the host.
 func (h *Hub) Write(p []byte) (int, error) {
 	h.mu.Lock()
@@ -84,9 +92,9 @@ func (h *Hub) Resize(cols, rows int) {
 	h.send(sizeMessage(cols, rows))
 }
 
-// Subscribe replaces any current viewer and returns everything the new one
-// needs: the size, a repaint of the screen as it is right now, and the stream of
-// what happens next.
+// Subscribe adds a viewer and returns everything it needs to start: the size, a
+// repaint of the screen as it is right now, and the stream of what happens next.
+// Viewers already watching are undisturbed.
 //
 // The snapshot is taken and the subscription created in one critical section
 // with Write. Any gap between them would show up as terminal output the viewer
@@ -96,11 +104,8 @@ func (h *Hub) Subscribe() (backlog []Message, stream <-chan Message, cancel func
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if h.sub != nil {
-		h.drop(h.sub)
-	}
 	s := &subscriber{ch: make(chan Message, viewerBuffer)}
-	h.sub = s
+	h.subs[s] = struct{}{}
 
 	cols, rows := h.screen.Size()
 	backlog = []Message{sizeMessage(cols, rows), {Data: h.screen.Snapshot()}}
@@ -108,39 +113,34 @@ func (h *Hub) Subscribe() (backlog []Message, stream <-chan Message, cancel func
 	return backlog, s.ch, func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		if h.sub == s {
+		h.drop(s)
+	}
+}
+
+// send queues a message for every viewer, dropping any that has fallen too far
+// behind. Skipping bytes instead is not an option: a viewer is rendering an
+// escape-sequence stream, so a gap corrupts it permanently. Being disconnected
+// costs that viewer a reconnect and a fresh snapshot, and costs the others
+// nothing.
+//
+// Callers must hold h.mu.
+func (h *Hub) send(m Message) {
+	for s := range h.subs {
+		select {
+		case s.ch <- m:
+		default:
 			h.drop(s)
 		}
 	}
 }
 
-// send queues a message for the viewer, dropping the viewer if it has fallen
-// too far behind. Skipping bytes instead is not an option: the viewer is
-// rendering an escape-sequence stream, so a gap corrupts it permanently. Being
-// disconnected costs the viewer a reconnect and a fresh snapshot, which is
-// correct by construction.
-//
-// Callers must hold h.mu.
-func (h *Hub) send(m Message) {
-	if h.sub == nil {
-		return
-	}
-	select {
-	case h.sub.ch <- m:
-	default:
-		h.drop(h.sub)
-	}
-}
-
-// drop disconnects a subscriber. Callers must hold h.mu.
+// drop disconnects one viewer. Callers must hold h.mu.
 func (h *Hub) drop(s *subscriber) {
 	if !s.closed {
 		s.closed = true
 		close(s.ch)
 	}
-	if h.sub == s {
-		h.sub = nil
-	}
+	delete(h.subs, s)
 }
 
 func sizeMessage(cols, rows int) Message {
