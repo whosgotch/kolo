@@ -78,7 +78,7 @@ func TestRunRegisters(t *testing.T) {
 	defer cancel()
 
 	var got collector
-	go Run(ctx, cfg, got.add)
+	go Run(ctx, cfg, nil, Handlers{Event: got.add})
 
 	waitFor(t, func() bool { return s.Presence().Len() == 1 })
 
@@ -105,7 +105,7 @@ func TestRunReconnects(t *testing.T) {
 	defer cancel()
 
 	var got collector
-	go Run(ctx, cfg, got.add)
+	go Run(ctx, cfg, nil, Handlers{Event: got.add})
 	waitFor(t, func() bool { return s.Presence().Len() == 1 })
 
 	// Take the hub away and bring it back on the same address.
@@ -134,7 +134,7 @@ func TestRunSurvivesABadToken(t *testing.T) {
 	defer cancel()
 
 	var got collector
-	go Run(ctx, cfg, got.add)
+	go Run(ctx, cfg, nil, Handlers{Event: got.add})
 
 	waitFor(t, func() bool { return got.failures() >= 2 })
 	if _, ok := got.connected(); ok {
@@ -147,7 +147,7 @@ func TestPresence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go Run(ctx, cfg, nil)
+	go Run(ctx, cfg, nil, Handlers{})
 	waitFor(t, func() bool { return s.Presence().Len() == 1 })
 
 	org, conns, err := Presence(ctx, cfg)

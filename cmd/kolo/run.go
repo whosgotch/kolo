@@ -109,7 +109,7 @@ func run(argv []string, port int, lan bool, hubURL, token string) error {
 	}
 
 	if hubURL != "" && token != "" {
-		stop := joinHub(hubURL, token, argv[0])
+		stop := joinHub(hubURL, token, argv[0], live, guests)
 		defer stop()
 	}
 
@@ -147,7 +147,7 @@ func run(argv []string, port int, lan bool, hubURL, token string) error {
 // deliberately not fatal: the agent is useful to the person at the keyboard
 // whether or not the org can see it, so a hub that is unreachable is reported
 // and retried rather than allowed to stop the session.
-func joinHub(hubURL, token, agentName string) (stop func()) {
+func joinHub(hubURL, token, agentName string, live *session.Session, guests *relay.Relay) (stop func()) {
 	machine, err := os.Hostname()
 	if err != nil {
 		machine = "unknown"
@@ -159,13 +159,26 @@ func joinHub(hubURL, token, agentName string) (stop func()) {
 		Agent:   agentName,
 		Machine: machine,
 		Version: version,
-	}, func(e link.Event) {
-		switch {
-		case e.Connected:
-			log.Printf("joined %s as %s", e.Org, e.Member.ID)
-		case e.Err != nil:
-			log.Printf("hub: %v; retrying in %s", e.Err, e.Retry.Round(time.Second))
-		}
+	}, live, link.Handlers{
+		Event: func(e link.Event) {
+			switch {
+			case e.Connected:
+				log.Printf("joined %s as %s", e.Org, e.Member.ID)
+			case e.Err != nil:
+				log.Printf("hub: %v; retrying in %s", e.Err, e.Retry.Round(time.Second))
+			}
+		},
+		// A message from the org goes to the same queue a local guest's does,
+		// and waits for the same screen to say it may be sent. Coming from
+		// another machine changes nothing about when it is safe to type.
+		Message: func(from, text string) {
+			m, err := guests.Submit(from, text)
+			if err != nil {
+				log.Printf("message from %s: %v", from, err)
+				return
+			}
+			live.Announce(queued{"queued", m.ID, m.Nickname, m.Text, len(guests.Pending())})
+		},
 	})
 	return cancel
 }

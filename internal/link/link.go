@@ -17,6 +17,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/whosgotch/kolo/internal/hub"
+	"github.com/whosgotch/kolo/internal/session"
 )
 
 // Backoff bounds. A dropped wifi connection comes back in seconds, so the first
@@ -25,6 +26,10 @@ import (
 const (
 	minBackoff = 500 * time.Millisecond
 	maxBackoff = 30 * time.Second
+
+	// writeTimeout bounds one send, so a connection that has stopped
+	// acknowledging cannot hold the agent's screen hostage.
+	writeTimeout = 10 * time.Second
 )
 
 // Config is what a client needs to reach a hub as somebody.
@@ -38,6 +43,19 @@ type Config struct {
 	Agent   string
 	Machine string
 	Version string
+}
+
+// Handlers are what a caller wants to know about.
+type Handlers struct {
+	// Event reports connections and the failures between them. Optional.
+	Event func(Event)
+	// Message is a line somebody in the org sent to this agent. Who they are
+	// was decided by the hub from their credentials, not typed by them, so the
+	// name here can be trusted in a way a self-declared nickname cannot.
+	//
+	// It is not a command to type: it goes to the queue, which releases it only
+	// when the agent's own screen says a line may be sent.
+	Message func(from, text string)
 }
 
 // Event is something worth telling the operator about.
@@ -59,22 +77,25 @@ type Event struct {
 // is not a failure — laptops sleep and wifi drops, and an agent that disappears
 // for thirty seconds must come back on its own rather than need restarting.
 // Errors are reported through onEvent and then retried.
-func Run(ctx context.Context, cfg Config, onEvent func(Event)) {
-	if onEvent == nil {
-		onEvent = func(Event) {}
+func Run(ctx context.Context, cfg Config, live *session.Session, on Handlers) {
+	if on.Event == nil {
+		on.Event = func(Event) {}
+	}
+	if on.Message == nil {
+		on.Message = func(string, string) {}
 	}
 	backoff := minBackoff
 	for ctx.Err() == nil {
-		err := connect(ctx, cfg, func(w welcome) {
+		err := connect(ctx, cfg, live, on, func(w welcome) {
 			backoff = minBackoff // a connection that worked resets the wait
-			onEvent(Event{Connected: true, Org: w.Org, Member: w.Member})
+			on.Event(Event{Connected: true, Org: w.Org, Member: w.Member})
 		})
 		if ctx.Err() != nil {
 			return
 		}
 
 		wait := jitter(backoff)
-		onEvent(Event{Err: err, Retry: wait})
+		on.Event(Event{Err: err, Retry: wait})
 		select {
 		case <-ctx.Done():
 			return
@@ -87,7 +108,7 @@ func Run(ctx context.Context, cfg Config, onEvent func(Event)) {
 }
 
 // connect makes one attempt and returns when the connection ends.
-func connect(ctx context.Context, cfg Config, onWelcome func(welcome)) error {
+func connect(ctx context.Context, cfg Config, live *session.Session, on Handlers, onWelcome func(welcome)) error {
 	conn, _, err := websocket.Dial(ctx, wsURL(cfg.Hub)+"/v1/agent", &websocket.DialOptions{
 		HTTPHeader: http.Header{"Authorization": {"Bearer " + cfg.Token}},
 	})
@@ -113,13 +134,82 @@ func connect(ctx context.Context, cfg Config, onWelcome func(welcome)) error {
 	}
 	onWelcome(w)
 
-	// Stay until something ends it. Nothing else is exchanged yet, and anything
-	// unrecognised is ignored so that a newer hub can talk to an older client.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Reading and writing run at once: the org sends messages down while the
+	// agent's screen goes up, and neither should wait behind the other.
+	failed := make(chan error, 2)
+	go func() { failed <- read(ctx, conn, on) }()
+	go func() { failed <- stream(ctx, conn, live) }()
+	return <-failed
+}
+
+// read takes what the org sends to this agent.
+func read(ctx context.Context, conn *websocket.Conn, on Handlers) error {
 	for {
-		if _, _, err := conn.Read(ctx); err != nil {
+		kind, data, err := conn.Read(ctx)
+		if err != nil {
 			return fmt.Errorf("link: connection ended: %w", err)
 		}
+		// Bytes are the agent's language, not the org's. Nothing arriving from
+		// the hub is ever passed through to the agent as bytes.
+		if kind != websocket.MessageText {
+			continue
+		}
+		var m inbound
+		// Anything unrecognised is ignored, so a newer hub can talk to an older
+		// client without either breaking.
+		if err := json.Unmarshal(data, &m); err != nil || m.Type != "message" {
+			continue
+		}
+		on.Message(m.From, m.Text)
 	}
+}
+
+// stream sends the agent's screen to the org for as long as the connection
+// lasts.
+//
+// It subscribes the same way a browser does, which is what makes reconnecting
+// safe: the subscription begins with a repaint of the screen as it stands, so a
+// hub that missed everything said during an outage is brought back to the truth
+// rather than left with a hole in the middle of an escape sequence.
+func stream(ctx context.Context, conn *websocket.Conn, live *session.Session) error {
+	if live == nil {
+		<-ctx.Done() // nothing to send; the read side decides when this ends
+		return ctx.Err()
+	}
+	backlog, updates, unsubscribe := live.Subscribe()
+	defer unsubscribe()
+
+	for _, m := range backlog {
+		if err := forward(ctx, conn, m); err != nil {
+			return err
+		}
+	}
+	for m := range updates {
+		if err := forward(ctx, conn, m); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("link: the agent's screen stopped")
+}
+
+func forward(ctx context.Context, conn *websocket.Conn, m session.Message) error {
+	kind := websocket.MessageBinary
+	if m.Control {
+		kind = websocket.MessageText
+	}
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	return conn.Write(ctx, kind, m.Data)
+}
+
+// inbound is what the hub sends down to an agent.
+type inbound struct {
+	Type string `json:"type"`
+	From string `json:"from"`
+	Text string `json:"text"`
 }
 
 // Presence asks the hub who is connected.
