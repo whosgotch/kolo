@@ -2,11 +2,6 @@
 /kolo
 /dist/
 
-# ui build output (dist/.gitkeep is committed on purpose)
-/ui/dist/*
-!/ui/dist/.gitkeep
-/ui/node_modules/
-
 # probe artifacts
 *.cast
 *.raw
