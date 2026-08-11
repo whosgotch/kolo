@@ -116,10 +116,16 @@ func (p *Presence) Len() int {
 func label(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToValidUTF8(s, "") {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
-			continue
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			// Space rather than nothing, so two words do not run together
+			// into one that was never written.
+			b.WriteRune(' ')
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
+			// dropped
+		default:
+			b.WriteRune(r)
 		}
-		b.WriteRune(r)
 	}
 	out := strings.Join(strings.Fields(b.String()), " ")
 	for len(out) > maxLabel {
