@@ -1,0 +1,8 @@
+# A dialog is on screen and Enter would answer it.
+#
+# This is the state a guest message must never reach. In Milestone 0 the very
+# first line sent auto-answered "Yes, I trust this folder" (findings #5).
+# Recorded in a fresh directory, which is what makes the agent ask.
+waitfor 60s I trust this folder
+wait 2s
+dump dialog

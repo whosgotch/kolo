@@ -1,0 +1,7 @@
+# The safe state: the agent is sitting at its input box with nothing running.
+# This is the only state in which a queued guest line may be flushed.
+#
+# Record in a directory the agent already trusts, so no dialog is in the way.
+waitfor 60s for shortcuts
+wait 3s
+dump idle
