@@ -19,4 +19,26 @@ not to a machine.
 > on the host's machine with the host's permissions. The URL secret is the only
 > access control. Share the link only with people you already trust.
 
-Status: in development.
+## What works today
+
+Milestone 1: watching. Everything above except the guest input and the tunnel.
+
+```
+$ go build -o kolo ./cmd/kolo
+$ ./kolo claude
+session live: http://127.0.0.1:54321/
+```
+
+The agent runs as it always does — the terminal is still yours, keystrokes and
+all. Open that URL in a browser and you see the same screen, live. Opening it
+mid-session works: the page is caught up to whatever is already on screen before
+the live stream starts.
+
+Today the link is localhost only, serves one viewer at a time, and is read-only:
+the socket disconnects a browser that tries to send anything. Guest messages, the
+gate that holds them while the agent is asking the host to approve something, and
+the tunnel are the milestones after this one.
+
+Run `go test ./...` for the test suite. Two of them replay a recorded session
+through the emulator; `KOLO_RAW=<capture> go test ./internal/term` points them at
+a real one.
