@@ -38,6 +38,18 @@ type Member struct {
 	TokenHash string `json:"token_hash"`
 }
 
+// Person is a member as everyone else sees them. It exists so that the type
+// carrying a token hash and the type sent over the wire are not the same type:
+// keeping the secret out of a response is then a property of the design rather
+// than something to remember at each call site.
+type Person struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// Person returns the member without their secret.
+func (m Member) Person() Person { return Person{ID: m.ID, Name: m.Name} }
+
 // Load reads an org from a JSON file.
 //
 // Changes take effect when the hub restarts. Revoking a member is removing

@@ -25,8 +25,9 @@ type Connection struct {
 	// ID is unique to this connection for as long as the hub runs.
 	ID int64 `json:"id"`
 	// Member is who the hub decided this is, from their token. It is never
-	// taken from anything the client said about itself.
-	Member Member `json:"member"`
+	// taken from anything the client said about itself, and it is a Person
+	// rather than a Member so that a token hash cannot reach a response.
+	Member Person `json:"member"`
 	// Agent and Machine are what the client calls itself.
 	Agent   string    `json:"agent"`
 	Machine string    `json:"machine"`
@@ -59,7 +60,7 @@ func (p *Presence) Join(m Member, agent, machine string) Connection {
 	p.next++
 	c := Connection{
 		ID:      p.next,
-		Member:  m,
+		Member:  m.Person(),
 		Agent:   label(agent),
 		Machine: label(machine),
 		Since:   p.now(),
