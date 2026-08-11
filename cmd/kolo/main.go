@@ -1,212 +1,70 @@
-// Command kolo runs a CLI AI agent and makes its terminal watchable.
+// Command kolo runs a CLI AI agent and connects it to an org.
 //
-//	kolo claude
+//	kolo serve     the hub an org connects to
+//	kolo token     mint a member's credentials
+//	kolo run       run an agent here, joined to the hub
+//	kolo who       who is connected
 //
-// The host uses the agent exactly as they would without kolo: keystrokes reach
-// it, its output reaches the host's terminal. Alongside that, every byte the
-// agent writes also feeds a virtual terminal, which is what a viewer joining
-// later is caught up from.
+// An agent runs on the machine of the person using it, with their files and
+// their permissions. The hub holds who belongs to the org and who is connected;
+// it never reaches back into anyone's machine.
 package main
 
 import (
-	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"os/exec"
-	"os/signal"
-	"syscall"
-	"time"
-
-	"github.com/whosgotch/kolo/internal/agent"
-	"github.com/whosgotch/kolo/internal/relay"
-	"github.com/whosgotch/kolo/internal/server"
-	hostterm "golang.org/x/term"
+	"sort"
 )
 
-// fallbackCols and fallbackRows are used when the host's terminal has no size
-// to report, which happens when kolo's own output is redirected.
-const (
-	fallbackCols = 120
-	fallbackRows = 40
-)
+// version is reported to the hub, so that a member running something ancient
+// can be identified as such rather than guessed at.
+const version = "dev"
 
-// port 0 asks the operating system for a free one, which keeps a second kolo
-// session from colliding with the first.
-var port = flag.Int("port", 0, "localhost port for the viewer")
+var commands = map[string]struct {
+	run   func([]string) error
+	brief string
+}{
+	"serve": {serveCmd, "run the hub for an org"},
+	"token": {tokenCmd, "mint a member's credentials"},
+	"run":   {runCmd, "run an agent here and join the hub"},
+	"who":   {whoCmd, "list who is connected"},
+}
 
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("kolo: ")
 
-	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: kolo [flags] <agent> [args...]")
-		flag.PrintDefaults()
-	}
-	flag.Parse()
-
-	argv := flag.Args()
-	if len(argv) == 0 {
-		flag.Usage()
+	args := os.Args[1:]
+	if len(args) == 0 {
+		usage()
 		os.Exit(2)
 	}
-	if err := run(argv); err != nil {
+	cmd, ok := commands[args[0]]
+	if !ok {
+		// `kolo claude` used to run an agent, and the muscle memory outlives
+		// the change, so say what to type rather than only that this is wrong.
+		fmt.Fprintf(os.Stderr, "kolo: no command %q\n\n", args[0])
+		fmt.Fprintf(os.Stderr, "did you mean:  kolo run %s\n\n", args[0])
+		usage()
+		os.Exit(2)
+	}
+	if err := cmd.run(args[1:]); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(argv []string) error {
-	cols, rows := hostSize()
-
-	a, err := agent.Start(argv, cols, rows)
-	if err != nil {
-		return err
+func usage() {
+	fmt.Fprintln(os.Stderr, "usage: kolo <command> [flags]")
+	fmt.Fprintln(os.Stderr)
+	names := make([]string, 0, len(commands))
+	for name := range commands {
+		names = append(names, name)
 	}
-	defer a.Close()
-
-	hub := server.NewHub(cols, rows)
-
-	// Guests' lines go to the queue, never straight to the agent. The queue
-	// asks the hub what is on screen and releases a line only while the agent
-	// is idle at its input box (internal/relay, internal/detect).
-	guests := relay.New(a, hub.State)
-	srv, err := server.Listen(hub, *port, func(nickname, text string) error {
-		m, err := guests.Submit(nickname, text)
-		if err != nil {
-			return err
-		}
-		hub.Announce(queued{"queued", m.ID, m.Nickname, m.Text, len(guests.Pending())})
-		return nil
-	})
-	if err != nil {
-		return err
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Fprintf(os.Stderr, "  %-7s %s\n", name, commands[name].brief)
 	}
-	defer srv.Close()
-	go func() {
-		if err := srv.Serve(); err != nil {
-			log.Printf("server: %v", err)
-		}
-	}()
-
-	// Printed before raw mode, while the terminal still ends lines by itself.
-	fmt.Printf("session live: %s\n", srv.URL())
-
-	restore, err := rawMode()
-	if err != nil {
-		return err
-	}
-	defer restore()
-
-	stopResize := watchResize(a, hub)
-	defer stopResize()
-
-	stopRelay := watchQueue(guests, hub)
-	defer stopRelay()
-
-	// The host's keystrokes go straight through. This goroutine outlives the
-	// function: a read already blocked on the terminal cannot be cancelled, and
-	// the process is exiting anyway.
-	go io.Copy(a, os.Stdin)
-
-	// Fan the agent's output out to the host and to the virtual terminal. This
-	// returns when the agent exits and its PTY closes, which a PTY master
-	// reports as an error rather than EOF, so the error is the ordinary path.
-	io.Copy(io.MultiWriter(os.Stdout, hub), a)
-
-	// The agent's own non-zero exit is not kolo failing.
-	var exit *exec.ExitError
-	if err := a.Wait(); err != nil && !errors.As(err, &exit) {
-		return err
-	}
-	return nil
-}
-
-// rawMode hands the host's terminal to the agent: no echo, no line buffering,
-// and no signals raised from keystrokes, so that a Ctrl-C is delivered to the
-// agent as a byte instead of killing kolo out from under it.
-//
-// It is a no-op when stdin is not a terminal, which keeps kolo usable in a pipe.
-func rawMode() (restore func(), err error) {
-	fd := int(os.Stdin.Fd())
-	if !hostterm.IsTerminal(fd) {
-		return func() {}, nil
-	}
-	prev, err := hostterm.MakeRaw(fd)
-	if err != nil {
-		return nil, err
-	}
-	return func() { hostterm.Restore(fd, prev) }, nil
-}
-
-func hostSize() (cols, rows int) {
-	cols, rows, err := hostterm.GetSize(int(os.Stdout.Fd()))
-	if err != nil || cols <= 0 || rows <= 0 {
-		return fallbackCols, fallbackRows
-	}
-	return cols, rows
-}
-
-// queued and sent are what a guest is told about their own message. A guest
-// whose line is being held should see that it is waiting rather than watch it
-// vanish, which is what happened in Milestone 0 (docs/probe-findings.md #5).
-type queued struct {
-	Type     string `json:"type"`
-	ID       int    `json:"id"`
-	Nickname string `json:"nickname"`
-	Text     string `json:"text"`
-	Pending  int    `json:"pending"`
-}
-
-type sent struct {
-	Type    string `json:"type"`
-	ID      int    `json:"id"`
-	Pending int    `json:"pending"`
-}
-
-// watchQueue gives the queue a chance to release a line, often enough to feel
-// immediate and rarely enough to cost nothing.
-//
-// Polling is the honest mechanism here: what the queue waits on is the agent's
-// screen settling back to its input box, and no event announces that.
-func watchQueue(guests *relay.Relay, hub *server.Hub) (stop func()) {
-	done := make(chan struct{})
-	go func() {
-		tick := time.NewTicker(200 * time.Millisecond)
-		defer tick.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-tick.C:
-				m, err := guests.Tick()
-				if err != nil {
-					log.Printf("relay: %v", err)
-					continue
-				}
-				if m != nil {
-					hub.Announce(sent{"sent", m.ID, len(guests.Pending())})
-				}
-			}
-		}
-	}()
-	return func() { close(done) }
-}
-
-// watchResize keeps the agent and the virtual terminal the same size as the
-// host's, so that what a viewer is shown matches what the host sees.
-func watchResize(a *agent.Agent, hub *server.Hub) (stop func()) {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGWINCH)
-	go func() {
-		for range ch {
-			cols, rows := hostSize()
-			if err := a.Resize(cols, rows); err != nil {
-				log.Printf("resize: %v", err)
-			}
-			hub.Resize(cols, rows)
-		}
-	}()
-	return func() { signal.Stop(ch) }
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "kolo <command> -h for a command's flags")
 }
