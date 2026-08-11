@@ -18,8 +18,10 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/whosgotch/kolo/internal/agent"
+	"github.com/whosgotch/kolo/internal/relay"
 	"github.com/whosgotch/kolo/internal/server"
 	hostterm "golang.org/x/term"
 )
@@ -65,7 +67,19 @@ func run(argv []string) error {
 	defer a.Close()
 
 	hub := server.NewHub(cols, rows)
-	srv, err := server.Listen(hub, *port)
+
+	// Guests' lines go to the queue, never straight to the agent. The queue
+	// asks the hub what is on screen and releases a line only while the agent
+	// is idle at its input box (internal/relay, internal/detect).
+	guests := relay.New(a, hub.State)
+	srv, err := server.Listen(hub, *port, func(nickname, text string) error {
+		m, err := guests.Submit(nickname, text)
+		if err != nil {
+			return err
+		}
+		hub.Announce(queued{"queued", m.ID, m.Nickname, m.Text, len(guests.Pending())})
+		return nil
+	})
 	if err != nil {
 		return err
 	}
@@ -87,6 +101,9 @@ func run(argv []string) error {
 
 	stopResize := watchResize(a, hub)
 	defer stopResize()
+
+	stopRelay := watchQueue(guests, hub)
+	defer stopRelay()
 
 	// The host's keystrokes go straight through. This goroutine outlives the
 	// function: a read already blocked on the terminal cannot be cancelled, and
@@ -129,6 +146,52 @@ func hostSize() (cols, rows int) {
 		return fallbackCols, fallbackRows
 	}
 	return cols, rows
+}
+
+// queued and sent are what a guest is told about their own message. A guest
+// whose line is being held should see that it is waiting rather than watch it
+// vanish, which is what happened in Milestone 0 (docs/probe-findings.md #5).
+type queued struct {
+	Type     string `json:"type"`
+	ID       int    `json:"id"`
+	Nickname string `json:"nickname"`
+	Text     string `json:"text"`
+	Pending  int    `json:"pending"`
+}
+
+type sent struct {
+	Type    string `json:"type"`
+	ID      int    `json:"id"`
+	Pending int    `json:"pending"`
+}
+
+// watchQueue gives the queue a chance to release a line, often enough to feel
+// immediate and rarely enough to cost nothing.
+//
+// Polling is the honest mechanism here: what the queue waits on is the agent's
+// screen settling back to its input box, and no event announces that.
+func watchQueue(guests *relay.Relay, hub *server.Hub) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		tick := time.NewTicker(200 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-tick.C:
+				m, err := guests.Tick()
+				if err != nil {
+					log.Printf("relay: %v", err)
+					continue
+				}
+				if m != nil {
+					hub.Announce(sent{"sent", m.ID, len(guests.Pending())})
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
 }
 
 // watchResize keeps the agent and the virtual terminal the same size as the
