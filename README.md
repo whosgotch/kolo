@@ -40,8 +40,17 @@ and send it messages, over localhost.
 
 ```
 $ go build -o kolo ./cmd/kolo
-$ ./kolo claude
-session live: http://127.0.0.1:54321/
+$ ./kolo run claude
+session live: http://127.0.0.1:54321/s/xR3f…
+```
+
+Add `-lan` and the session is reachable from any machine on your network, which
+is how you use the agent on your desktop from your laptop:
+
+```
+$ ./kolo run -lan claude
+session live: http://192.168.0.244:7350/s/xR3f…
+  anyone on your network who has that link can watch this agent and send it messages
 ```
 
 The agent runs as it always does — the terminal is still yours, keystrokes and
@@ -62,5 +71,7 @@ Run `go test ./...` for the test suite. Some tests replay recorded agent
 sessions; `KOLO_RAW=<capture> go test ./internal/term` points them at your own.
 
 > **Security:** an agent edits files and runs commands on the machine it runs on,
-> with that user's permissions. Today's link is localhost-only and has no
-> authentication of any kind — do not expose it. Identity arrives with the hub.
+> with that user's permissions. The secret in the link is the whole of the access
+> control, and with `-lan` it travels over the network unencrypted — fine on your
+> own wifi, not on one you share with strangers. Share the link only with people
+> you would hand the keyboard to.
