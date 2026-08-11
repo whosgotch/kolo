@@ -17,6 +17,7 @@ import (
 	"github.com/whosgotch/kolo/internal/link"
 	"github.com/whosgotch/kolo/internal/relay"
 	"github.com/whosgotch/kolo/internal/server"
+	"github.com/whosgotch/kolo/internal/session"
 	hostterm "golang.org/x/term"
 )
 
@@ -71,22 +72,22 @@ func run(argv []string, port int, lan bool, hubURL, token string) error {
 	}
 	defer a.Close()
 
-	hub := server.NewHub(cols, rows)
+	live := session.New(cols, rows)
 
 	// Guests' lines go to the queue, never straight to the agent. The queue
 	// asks the hub what is on screen and releases a line only while the agent
 	// is idle at its input box (internal/relay, internal/detect).
-	guests := relay.New(a, hub.State)
+	guests := relay.New(a, live.State)
 	host := "127.0.0.1"
 	if lan {
 		host = "0.0.0.0"
 	}
-	srv, err := server.Listen(hub, host, port, func(nickname, text string) error {
+	srv, err := server.Listen(live, host, port, func(nickname, text string) error {
 		m, err := guests.Submit(nickname, text)
 		if err != nil {
 			return err
 		}
-		hub.Announce(queued{"queued", m.ID, m.Nickname, m.Text, len(guests.Pending())})
+		live.Announce(queued{"queued", m.ID, m.Nickname, m.Text, len(guests.Pending())})
 		return nil
 	})
 	if err != nil {
@@ -118,10 +119,10 @@ func run(argv []string, port int, lan bool, hubURL, token string) error {
 	}
 	defer restore()
 
-	stopResize := watchResize(a, hub)
+	stopResize := watchResize(a, live)
 	defer stopResize()
 
-	stopRelay := watchQueue(guests, hub)
+	stopRelay := watchQueue(guests, live)
 	defer stopRelay()
 
 	// The host's keystrokes go straight through. This goroutine outlives the
@@ -132,7 +133,7 @@ func run(argv []string, port int, lan bool, hubURL, token string) error {
 	// Fan the agent's output out to the host and to the virtual terminal. This
 	// returns when the agent exits and its PTY closes, which a PTY master
 	// reports as an error rather than EOF, so the error is the ordinary path.
-	io.Copy(io.MultiWriter(os.Stdout, hub), a)
+	io.Copy(io.MultiWriter(os.Stdout, live), a)
 
 	// The agent's own non-zero exit is not kolo failing.
 	var exit *exec.ExitError
@@ -216,7 +217,7 @@ type sent struct {
 //
 // Polling is the honest mechanism here: what the queue waits on is the agent's
 // screen settling back to its input box, and no event announces that.
-func watchQueue(guests *relay.Relay, hub *server.Hub) (stop func()) {
+func watchQueue(guests *relay.Relay, live *session.Session) (stop func()) {
 	done := make(chan struct{})
 	go func() {
 		tick := time.NewTicker(200 * time.Millisecond)
@@ -232,7 +233,7 @@ func watchQueue(guests *relay.Relay, hub *server.Hub) (stop func()) {
 					continue
 				}
 				if m != nil {
-					hub.Announce(sent{"sent", m.ID, len(guests.Pending())})
+					live.Announce(sent{"sent", m.ID, len(guests.Pending())})
 				}
 			}
 		}
@@ -242,7 +243,7 @@ func watchQueue(guests *relay.Relay, hub *server.Hub) (stop func()) {
 
 // watchResize keeps the agent and the virtual terminal the same size as the
 // host's, so that what a viewer is shown matches what the host sees.
-func watchResize(a *agent.Agent, hub *server.Hub) (stop func()) {
+func watchResize(a *agent.Agent, live *session.Session) (stop func()) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
 	go func() {
@@ -251,7 +252,7 @@ func watchResize(a *agent.Agent, hub *server.Hub) (stop func()) {
 			if err := a.Resize(cols, rows); err != nil {
 				log.Printf("resize: %v", err)
 			}
-			hub.Resize(cols, rows)
+			live.Resize(cols, rows)
 		}
 	}()
 	return func() { signal.Stop(ch) }

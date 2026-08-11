@@ -1,5 +1,10 @@
-// Package server streams the agent's terminal to a viewer in the browser.
-package server
+// Package session holds one agent's screen and the viewers watching it.
+//
+// It is used twice over: by the viewer an agent serves on its own machine, and
+// by the hub, which holds a session for each agent connected to the org. Both
+// need the same thing — a screen kept current, a way to catch somebody up to it,
+// and a fan-out of what happens next — so both use this.
+package session
 
 import (
 	"encoding/json"
@@ -20,13 +25,13 @@ type Message struct {
 	Data    []byte
 }
 
-// Hub owns the virtual terminal and fans the agent's output out to the viewers.
+// Session owns the virtual terminal and fans the agent's output out to the viewers.
 //
 // Every viewer gets its own subscription. An earlier version allowed one at a
 // time and let a new connection take over from the old, which was wrong twice
 // over: guests are meant to watch together, and a page that reconnects on its
 // own turns a takeover into two viewers knocking each other offline in a loop.
-type Hub struct {
+type Session struct {
 	mu     sync.Mutex
 	screen *term.Screen
 	subs   map[*subscriber]struct{}
@@ -38,26 +43,26 @@ type subscriber struct {
 }
 
 // NewHub returns a Hub whose terminal is cols x rows.
-func NewHub(cols, rows int) *Hub {
-	return &Hub{screen: term.New(cols, rows), subs: map[*subscriber]struct{}{}}
+func New(cols, rows int) *Session {
+	return &Session{screen: term.New(cols, rows), subs: map[*subscriber]struct{}{}}
 }
 
 // Viewers is how many are currently watching.
-func (h *Hub) Viewers() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.subs)
+func (s *Session) Viewers() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.subs)
 }
 
 // Write feeds agent output into the virtual terminal and on to the viewers. It
 // never fails and never blocks on a viewer: this sits in the path between the
 // agent and the host's own terminal, so stalling here would stall the host.
-func (h *Hub) Write(p []byte) (int, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+func (s *Session) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	h.screen.Write(p)
-	h.send(Message{Data: append([]byte(nil), p...)})
+	s.screen.Write(p)
+	s.send(Message{Data: append([]byte(nil), p...)})
 	return len(p), nil
 }
 
@@ -65,31 +70,31 @@ func (h *Hub) Write(p []byte) (int, error) {
 // It is what the relay asks before releasing anything, so it reads the same
 // screen the viewer is looking at rather than a second, separately maintained
 // one.
-func (h *Hub) State() detect.State {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return detect.Of(h.screen.Text())
+func (s *Session) State() detect.State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return detect.Of(s.screen.Text())
 }
 
 // Announce sends the viewer a control frame describing something that happened
 // to a guest's message.
-func (h *Hub) Announce(event any) {
+func (s *Session) Announce(event any) {
 	b, err := json.Marshal(event)
 	if err != nil {
 		return
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.send(Message{Control: true, Data: b})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.send(Message{Control: true, Data: b})
 }
 
 // Resize follows the host's terminal and tells the viewer to match.
-func (h *Hub) Resize(cols, rows int) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+func (s *Session) Resize(cols, rows int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	h.screen.Resize(cols, rows)
-	h.send(sizeMessage(cols, rows))
+	s.screen.Resize(cols, rows)
+	s.send(sizeMessage(cols, rows))
 }
 
 // Subscribe adds a viewer and returns everything it needs to start: the size, a
@@ -100,20 +105,20 @@ func (h *Hub) Resize(cols, rows int) {
 // with Write. Any gap between them would show up as terminal output the viewer
 // either never receives or receives twice, and neither is recoverable — a
 // half-applied escape sequence corrupts the screen from then on.
-func (h *Hub) Subscribe() (backlog []Message, stream <-chan Message, cancel func()) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+func (s *Session) Subscribe() (backlog []Message, stream <-chan Message, cancel func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	s := &subscriber{ch: make(chan Message, viewerBuffer)}
-	h.subs[s] = struct{}{}
+	sub := &subscriber{ch: make(chan Message, viewerBuffer)}
+	s.subs[sub] = struct{}{}
 
-	cols, rows := h.screen.Size()
-	backlog = []Message{sizeMessage(cols, rows), {Data: h.screen.Snapshot()}}
+	cols, rows := s.screen.Size()
+	backlog = []Message{sizeMessage(cols, rows), {Data: s.screen.Snapshot()}}
 
-	return backlog, s.ch, func() {
-		h.mu.Lock()
-		defer h.mu.Unlock()
-		h.drop(s)
+	return backlog, sub.ch, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.drop(sub)
 	}
 }
 
@@ -123,24 +128,24 @@ func (h *Hub) Subscribe() (backlog []Message, stream <-chan Message, cancel func
 // costs that viewer a reconnect and a fresh snapshot, and costs the others
 // nothing.
 //
-// Callers must hold h.mu.
-func (h *Hub) send(m Message) {
-	for s := range h.subs {
+// Callers must hold s.mu.
+func (s *Session) send(m Message) {
+	for sub := range s.subs {
 		select {
-		case s.ch <- m:
+		case sub.ch <- m:
 		default:
-			h.drop(s)
+			s.drop(sub)
 		}
 	}
 }
 
-// drop disconnects one viewer. Callers must hold h.mu.
-func (h *Hub) drop(s *subscriber) {
-	if !s.closed {
-		s.closed = true
-		close(s.ch)
+// drop disconnects one viewer. Callers must hold s.mu.
+func (s *Session) drop(sub *subscriber) {
+	if !sub.closed {
+		sub.closed = true
+		close(sub.ch)
 	}
-	delete(h.subs, s)
+	delete(s.subs, sub)
 }
 
 func sizeMessage(cols, rows int) Message {

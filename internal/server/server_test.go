@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/session"
 )
 
-func serve(t *testing.T, hub *Hub, guest Guest) *Server {
+func serve(t *testing.T, sess *session.Session, guest Guest) *Server {
 	t.Helper()
-	srv, err := Listen(hub, "127.0.0.1", 0, guest)
+	srv, err := Listen(sess, "127.0.0.1", 0, guest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,9 +34,9 @@ func dial(t *testing.T, ctx context.Context, srv *Server) *websocket.Conn {
 }
 
 func TestServeCatchesAViewerUp(t *testing.T) {
-	hub := NewHub(80, 24)
-	hub.Write([]byte("already on screen"))
-	srv := serve(t, hub, nil)
+	sess := session.New(80, 24)
+	sess.Write([]byte("already on screen"))
+	srv := serve(t, sess, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -56,7 +57,7 @@ func TestServeCatchesAViewerUp(t *testing.T) {
 		t.Errorf("second frame = %v, want a snapshot carrying the screen", kind)
 	}
 
-	hub.Write([]byte("and then this"))
+	sess.Write([]byte("and then this"))
 	if kind, data, err = conn.Read(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +72,7 @@ func TestServeCatchesAViewerUp(t *testing.T) {
 func TestGuestMessageReachesTheQueue(t *testing.T) {
 	type got struct{ nickname, text string }
 	received := make(chan got, 1)
-	srv := serve(t, NewHub(80, 24), func(nickname, text string) error {
+	srv := serve(t, session.New(80, 24), func(nickname, text string) error {
 		received <- got{nickname, text}
 		return nil
 	})
@@ -98,7 +99,7 @@ func TestGuestMessageReachesTheQueue(t *testing.T) {
 // is the agent's language. Bytes from a browser are never passed through.
 func TestBinaryFromAViewerIsIgnored(t *testing.T) {
 	called := make(chan struct{}, 1)
-	srv := serve(t, NewHub(80, 24), func(string, string) error {
+	srv := serve(t, session.New(80, 24), func(string, string) error {
 		called <- struct{}{}
 		return nil
 	})
@@ -120,7 +121,7 @@ func TestBinaryFromAViewerIsIgnored(t *testing.T) {
 // TestWatchOnlySessionRefusesMessages covers a server built without a queue:
 // the message is refused and the viewer is told, rather than silently dropped.
 func TestWatchOnlySessionRefusesMessages(t *testing.T) {
-	srv := serve(t, NewHub(80, 24), nil)
+	srv := serve(t, session.New(80, 24), nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -145,7 +146,7 @@ func TestWatchOnlySessionRefusesMessages(t *testing.T) {
 }
 
 func TestServesTheViewerPage(t *testing.T) {
-	srv := serve(t, NewHub(80, 24), nil)
+	srv := serve(t, session.New(80, 24), nil)
 
 	for _, path := range []string{srv.URL(), srv.Base() + "/assets/xterm.js", srv.Base() + "/assets/xterm.css"} {
 		resp, err := http.Get(path)
@@ -167,7 +168,7 @@ func TestServesTheViewerPage(t *testing.T) {
 // listens on a network: a link without the right secret must look exactly like
 // an address that was never a session.
 func TestTheSecretIsTheDoor(t *testing.T) {
-	srv := serve(t, NewHub(80, 24), nil)
+	srv := serve(t, session.New(80, 24), nil)
 	base := srv.Base()
 
 	for name, path := range map[string]string{
@@ -193,7 +194,7 @@ func TestTheSecretIsTheDoor(t *testing.T) {
 // TestTheStreamNeedsTheSecretToo keeps the door from being walked around: the
 // page is not the only way in.
 func TestTheStreamNeedsTheSecretToo(t *testing.T) {
-	srv := serve(t, NewHub(80, 24), nil)
+	srv := serve(t, session.New(80, 24), nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

@@ -1,3 +1,5 @@
+// Package server is the viewer an agent serves on its own machine, reachable at
+// an address only somebody holding its secret can open.
 package server
 
 import (
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/session"
 	"github.com/whosgotch/kolo/internal/ui"
 )
 
@@ -30,10 +33,10 @@ type Guest func(nickname, text string) error
 
 // Server streams a Hub to browsers over a WebSocket.
 type Server struct {
-	hub   *Hub
-	guest Guest
-	ln    net.Listener
-	srv   *http.Server
+	session *session.Session
+	guest   Guest
+	ln      net.Listener
+	srv     *http.Server
 
 	// secret makes the session's address unguessable. It is the whole of the
 	// access control: anyone holding the link can watch the agent and send it
@@ -51,7 +54,7 @@ type Server struct {
 //
 // guest may be nil, which makes the session watch-only: messages are refused
 // rather than queued.
-func Listen(hub *Hub, host string, port int, guest Guest) (*Server, error) {
+func Listen(sess *session.Session, host string, port int, guest Guest) (*Server, error) {
 	ln, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
 	if err != nil {
 		return nil, fmt.Errorf("server: listen: %w", err)
@@ -61,7 +64,7 @@ func Listen(hub *Hub, host string, port int, guest Guest) (*Server, error) {
 		ln.Close()
 		return nil, err
 	}
-	s := &Server{hub: hub, guest: guest, ln: ln, secret: secret}
+	s := &Server{session: sess, guest: guest, ln: ln, secret: secret}
 
 	mux := http.NewServeMux()
 	// The page and the stream sit behind the secret. The assets do not: they
@@ -187,7 +190,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// its turn behind the terminal stream.
 	go s.read(ctx, cancel, conn)
 
-	backlog, stream, unsubscribe := s.hub.Subscribe()
+	backlog, stream, unsubscribe := s.session.Subscribe()
 	defer unsubscribe()
 
 	for _, m := range backlog {
@@ -229,15 +232,15 @@ func (s *Server) read(ctx context.Context, cancel context.CancelFunc, conn *webs
 
 		var msg inbound
 		if err := json.Unmarshal(data, &msg); err != nil || msg.Type != "message" {
-			s.hub.Announce(problem{"error", "message not understood"})
+			s.session.Announce(problem{"error", "message not understood"})
 			continue
 		}
 		if s.guest == nil {
-			s.hub.Announce(problem{"error", "this session is watch-only"})
+			s.session.Announce(problem{"error", "this session is watch-only"})
 			continue
 		}
 		if err := s.guest(msg.Nickname, msg.Text); err != nil {
-			s.hub.Announce(problem{"error", err.Error()})
+			s.session.Announce(problem{"error", err.Error()})
 		}
 	}
 }
@@ -249,7 +252,7 @@ type problem struct {
 
 // send writes one message: control frames as text, terminal output as binary,
 // so the viewer can tell them apart without inspecting the payload.
-func send(ctx context.Context, conn *websocket.Conn, m Message) error {
+func send(ctx context.Context, conn *websocket.Conn, m session.Message) error {
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
 

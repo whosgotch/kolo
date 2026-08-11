@@ -1,4 +1,4 @@
-package server
+package session
 
 import (
 	"bytes"
@@ -11,10 +11,10 @@ import (
 )
 
 func TestSubscribeSendsSizeThenSnapshot(t *testing.T) {
-	h := NewHub(80, 24)
-	h.Write([]byte("hello viewer"))
+	s := New(80, 24)
+	s.Write([]byte("hello viewer"))
 
-	backlog, _, cancel := h.Subscribe()
+	backlog, _, cancel := s.Subscribe()
 	defer cancel()
 
 	if len(backlog) != 2 {
@@ -42,11 +42,11 @@ func TestSubscribeSendsSizeThenSnapshot(t *testing.T) {
 }
 
 func TestWriteReachesTheViewer(t *testing.T) {
-	h := NewHub(80, 24)
-	_, stream, cancel := h.Subscribe()
+	s := New(80, 24)
+	_, stream, cancel := s.Subscribe()
 	defer cancel()
 
-	h.Write([]byte("live output"))
+	s.Write([]byte("live output"))
 	select {
 	case m := <-stream:
 		if string(m.Data) != "live output" {
@@ -64,13 +64,13 @@ func TestWriteReachesTheViewer(t *testing.T) {
 //
 // Run with -race for the other half of the guarantee.
 func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
-	h := NewHub(80, 24)
+	s := New(80, 24)
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for i := range 400 {
-			h.Write(fmt.Appendf(nil, "\x1b[%d;1H\x1b[3%dmline %03d\x1b[0m", i%24+1, i%8, i))
+			s.Write(fmt.Appendf(nil, "\x1b[%d;1H\x1b[3%dmline %03d\x1b[0m", i%24+1, i%8, i))
 			if i%50 == 0 {
 				time.Sleep(time.Millisecond)
 			}
@@ -79,7 +79,7 @@ func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
 
 	// Join mid-flight, which is the case that matters.
 	time.Sleep(2 * time.Millisecond)
-	backlog, stream, cancel := h.Subscribe()
+	backlog, stream, cancel := s.Subscribe()
 
 	viewer := term.New(80, 24)
 	for _, m := range backlog {
@@ -104,7 +104,7 @@ func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
 	cancel()
 	<-drained
 
-	if got, want := viewer.Snapshot(), h.screen.Snapshot(); !bytes.Equal(got, want) {
+	if got, want := viewer.Snapshot(), s.screen.Snapshot(); !bytes.Equal(got, want) {
 		t.Errorf("viewer screen diverged from the host's\n got: %q\nwant: %q", got, want)
 	}
 }
@@ -114,18 +114,18 @@ func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
 // earlier take-over rule got wrong — with pages that reconnect on their own, it
 // left two viewers knocking each other offline forever.
 func TestViewersWatchTogether(t *testing.T) {
-	h := NewHub(80, 24)
-	_, first, cancelFirst := h.Subscribe()
+	s := New(80, 24)
+	_, first, cancelFirst := s.Subscribe()
 	defer cancelFirst()
 
-	_, second, cancelSecond := h.Subscribe()
+	_, second, cancelSecond := s.Subscribe()
 	defer cancelSecond()
 
-	if got := h.Viewers(); got != 2 {
+	if got := s.Viewers(); got != 2 {
 		t.Fatalf("Viewers() = %d, want 2", got)
 	}
 
-	h.Write([]byte("x"))
+	s.Write([]byte("x"))
 	for name, stream := range map[string]<-chan Message{"first": first, "second": second} {
 		select {
 		case m := <-stream:
@@ -141,22 +141,22 @@ func TestViewersWatchTogether(t *testing.T) {
 // TestOneViewerLeavingLeavesTheRest covers the other half: a viewer dropped for
 // falling behind must not take the others with it.
 func TestOneViewerLeavingLeavesTheRest(t *testing.T) {
-	h := NewHub(80, 24)
-	_, slow, cancelSlow := h.Subscribe()
+	s := New(80, 24)
+	_, slow, cancelSlow := s.Subscribe()
 	defer cancelSlow()
-	_, keen, cancelKeen := h.Subscribe()
+	_, keen, cancelKeen := s.Subscribe()
 	defer cancelKeen()
 
 	// Overflow the slow viewer without ever reading from it.
 	for range viewerBuffer + 10 {
-		h.Write([]byte("x"))
+		s.Write([]byte("x"))
 		select {
 		case <-keen:
 		default:
 		}
 	}
-	if h.Viewers() != 1 {
-		t.Errorf("Viewers() = %d, want the slow one dropped and the other kept", h.Viewers())
+	if s.Viewers() != 1 {
+		t.Errorf("Viewers() = %d, want the slow one dropped and the other kept", s.Viewers())
 	}
 
 	drain(slow)
@@ -165,7 +165,7 @@ func TestOneViewerLeavingLeavesTheRest(t *testing.T) {
 	}
 
 	drain(keen)
-	h.Write([]byte("later"))
+	s.Write([]byte("later"))
 	select {
 	case m, open := <-keen:
 		if !open {
@@ -195,12 +195,12 @@ func drain(ch <-chan Message) {
 // TestSlowViewerIsDropped pins the overflow policy: the viewer is disconnected,
 // not served a stream with a hole in it, and the agent is never held up.
 func TestSlowViewerIsDropped(t *testing.T) {
-	h := NewHub(80, 24)
-	_, stream, cancel := h.Subscribe()
+	s := New(80, 24)
+	_, stream, cancel := s.Subscribe()
 	defer cancel()
 
 	for range viewerBuffer + 10 {
-		h.Write([]byte("x"))
+		s.Write([]byte("x"))
 	}
 
 	for range viewerBuffer {
@@ -214,11 +214,11 @@ func TestSlowViewerIsDropped(t *testing.T) {
 }
 
 func TestResizeTellsTheViewer(t *testing.T) {
-	h := NewHub(80, 24)
-	_, stream, cancel := h.Subscribe()
+	s := New(80, 24)
+	_, stream, cancel := s.Subscribe()
 	defer cancel()
 
-	h.Resize(100, 30)
+	s.Resize(100, 30)
 	select {
 	case m := <-stream:
 		if !m.Control || !bytes.Contains(m.Data, []byte(`"cols":100`)) {
@@ -227,7 +227,7 @@ func TestResizeTellsTheViewer(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("resize was not announced")
 	}
-	if cols, rows := h.screen.Size(); cols != 100 || rows != 30 {
+	if cols, rows := s.screen.Size(); cols != 100 || rows != 30 {
 		t.Errorf("screen is %dx%d, want 100x30", cols, rows)
 	}
 }
