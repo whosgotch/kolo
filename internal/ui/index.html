@@ -20,6 +20,7 @@
 <div id="status">connecting</div>
 <div id="term"></div>
 <script src="/assets/xterm.js"></script>
+<script src="/assets/addon-canvas.js"></script>
 <script>
 // The viewer renders the agent's terminal from its raw output. The size and a
 // repaint of the screen arrive first, so a page opened mid-session starts from
@@ -33,9 +34,22 @@ const term = new Terminal({
   cursorBlink: false,
   fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
   fontSize: 13,
+  // Draw box drawing and block glyphs rather than asking the font for them.
+  customGlyphs: true,
   theme: { background: '#000000' },
 });
 term.open(document.getElementById('term'));
+
+// The default DOM renderer sets block glyphs in whatever font the browser
+// picks, which leaves seams between the quadrants an agent's pixel art is built
+// from. The canvas renderer honours customGlyphs and draws them itself, the way
+// a real terminal does. It is an enhancement, not a requirement: if the addon
+// cannot start, the DOM renderer still shows the session.
+try {
+  term.loadAddon(new CanvasAddon.CanvasAddon());
+} catch (e) {
+  console.warn('canvas renderer unavailable, falling back to the DOM', e);
+}
 
 function connect() {
   const ws = new WebSocket(`ws://${location.host}/ws`);
