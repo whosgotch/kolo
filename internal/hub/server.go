@@ -1,65 +1,34 @@
 package hub
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strings"
-	"time"
-
-	"github.com/coder/websocket"
 )
 
-// helloTimeout bounds how long a connection may stay open without saying who it
-// is. A socket that opens and then says nothing costs a goroutine and an entry
-// in nobody's presence list.
-const helloTimeout = 10 * time.Second
-
-// Server is the hub: it answers agents dialling in and questions about who is
-// connected.
+// Server is the hub: the org, and the routes that let members and hosts reach it.
 type Server struct {
-	org      *Org
-	presence *Presence
-	ln       net.Listener
-	srv      *http.Server
-
-	// ctx is cancelled by Close, which is the only thing that reaches an agent
-	// connection. net/http does not: a websocket has been hijacked out of the
-	// server's hands, and Close neither knows about it nor waits for it. Reads
-	// take this context so that shutting the hub down actually disconnects
-	// people, instead of leaving them blocked on a socket to a hub that is gone.
-	ctx    context.Context
-	cancel context.CancelFunc
+	org *Org
+	ln  net.Listener
+	srv *http.Server
 }
 
-// Listen binds addr and prepares to serve. addr is a host:port; use a host of
-// 0.0.0.0 to accept connections from other machines.
+// Listen binds addr, a host:port. Use a host of 0.0.0.0 to accept connections
+// from other machines.
 func Listen(org *Org, addr string) (*Server, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("hub: listen: %w", err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{org: org, presence: NewPresence(), ln: ln, ctx: ctx, cancel: cancel}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/agent", s.handleAgent)
-	mux.HandleFunc("GET /v1/presence", s.handlePresence)
-	s.srv = &http.Server{Handler: mux}
-	return s, nil
+	return &Server{org: org, ln: ln, srv: &http.Server{Handler: http.NewServeMux()}}, nil
 }
 
 // Addr is where the hub is listening, with the port resolved if one was asked
 // for by asking for zero.
 func (s *Server) Addr() string { return s.ln.Addr().String() }
 
-// Presence is who is connected.
-func (s *Server) Presence() *Presence { return s.presence }
-
-// Serve runs until Close.
 func (s *Server) Serve() error {
 	if err := s.srv.Serve(s.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -67,149 +36,16 @@ func (s *Server) Serve() error {
 	return nil
 }
 
-// Close stops serving and disconnects everyone.
-func (s *Server) Close() error {
-	s.cancel()
-	return s.srv.Close()
-}
+func (s *Server) Close() error { return s.srv.Close() }
 
 // authenticate resolves the bearer token on a request to a member.
 //
 // The token travels in a header rather than in the URL, because a URL is written
-// to the access log of every proxy between the two machines, and to the hub's
-// own. A header is not a secret channel, but it is not one that is written down
-// by default either.
+// to the access log of every proxy between the two machines, and to the hub's own.
 func (s *Server) authenticate(r *http.Request) (Member, bool) {
-	header := r.Header.Get("Authorization")
-	token, ok := strings.CutPrefix(header, "Bearer ")
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
 		return Member{}, false
 	}
-	return s.org.Verify(token)
-}
-
-// handleAgent takes a connection from a member's agent and records it as
-// present for as long as it lasts.
-func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
-	member, ok := s.authenticate(r)
-	if !ok {
-		// Refused before the upgrade, so an unauthenticated caller never gets a
-		// websocket at all, and gets an ordinary status code it can act on.
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	conn, err := websocket.Accept(w, r, nil)
-	if err != nil {
-		return
-	}
-	defer conn.CloseNow()
-
-	// Every deadline below hangs off the server's context as well as the
-	// request's, so both a client going away and the hub shutting down end this
-	// connection.
-	ctx, cancel := context.WithCancel(s.ctx)
-	defer cancel()
-	go func() {
-		select {
-		case <-r.Context().Done():
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
-
-	greeting, err := readHello(ctx, conn)
-	if err != nil {
-		conn.Close(websocket.StatusPolicyViolation, "expected a hello")
-		return
-	}
-
-	c := s.presence.Join(member, greeting.Agent, greeting.Machine)
-	defer s.presence.Leave(c.ID)
-
-	if err := writeJSON(ctx, conn, welcome{
-		Type:       "welcome",
-		Org:        s.org.Name,
-		Member:     member.Person(),
-		Connection: c.ID,
-	}); err != nil {
-		return
-	}
-
-	// Nothing else is exchanged yet. The read keeps the connection honest —
-	// it ends when the agent goes away — and ignores anything it does not
-	// recognise, so an older hub meets a newer client without either breaking.
-	for {
-		if _, _, err := conn.Read(ctx); err != nil {
-			return
-		}
-	}
-}
-
-// handlePresence answers who is connected. Members may see each other; a caller
-// without a token may not.
-func (s *Server) handlePresence(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authenticate(r); !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(presenceResponse{
-		Org:         s.org.Name,
-		Connections: s.presence.List(),
-	})
-}
-
-// hello is the first thing a client sends. Everything in it describes the
-// client's own machine; who the client *is* was settled by the token.
-type hello struct {
-	Type    string `json:"type"`
-	Agent   string `json:"agent"`
-	Machine string `json:"machine"`
-	Version string `json:"version"`
-}
-
-// welcome tells a client who the hub decided it is, which is worth saying out
-// loud: it is how a member notices they are connected as somebody else.
-type welcome struct {
-	Type       string `json:"type"`
-	Org        string `json:"org"`
-	Member     Person `json:"member"`
-	Connection int64  `json:"connection"`
-}
-
-type presenceResponse struct {
-	Org         string       `json:"org"`
-	Connections []Connection `json:"connections"`
-}
-
-func readHello(ctx context.Context, conn *websocket.Conn) (hello, error) {
-	ctx, cancel := context.WithTimeout(ctx, helloTimeout)
-	defer cancel()
-
-	kind, data, err := conn.Read(ctx)
-	if err != nil {
-		return hello{}, err
-	}
-	if kind != websocket.MessageText {
-		return hello{}, fmt.Errorf("hub: hello was not text")
-	}
-	var h hello
-	if err := json.Unmarshal(data, &h); err != nil {
-		return hello{}, err
-	}
-	if h.Type != "hello" {
-		return hello{}, fmt.Errorf("hub: first message was %q", h.Type)
-	}
-	return h, nil
-}
-
-func writeJSON(ctx context.Context, conn *websocket.Conn, v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(ctx, helloTimeout)
-	defer cancel()
-	return conn.Write(ctx, websocket.MessageText, b)
+	return s.org.VerifyMember(token)
 }

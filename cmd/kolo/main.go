@@ -1,13 +1,10 @@
-// Command kolo runs a CLI AI agent and connects it to an org.
+// Command kolo runs an org's shared agents.
 //
 //	kolo serve     the hub an org connects to
-//	kolo token     mint a member's credentials
-//	kolo run       run an agent here, joined to the hub
-//	kolo who       who is connected
+//	kolo token     mint credentials
 //
-// An agent runs on the machine of the person using it, with their files and
-// their permissions. The hub holds who belongs to the org and who is connected;
-// it never reaches back into anyone's machine.
+// Agents run on a machine somebody lends to the org; everyone else reaches them
+// through the hub, in a browser.
 package main
 
 import (
@@ -26,9 +23,7 @@ var commands = map[string]struct {
 	brief string
 }{
 	"serve": {serveCmd, "run the hub for an org"},
-	"token": {tokenCmd, "mint a member's credentials"},
-	"run":   {runCmd, "run an agent here and join the hub"},
-	"who":   {whoCmd, "list who is connected"},
+	"token": {tokenCmd, "mint credentials"},
 }
 
 func main() {
@@ -42,10 +37,7 @@ func main() {
 	}
 	cmd, ok := commands[args[0]]
 	if !ok {
-		// `kolo claude` used to run an agent, and the muscle memory outlives
-		// the change, so say what to type rather than only that this is wrong.
 		fmt.Fprintf(os.Stderr, "kolo: no command %q\n\n", args[0])
-		fmt.Fprintf(os.Stderr, "did you mean:  kolo run %s\n\n", args[0])
 		usage()
 		os.Exit(2)
 	}
