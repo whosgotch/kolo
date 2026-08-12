@@ -10,6 +10,7 @@ import (
 
 	"github.com/whosgotch/kolo/internal/agent"
 	"github.com/whosgotch/kolo/internal/hub"
+	"github.com/whosgotch/kolo/internal/relay"
 )
 
 func agentsFixture(t *testing.T) (*Agents, string) {
@@ -219,4 +220,82 @@ func quickRestarts() func() {
 	was := restartDelay
 	restartDelay = 10 * time.Millisecond
 	return func() { restartDelay = was }
+}
+
+// fakeAgent writes a script that shows the marker the detector reads as idle and
+// then waits on stdin, so the gate can be exercised without a real agent.
+func fakeAgent(t *testing.T, dir, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, "fake-agent")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func queueOf(t *testing.T, a *Agents, name string) *relay.Relay {
+	t.Helper()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	p, ok := a.running[name]
+	if !ok {
+		t.Fatalf("%s is not running", name)
+	}
+	return p.queue
+}
+
+// TestAMessageWaitsForAnIdleScreen is the whole point of the queue. The line is
+// released only once the agent's own screen says it may be.
+func TestAMessageWaitsForAnIdleScreen(t *testing.T) {
+	dir := t.TempDir()
+	// Busy first, then idle: the message has to sit through the first state.
+	// The clear matters: a real TUI redraws its footer in place, so only one
+	// marker is ever on screen. Appending would leave both.
+	script := fakeAgent(t, dir, "printf 'esc to interrupt\\n'\nsleep 1\nprintf '\\033[2J\\033[H? for shortcuts\\n'\ncat\n")
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+
+	if err := a.Send("checkups", "Artem", "run the checkups"); err != nil {
+		t.Fatal(err)
+	}
+	queue := queueOf(t, a, "checkups")
+	if len(queue.Pending()) != 1 {
+		t.Fatal("the message was not queued")
+	}
+	waitFor(t, func() bool { return len(queue.Pending()) == 0 })
+}
+
+// TestAMessageIsHeldOnAnUnrecognisedScreen: a screen the detector does not
+// understand holds the queue rather than being guessed at.
+func TestAMessageIsHeldOnAnUnrecognisedScreen(t *testing.T) {
+	dir := t.TempDir()
+	script := fakeAgent(t, dir, "cat\n")
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+
+	if err := a.Send("checkups", "Artem", "run the checkups"); err != nil {
+		t.Fatal(err)
+	}
+	queue := queueOf(t, a, "checkups")
+	time.Sleep(10 * tick)
+	if len(queue.Pending()) != 1 {
+		t.Error("a message was sent to a screen nobody recognised")
+	}
+}
+
+func TestSendingToAnAgentThatIsNotHere(t *testing.T) {
+	a, _ := agentsFixture(t)
+	if err := a.Send("nothing", "Artem", "hello"); err == nil {
+		t.Error("accepted a message for an agent that is not running")
+	}
 }

@@ -14,7 +14,9 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/whosgotch/kolo/internal/agent"
+	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/hub"
+	"github.com/whosgotch/kolo/internal/relay"
 	"github.com/whosgotch/kolo/internal/session"
 )
 
@@ -36,6 +38,11 @@ const (
 
 // restartDelay is a variable so the tests do not have to wait it out.
 var restartDelay = time.Second
+
+// tick is how often the queue asks the screen whether it may send. Fast enough
+// that a message does not sit visibly waiting after the agent is free, slow
+// enough to be nothing next to reading a PTY.
+const tick = 200 * time.Millisecond
 
 // Agents is every agent running on this machine.
 type Agents struct {
@@ -62,6 +69,7 @@ type process struct {
 	spec     hub.Agent
 	agent    *agent.Agent
 	live     *session.Session
+	queue    *relay.Relay
 	started  time.Time
 	stopping bool
 	fails    int
@@ -137,8 +145,11 @@ func (a *Agents) launch(name string) error {
 		return fmt.Errorf("%s is no longer wanted", name)
 	}
 	live := session.New(cols, rows)
+	// The queue reads the same screen the hub is shown, so what decides when a
+	// line may be typed is looking at what everybody else is looking at.
+	queue := relay.New(started, live.State)
 	screen, closeScreen := context.WithCancel(context.Background())
-	p.agent, p.started, p.live = started, time.Now(), live
+	p.agent, p.started, p.live, p.queue = started, time.Now(), live, queue
 	a.mu.Unlock()
 
 	// The PTY has to be read or the agent blocks once its buffer fills. Reading
@@ -146,8 +157,76 @@ func (a *Agents) launch(name string) error {
 	// the hub is sent and what the queue reads before typing anything.
 	go io.Copy(live, started)
 	go a.stream(screen, name, live)
+	go a.release(screen, queue, live)
 	go a.wait(name, started, closeScreen)
 	return nil
+}
+
+// Send puts a member's line in an agent's queue. It is not typed here, however
+// idle the agent looks: everything goes through the queue, so there is one path
+// to the agent and one place that decides when it opens.
+func (a *Agents) Send(name, from, text string) error {
+	a.mu.Lock()
+	p, ok := a.running[name]
+	a.mu.Unlock()
+	if !ok || p.queue == nil {
+		return fmt.Errorf("%s is not running here", name)
+	}
+
+	m, err := p.queue.Submit(from, text)
+	if err != nil {
+		return err
+	}
+	p.live.Announce(event{
+		Type: "queued", From: m.Nickname, Text: m.Text,
+		Pending: len(p.queue.Pending()), State: p.live.State().String(),
+	})
+	return nil
+}
+
+// release gives the agent one queued line whenever its screen says it may take
+// one, and tells everyone watching what happened.
+//
+// Polling rather than waking on a change: what it is waiting for is a screen
+// arriving at a particular arrangement, which has no event to subscribe to.
+func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.Session) {
+	ticker := time.NewTicker(tick)
+	defer ticker.Stop()
+
+	was := detect.Unknown
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		// Announced on change rather than every tick, so that a page can show
+		// why a message is waiting without being told sixty times a second.
+		if now := live.State(); now != was {
+			was = now
+			live.Announce(event{Type: "state", State: now.String(), Pending: len(queue.Pending())})
+		}
+
+		m, err := queue.Tick()
+		if err != nil || m == nil {
+			continue
+		}
+		live.Announce(event{
+			Type: "sent", From: m.Nickname, Text: m.Text,
+			Pending: len(queue.Pending()), State: live.State().String(),
+		})
+	}
+}
+
+// event is what a page is told about the queue. The screen shows what the agent
+// is doing; this is what kolo is doing with what people said to it.
+type event struct {
+	Type    string `json:"type"`
+	From    string `json:"from,omitempty"`
+	Text    string `json:"text,omitempty"`
+	Pending int    `json:"pending"`
+	State   string `json:"state,omitempty"`
 }
 
 // wait watches one agent and starts it again when it goes.
@@ -392,4 +471,14 @@ func sendScreen(ctx context.Context, conn *websocket.Conn, m session.Message) er
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
 	return conn.Write(ctx, kind, m.Data)
+}
+
+// refuse tells an agent's watchers why something they sent went nowhere.
+func (a *Agents) refuse(name, reason string) {
+	a.mu.Lock()
+	p, ok := a.running[name]
+	a.mu.Unlock()
+	if ok && p.live != nil {
+		p.live.Announce(event{Type: "refused", Text: reason})
+	}
 }

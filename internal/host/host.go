@@ -146,6 +146,12 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			}
 		case "stop":
 			agents.Stop(c.Name)
+		case "message":
+			// A refusal is reported to whoever is watching that agent rather
+			// than logged here, where nobody is.
+			if err := agents.Send(c.Name, c.From, c.Text); err != nil {
+				agents.refuse(c.Name, err.Error())
+			}
 		}
 	}
 }
@@ -183,6 +189,8 @@ type welcome struct {
 type command struct {
 	Type  string    `json:"type"`
 	Name  string    `json:"name"`
+	From  string    `json:"from"`
+	Text  string    `json:"text"`
 	Agent hub.Agent `json:"agent"`
 }
 
