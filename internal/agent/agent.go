@@ -41,12 +41,14 @@ type Agent struct {
 	mu sync.Mutex
 }
 
-// Start launches argv under a PTY of the given size.
-func Start(argv []string, cols, rows int) (*Agent, error) {
+// Start launches argv in dir, under a PTY of the given size. An empty dir means
+// the current one.
+func Start(argv []string, dir string, cols, rows int) (*Agent, error) {
 	if len(argv) == 0 {
 		return nil, fmt.Errorf("agent: no command given")
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Dir = dir
 	cmd.Env = childEnv(os.Environ())
 
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})

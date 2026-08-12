@@ -147,7 +147,7 @@ func run(steps []step, script, out string, argv []string) error {
 	}
 	name := strings.TrimSuffix(filepath.Base(script), filepath.Ext(script))
 
-	a, err := agent.Start(argv, cols, rows)
+	a, err := agent.Start(argv, "", cols, rows)
 	if err != nil {
 		return err
 	}

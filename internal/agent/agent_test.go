@@ -49,7 +49,7 @@ func TestStartAppliesChildEnv(t *testing.T) {
 	t.Setenv("COLORTERM", "truecolor")
 	t.Setenv("CLAUDE_CODE_CHILD_SESSION", "1")
 
-	a, err := Start([]string{"sh", "-c", `echo "term=$TERM colorterm=[$COLORTERM] child=[$CLAUDE_CODE_CHILD_SESSION]"`}, 80, 24)
+	a, err := Start([]string{"sh", "-c", `echo "term=$TERM colorterm=[$COLORTERM] child=[$CLAUDE_CODE_CHILD_SESSION]"`}, "", 80, 24)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestStartAppliesChildEnv(t *testing.T) {
 }
 
 func TestStartSizesTheTerminal(t *testing.T) {
-	a, err := Start([]string{"sh", "-c", "stty size"}, 120, 40)
+	a, err := Start([]string{"sh", "-c", "stty size"}, "", 120, 40)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestStartSizesTheTerminal(t *testing.T) {
 }
 
 func TestResize(t *testing.T) {
-	a, err := Start([]string{"sh", "-c", "sleep 0.5; stty size"}, 80, 24)
+	a, err := Start([]string{"sh", "-c", "sleep 0.5; stty size"}, "", 80, 24)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestResize(t *testing.T) {
 }
 
 func TestWriteReachesTheAgent(t *testing.T) {
-	a, err := Start([]string{"sh", "-c", "read line; echo \"got:$line\""}, 80, 24)
+	a, err := Start([]string{"sh", "-c", "read line; echo \"got:$line\""}, "", 80, 24)
 	if err != nil {
 		t.Fatal(err)
 	}
