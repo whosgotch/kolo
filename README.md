@@ -36,25 +36,26 @@ See [docs/architecture.md](docs/architecture.md) for the shape,
 
 ## What works today
 
-Everything but the browser. A host lends a machine, the org creates agents on it
-from another machine, they survive being killed and outlive the host restarting,
-and their screens reach anyone watching.
+The loop. A host lends a machine, anyone in the org makes an agent on it from a
+browser, watches it work, and sends it messages — and the agents survive being
+killed and outlive the host restarting.
 
 ```
 $ go build -o kolo ./cmd/kolo
 $ ./kolo serve -org org.json                        # the hub
 $ ./kolo host -dir ~/work/api -allow claude         # the machine you lend
-$ curl -H "Authorization: Bearer $KOLO_TOKEN" $HUB/v1/agents
 ```
 
-Creating, listing and stopping agents is HTTP; watching one is a websocket.
-There is no page to open yet, which is the next thing.
+Everyone else opens the hub, pastes their token once, and picks an agent.
 
-The part worth reading is the queue that holds a message until the agent is idle
-at its input box. Sent a moment earlier, a message is either swallowed without
-trace or its Enter answers a question the agent was asking. See
-[docs/probe-findings.md](docs/probe-findings.md); it was found by experiment,
-not guessed at. Nothing is sent to an agent yet — that comes with the browser.
+The part worth reading is the queue that holds a message until the agent's own
+screen says it may be sent. A moment earlier and the message is either swallowed
+without trace or its Enter answers a question the agent was asking. See
+[docs/probe-findings.md](docs/probe-findings.md); every part of it was found by
+experiment, not guessed at.
+
+What is missing is the rest of using an agent without the host: answering its
+permission dialogs, interrupting it, and restarting it from the browser.
 
 An earlier single-machine version — one agent, its host at the keyboard, a
 secret in a URL — has been removed rather than kept alongside. The screen model
