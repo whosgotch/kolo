@@ -15,7 +15,7 @@ import (
 func agentsFixture(t *testing.T) (*Agents, string) {
 	t.Helper()
 	dir := t.TempDir()
-	return NewAgents([]string{dir}, []string{"cat", "true"}, ""), dir
+	return NewAgents(Config{Dirs: []string{dir}, Allow: []string{"cat", "true"}}, ""), dir
 }
 
 func spec(name, dir, command string) hub.Agent {
@@ -172,7 +172,7 @@ func TestTheStateFileBringsAgentsBack(t *testing.T) {
 	dir := t.TempDir()
 	state := filepath.Join(t.TempDir(), "agents.json")
 
-	first := NewAgents([]string{dir}, []string{"cat"}, state)
+	first := NewAgents(Config{Dirs: []string{dir}, Allow: []string{"cat"}}, state)
 	if err := first.Start(spec("checkups", dir, "cat")); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestTheStateFileBringsAgentsBack(t *testing.T) {
 		t.Fatalf("wrote %+v; who asked for it has to survive too", written)
 	}
 
-	second := NewAgents([]string{dir}, []string{"cat"}, state)
+	second := NewAgents(Config{Dirs: []string{dir}, Allow: []string{"cat"}}, state)
 	if err := second.Restore(); err != nil {
 		t.Fatal(err)
 	}

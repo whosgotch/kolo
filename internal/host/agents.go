@@ -1,17 +1,21 @@
 package host
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/whosgotch/kolo/internal/agent"
 	"github.com/whosgotch/kolo/internal/hub"
+	"github.com/whosgotch/kolo/internal/session"
 )
 
 // The screen the agents run on. Nobody is at this machine's keyboard, so there
@@ -35,8 +39,7 @@ var restartDelay = time.Second
 
 // Agents is every agent running on this machine.
 type Agents struct {
-	dirs  []string
-	allow []string
+	cfg Config
 	// state is where the running set is written, so that restarting the host
 	// brings back what the org asked for rather than an empty machine. An empty
 	// path keeps it in memory.
@@ -58,15 +61,15 @@ type Agents struct {
 type process struct {
 	spec     hub.Agent
 	agent    *agent.Agent
+	live     *session.Session
 	started  time.Time
 	stopping bool
 	fails    int
 }
 
-func NewAgents(dirs, allow []string, state string) *Agents {
+func NewAgents(cfg Config, state string) *Agents {
 	return &Agents{
-		dirs:    dirs,
-		allow:   allow,
+		cfg:     cfg,
 		state:   state,
 		running: map[string]*process{},
 		reports: make(chan any, 64),
@@ -76,10 +79,10 @@ func NewAgents(dirs, allow []string, state string) *Agents {
 // Start runs an agent, after checking it is one this machine agreed to run.
 func (a *Agents) Start(spec hub.Agent) error {
 	spec.Dir = filepath.Clean(spec.Dir)
-	if !slices.Contains(a.dirs, spec.Dir) {
+	if !slices.Contains(a.cfg.Dirs, spec.Dir) {
 		return fmt.Errorf("this machine does not lend %s", spec.Dir)
 	}
-	if !slices.Contains(a.allow, spec.Command) {
+	if !slices.Contains(a.cfg.Allow, spec.Command) {
 		return fmt.Errorf("this machine does not run %s", spec.Command)
 	}
 
@@ -133,19 +136,27 @@ func (a *Agents) launch(name string) error {
 		started.Close()
 		return fmt.Errorf("%s is no longer wanted", name)
 	}
-	p.agent, p.started = started, time.Now()
+	live := session.New(cols, rows)
+	screen, closeScreen := context.WithCancel(context.Background())
+	p.agent, p.started, p.live = started, time.Now(), live
 	a.mu.Unlock()
 
-	// The PTY has to be read or the agent blocks once its buffer fills. The
-	// screen goes to the hub from here next; until then it is drained.
-	go io.Copy(io.Discard, started)
-	go a.wait(name, started)
+	// The PTY has to be read or the agent blocks once its buffer fills. Reading
+	// it into the session is also what keeps the screen current, which is what
+	// the hub is sent and what the queue reads before typing anything.
+	go io.Copy(live, started)
+	go a.stream(screen, name, live)
+	go a.wait(name, started, closeScreen)
 	return nil
 }
 
 // wait watches one agent and starts it again when it goes.
-func (a *Agents) wait(name string, started *agent.Agent) {
+func (a *Agents) wait(name string, started *agent.Agent, closeScreen context.CancelFunc) {
 	err := started.Wait()
+	// This process\'s screen ends with it. A restart makes a new one, and
+	// whoever is watching is repainted from that rather than from the last
+	// picture of something that has gone.
+	closeScreen()
 
 	a.mu.Lock()
 	p, ok := a.running[name]
@@ -316,4 +327,69 @@ func reasonFor(err error, fallback string) string {
 		return err.Error()
 	}
 	return fallback
+}
+
+// stream keeps this agent's screen going up to the hub for as long as the
+// process lives.
+//
+// It subscribes exactly as a browser does, which is what makes reconnecting
+// safe: a subscription opens with a repaint of the screen as it stands, so a hub
+// that missed an outage is brought back to the truth rather than left with a
+// hole in the middle of an escape sequence.
+func (a *Agents) stream(ctx context.Context, name string, live *session.Session) {
+	backoff := minBackoff
+	for ctx.Err() == nil {
+		a.push(ctx, name, live)
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(jitter(backoff)):
+		}
+		backoff = min(backoff*2, maxBackoff)
+	}
+}
+
+func (a *Agents) push(ctx context.Context, name string, live *session.Session) error {
+	conn, _, err := websocket.Dial(ctx, wsURL(a.cfg.Hub)+"/v1/agent/"+name, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + a.cfg.Token}},
+	})
+	if err != nil {
+		return err
+	}
+	defer conn.CloseNow()
+
+	hello, _ := json.Marshal(map[string]any{"type": "screen", "cols": cols, "rows": rows})
+	if err := send(ctx, conn, hello); err != nil {
+		return err
+	}
+
+	backlog, updates, unsubscribe := live.Subscribe()
+	defer unsubscribe()
+
+	for _, m := range backlog {
+		if err := sendScreen(ctx, conn, m); err != nil {
+			return err
+		}
+	}
+	for m := range updates {
+		if err := sendScreen(ctx, conn, m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sendScreen puts terminal output on the wire as binary and anything kolo says
+// about it as text, so neither has to be told apart by looking inside.
+func sendScreen(ctx context.Context, conn *websocket.Conn, m session.Message) error {
+	kind := websocket.MessageBinary
+	if m.Control {
+		kind = websocket.MessageText
+	}
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	return conn.Write(ctx, kind, m.Data)
 }

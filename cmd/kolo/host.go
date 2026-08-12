@@ -63,7 +63,14 @@ func hostCmd(args []string) error {
 		dirs[i] = abs
 	}
 
-	agents := host.NewAgents(dirs, allow, *state)
+	cfg := host.Config{
+		Hub:     *hubURL,
+		Token:   *token,
+		Dirs:    dirs,
+		Allow:   allow,
+		Version: version,
+	}
+	agents := host.NewAgents(cfg, *state)
 	defer agents.StopAll()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -79,13 +86,7 @@ func hostCmd(args []string) error {
 	if names := agents.Names(); len(names) > 0 {
 		log.Printf("brought back %s", strings.Join(names, " "))
 	}
-	host.Run(ctx, host.Config{
-		Hub:     *hubURL,
-		Token:   *token,
-		Dirs:    dirs,
-		Allow:   allow,
-		Version: version,
-	}, agents, func(e host.Event) {
+	host.Run(ctx, agents, func(e host.Event) {
 		switch {
 		case e.Connected:
 			log.Printf("joined %s as %s", e.Org, e.Host)

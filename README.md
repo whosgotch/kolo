@@ -36,21 +36,25 @@ See [docs/architecture.md](docs/architecture.md) for the shape,
 
 ## What works today
 
-The foundations, and a hub that so far only knows who belongs to the org.
+Everything but the browser. A host lends a machine, the org creates agents on it
+from another machine, they survive being killed and outlive the host restarting,
+and their screens reach anyone watching.
 
 ```
 $ go build -o kolo ./cmd/kolo
-$ ./kolo token -id artem -name "Artem"
-$ ./kolo serve -org org.json
+$ ./kolo serve -org org.json                        # the hub
+$ ./kolo host -dir ~/work/api -allow claude         # the machine you lend
+$ curl -H "Authorization: Bearer $KOLO_TOKEN" $HUB/v1/agents
 ```
 
-Underneath: an agent running under a PTY, its screen modelled well enough to
-repaint someone who joins mid-session, and the queue that holds a message until
-the agent is idle at its input box. That last one is the part worth reading —
-sent a moment earlier, a message is either swallowed without trace or its Enter
-answers a question the agent was asking. See
+Creating, listing and stopping agents is HTTP; watching one is a websocket.
+There is no page to open yet, which is the next thing.
+
+The part worth reading is the queue that holds a message until the agent is idle
+at its input box. Sent a moment earlier, a message is either swallowed without
+trace or its Enter answers a question the agent was asking. See
 [docs/probe-findings.md](docs/probe-findings.md); it was found by experiment,
-not guessed at.
+not guessed at. Nothing is sent to an agent yet — that comes with the browser.
 
 An earlier single-machine version — one agent, its host at the keyboard, a
 secret in a URL — has been removed rather than kept alongside. The screen model

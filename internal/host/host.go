@@ -57,13 +57,13 @@ type Event struct {
 // reported and retried rather than returned. Agents already running keep running
 // while the hub is away; the connection is how the org reaches them, not what
 // holds them up.
-func Run(ctx context.Context, cfg Config, agents *Agents, onEvent func(Event)) {
+func Run(ctx context.Context, agents *Agents, onEvent func(Event)) {
 	if onEvent == nil {
 		onEvent = func(Event) {}
 	}
 	backoff := minBackoff
 	for ctx.Err() == nil {
-		err := connect(ctx, cfg, agents, func(w welcome) {
+		err := connect(ctx, agents.cfg, agents, func(w welcome) {
 			backoff = minBackoff
 			onEvent(Event{Connected: true, Org: w.Org, Host: w.Host})
 		})
