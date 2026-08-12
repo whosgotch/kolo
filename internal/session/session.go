@@ -122,6 +122,17 @@ func (s *Session) Subscribe() (backlog []Message, stream <-chan Message, cancel 
 	}
 }
 
+// Close ends the session and disconnects everyone watching. It is what a screen
+// going away looks like: the agent behind it has gone, or been replaced by a
+// restart, and there is nothing left to catch anyone up to.
+func (s *Session) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for sub := range s.subs {
+		s.drop(sub)
+	}
+}
+
 // send queues a message for every viewer, dropping any that has fallen too far
 // behind. Skipping bytes instead is not an option: a viewer is rendering an
 // escape-sequence stream, so a gap corrupts it permanently. Being disconnected
