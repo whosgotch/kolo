@@ -53,7 +53,12 @@
   form.create { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 20px 0 0; }
   form.create input[name=name] { width: 18ch; }
 
+  /* The section has to be a column that fills main, or the terminal grows to
+     its content and pushes the compose box off the bottom of the page. */
+  .watch { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   #term { flex: 1; min-height: 0; overflow: hidden; padding: 4px; }
+  form.compose { display: flex; gap: 8px; padding: 0 12px 12px; }
+  form.compose input { flex: 1; }
   .note { min-height: 1.4em; padding: 6px 12px; color: var(--dim); }
   .note.problem { color: var(--warn); }
   .empty { color: var(--dim); padding: 24px 0; }
@@ -105,6 +110,10 @@
   <section class="watch" hidden>
     <div id="term"></div>
     <p class="note"></p>
+    <form class="compose" autocomplete="off">
+      <input name="text" placeholder="send the agent a message" maxlength="2000" required>
+      <button type="submit">send</button>
+    </form>
   </section>
 </main>
 
@@ -294,7 +303,25 @@ function connect(name) {
       return;
     }
     const msg = JSON.parse(ev.data);
-    if (msg.type === 'size') term.resize(msg.cols, msg.rows);
+    switch (msg.type) {
+      case 'size':
+        term.resize(msg.cols, msg.rows);
+        break;
+      // A held message is the normal case rather than a failure: the agent may
+      // be working, or asking a question that Enter would answer.
+      case 'queued':
+        say('.watch', `${msg.from}: ${waiting(msg.state, msg.pending)}`);
+        break;
+      case 'sent':
+        say('.watch', msg.pending > 0 ? `sent · ${msg.pending} still waiting` : `sent ${msg.from}'s message`);
+        break;
+      case 'state':
+        say('.watch', msg.pending > 0 ? waiting(msg.state, msg.pending) : describe(msg.state));
+        break;
+      case 'refused':
+        say('.watch', msg.text, true);
+        break;
+    }
   };
 
   // Falling behind, an agent restarting, and an agent that has not started yet
@@ -307,6 +334,36 @@ function connect(name) {
   };
   ws.onerror = () => ws.close();
 }
+
+// The states come from the agent's own screen, so this says what is true rather
+// than what kolo intends.
+function describe(state) {
+  switch (state) {
+    case 'idle': return 'ready';
+    case 'busy': return 'working';
+    case 'dialog': return 'asking the org a question — answer it on screen';
+    default: return 'kolo does not recognise this screen, so nothing will be sent';
+  }
+}
+
+function waiting(state, pending) {
+  const ahead = pending > 1 ? `, ${pending} waiting` : '';
+  if (state === 'idle') return `sending${ahead}`;
+  return `waiting — the agent is ${describe(state)}${ahead}`;
+}
+
+el('.compose').onsubmit = (ev) => {
+  ev.preventDefault();
+  const input = ev.target.querySelector('[name=text]');
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    say('.watch', 'not connected', true);
+    return;
+  }
+  // Words only. Who it is from is the hub's word, taken from the connection,
+  // so there is nothing to send about that.
+  socket.send(JSON.stringify({ type: 'message', text: input.value }));
+  input.value = '';
+};
 
 // ---- routing -----------------------------------------------------------
 
