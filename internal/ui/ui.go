@@ -1,4 +1,4 @@
-// Package ui holds the viewer page, compiled into the binary.
+// Package ui holds the org's page, compiled into the binary.
 //
 // xterm.js is vendored under assets rather than pulled from a CDN: kolo is a
 // single binary a host runs locally, and a viewer that only works when a third
@@ -10,7 +10,7 @@ package ui
 
 import "embed"
 
-// FS is the viewer, ready to serve: index.html at the root, assets beneath it.
+// FS is the page, ready to serve: index.html at the root, assets beneath it.
 //
 //go:embed index.html assets
 var FS embed.FS

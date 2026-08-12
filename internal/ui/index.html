@@ -6,162 +6,332 @@
 <title>kolo</title>
 <link rel="stylesheet" href="/assets/xterm.css">
 <style>
-  html, body { margin: 0; height: 100%; background: #000; }
-  body { display: flex; flex-direction: column; }
-  #term { flex: 1; min-height: 0; overflow: hidden; }
-  #compose {
-    display: flex; gap: 8px; align-items: center;
-    padding: 8px; border-top: 1px solid #2a2a2a; background: #0d0d0d;
-    font: 13px ui-monospace, Menlo, Consolas, monospace;
+  :root {
+    --bg: #0b0b0b; --panel: #141414; --line: #262626;
+    --text: #ddd; --dim: #8a8f94; --warn: #e88; --ok: #7fb37f;
+    --mono: ui-monospace, Menlo, Consolas, monospace;
   }
-  #compose input {
-    background: #161616; color: #ddd; border: 1px solid #2a2a2a;
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+  body { display: flex; flex-direction: column; font: 13px var(--mono); }
+  /* Every display rule below would otherwise outrank the browser's own rule for
+     the hidden attribute, which is how the views are switched. */
+  [hidden] { display: none !important; }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header .org { font-weight: 600; }
+  header .spacer { flex: 1; }
+  header .who { color: var(--dim); }
+
+  button, input, select {
+    background: #1b1b1b; color: var(--text); border: 1px solid var(--line);
     border-radius: 4px; padding: 6px 8px; font: inherit;
   }
-  #nickname { width: 10ch; }
-  #text { flex: 1; }
-  #compose button {
-    background: #222; color: #ddd; border: 1px solid #2a2a2a;
-    border-radius: 4px; padding: 6px 12px; font: inherit; cursor: pointer;
-  }
-  #compose button:disabled { opacity: .5; cursor: default; }
-  #status {
-    position: fixed; top: 0; right: 0; z-index: 1;
-    padding: 2px 8px; border-bottom-left-radius: 4px;
-    font: 12px ui-monospace, Menlo, Consolas, monospace;
-    background: #1c1c1c; color: #9aa0a6;
-  }
-  #note { min-height: 1.4em; padding: 0 8px 8px; color: #9aa0a6;
-          font: 12px ui-monospace, Menlo, Consolas, monospace; }
-  #note.problem { color: #e88; }
+  button { cursor: pointer; }
+  button:hover:not(:disabled) { background: #232323; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.quiet { background: none; border-color: transparent; color: var(--dim); }
+  button.quiet:hover { color: var(--text); }
+
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .pad { padding: 16px; overflow: auto; }
+
+  table { border-collapse: collapse; width: 100%; }
+  th { text-align: left; color: var(--dim); font-weight: normal; padding: 6px 10px; }
+  td { padding: 8px 10px; border-top: 1px solid var(--line); }
+  tr.agent:hover td { background: #151515; }
+  td.name button { background: none; border: none; padding: 0; color: var(--text); text-decoration: underline; }
+  td.dir { color: var(--dim); }
+
+  .status { display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); }
+  .status.running { color: var(--ok); }
+  .status.failed { color: var(--warn); }
+  .status.starting { color: var(--dim); }
+
+  form.create { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 20px 0 0; }
+  form.create input[name=name] { width: 18ch; }
+
+  #term { flex: 1; min-height: 0; overflow: hidden; padding: 4px; }
+  .note { min-height: 1.4em; padding: 6px 12px; color: var(--dim); }
+  .note.problem { color: var(--warn); }
+  .empty { color: var(--dim); padding: 24px 0; }
+
+  .signin { max-width: 34em; margin: 12vh auto; padding: 0 16px; }
+  .signin p { color: var(--dim); line-height: 1.6; }
+  .signin form { display: flex; gap: 8px; }
+  .signin input { flex: 1; }
 </style>
 </head>
 <body>
-<div id="status">connecting</div>
-<div id="term"></div>
-<div id="note"></div>
-<form id="compose" autocomplete="off">
-  <input id="nickname" placeholder="name" maxlength="32" required>
-  <input id="text" placeholder="send the agent a message" maxlength="2000" required>
-  <button type="submit">send</button>
-</form>
+<header hidden>
+  <span class="org"></span>
+  <button class="quiet back" hidden>← all agents</button>
+  <span class="spacer"></span>
+  <span class="who"></span>
+  <form method="post" action="/logout"><button class="quiet">sign out</button></form>
+</header>
+
+<main>
+  <section class="signin pad" hidden>
+    <h1>kolo</h1>
+    <p>Paste the token your org gave you. It is kept in a cookie this page cannot
+       read, so you only do this once.</p>
+    <form method="post" action="/login">
+      <input name="token" type="password" placeholder="kolo_…" autofocus required>
+      <button type="submit">sign in</button>
+    </form>
+    <p class="problem" hidden>That token is not one this hub knows.</p>
+  </section>
+
+  <section class="list pad" hidden>
+    <table>
+      <thead><tr><th>agent</th><th>status</th><th>where</th><th>asked for by</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty" hidden>No agents yet. Make one below.</p>
+
+    <form class="create">
+      <input name="name" placeholder="name" maxlength="32" required>
+      <select name="host"></select>
+      <select name="dir"></select>
+      <select name="command"></select>
+      <button type="submit">create</button>
+    </form>
+    <p class="note"></p>
+  </section>
+
+  <section class="watch" hidden>
+    <div id="term"></div>
+    <p class="note"></p>
+  </section>
+</main>
 
 <script src="/assets/xterm.js"></script>
 <script src="/assets/addon-canvas.js"></script>
 <script>
-// The viewer renders the agent's terminal from its raw output. The size and a
-// repaint of the screen arrive first, so a page opened mid-session starts from
-// what the host is looking at rather than from a blank terminal.
-const status = document.getElementById('status');
-const note = document.getElementById('note');
-const compose = document.getElementById('compose');
-const nickname = document.getElementById('nickname');
-const text = document.getElementById('text');
+// One page, two views. Which one is showing comes from the URL, so opening an
+// agent and reloading lands back on that agent rather than at the top.
+const el = (sel) => document.querySelector(sel);
+const header = el('header');
+const views = { signin: el('.signin'), list: el('.list'), watch: el('.watch') };
+
+function show(name) {
+  for (const [key, node] of Object.entries(views)) node.hidden = key !== name;
+  header.hidden = name === 'signin';
+  el('.back').hidden = name !== 'watch';
+}
+
+function agentInURL() {
+  const m = location.hash.match(/^#\/agent\/([a-z0-9-]+)$/);
+  return m && m[1];
+}
+
+// ---- the list ----------------------------------------------------------
+
+let hosts = [];
+let signedIn = false;
+
+async function refresh() {
+  const resp = await fetch('/v1/agents');
+  signedIn = resp.status !== 401;
+  if (!signedIn) {
+    show('signin');
+    el('.signin .problem').hidden = !location.search.includes('refused');
+    return null;
+  }
+  const data = await resp.json();
+  el('header .org').textContent = data.org;
+  el('header .who').textContent = data.you.name;
+  hosts = data.hosts;
+  drawAgents(data.agents || []);
+  drawChoices();
+  return data;
+}
+
+function drawAgents(agents) {
+  const body = el('.list tbody');
+  body.replaceChildren();
+  el('.list .empty').hidden = agents.length > 0;
+
+  for (const a of agents) {
+    const row = document.createElement('tr');
+    row.className = 'agent';
+    row.innerHTML = `
+      <td class="name"><button></button></td>
+      <td><span class="status"></span></td>
+      <td class="dir"></td>
+      <td></td>
+      <td><button class="quiet stop">stop</button></td>`;
+    // Set as text rather than interpolated: a name is checked by the hub, but a
+    // directory is a path off somebody's disk and goes on the page as-is.
+    row.querySelector('.name button').textContent = a.name;
+    const status = row.querySelector('.status');
+    status.textContent = a.error ? `${a.status} — ${a.error}` : a.status;
+    status.classList.add(a.status);
+    row.querySelector('.dir').textContent = `${a.host}:${a.dir}`;
+    row.children[3].textContent = a.created_by.name;
+
+    row.querySelector('.name button').onclick = () => { location.hash = `#/agent/${a.name}`; };
+    row.querySelector('.stop').onclick = () => stop(a.name);
+    body.append(row);
+  }
+}
+
+// The choices are the host's own terms, so nothing can be picked that will only
+// be refused a moment later.
+function drawChoices() {
+  const hostSel = el('[name=host]'), dirSel = el('[name=dir]'), cmdSel = el('[name=command]');
+  const chosen = hostSel.value;
+  fill(hostSel, hosts.map((h) => h.id));
+  if (chosen) hostSel.value = chosen;
+
+  const host = hosts.find((h) => h.id === hostSel.value);
+  fill(dirSel, host ? host.dirs : []);
+  fill(cmdSel, host ? host.allow : []);
+  el('.create button').disabled = hosts.length === 0;
+  if (hosts.length === 0) say('.list', 'No machine is lending itself to this org right now.');
+}
+
+function fill(select, options) {
+  const chosen = select.value;
+  select.replaceChildren();
+  for (const value of options) {
+    const option = document.createElement('option');
+    option.value = option.textContent = value;
+    select.append(option);
+  }
+  if (options.includes(chosen)) select.value = chosen;
+}
+
+el('[name=host]').onchange = drawChoices;
+
+el('.create').onsubmit = async (ev) => {
+  ev.preventDefault();
+  const form = new FormData(ev.target);
+  const resp = await fetch('/v1/agents', {
+    method: 'POST',
+    body: JSON.stringify(Object.fromEntries(form)),
+  });
+  if (!resp.ok) {
+    say('.list', (await resp.text()).trim(), true);
+    return;
+  }
+  ev.target.querySelector('[name=name]').value = '';
+  say('.list', '');
+  refresh();
+};
+
+async function stop(name) {
+  // Everyone has the same power over every agent, including this one, and
+  // somebody may be in the middle of using it.
+  if (!confirm(`Stop ${name}? Anyone watching loses it, including mid-task.`)) return;
+  const resp = await fetch(`/v1/agents/${name}`, { method: 'DELETE' });
+  if (!resp.ok) say('.list', (await resp.text()).trim(), true);
+  refresh();
+}
+
+function say(view, message, problem) {
+  const note = el(`${view} .note`);
+  note.textContent = message;
+  note.classList.toggle('problem', !!problem);
+}
+
+// ---- watching one agent ------------------------------------------------
 
 const term = new Terminal({
-  // A guest sends words through the box below, never keystrokes into the
-  // terminal. The server drops anything else, so this is about not misleading
-  // the guest rather than about enforcement.
+  // Nothing typed here reaches the agent yet. Sending is a message through a
+  // queue, not keystrokes into somebody else's terminal.
   disableStdin: true,
   cursorBlink: false,
   fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
   fontSize: 13,
-  // Draw box drawing and block glyphs rather than asking the font for them.
   customGlyphs: true,
-  theme: { background: '#000000' },
+  theme: { background: '#0b0b0b' },
 });
-term.open(document.getElementById('term'));
+term.open(el('#term'));
 
-// The default DOM renderer sets block glyphs in whatever font the browser
-// picks, which leaves seams between the quadrants an agent's pixel art is built
-// from. The canvas renderer honours customGlyphs and draws them itself, the way
-// a real terminal does. It is an enhancement, not a requirement: if the addon
-// cannot start, the DOM renderer still shows the session.
+// The DOM renderer sets block glyphs in whatever font the browser picks, which
+// leaves seams between the quadrants an agent's pixel art is built from. The
+// canvas renderer draws them itself, the way a real terminal does. An
+// enhancement, not a requirement.
 try {
   term.loadAddon(new CanvasAddon.CanvasAddon());
 } catch (e) {
   console.warn('canvas renderer unavailable, falling back to the DOM', e);
 }
 
-// Defaulted rather than left empty: the field is required, so an empty one
-// makes the send button do nothing at all, with no way for a guest to tell why.
-nickname.value = localStorage.getItem('kolo.nickname') || 'guest';
-nickname.addEventListener('change', () => localStorage.setItem('kolo.nickname', nickname.value));
+let socket = null;
+let watching = null;
 
-function say(message, problem) {
-  note.textContent = message;
-  note.classList.toggle('problem', !!problem);
+function watch(name) {
+  close();
+  watching = name;
+  connect(name);
 }
 
-let socket = null;
+function close() {
+  watching = null;
+  if (socket) { const was = socket; socket = null; was.close(); }
+}
 
-function connect() {
-  // The session's address carries its secret, and the stream lives beneath it,
-  // so it is derived from the page's own path rather than written down twice.
-  const base = location.pathname.replace(/\/$/, '');
+function connect(name) {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${scheme}://${location.host}${base}/ws`);
+  const ws = new WebSocket(`${scheme}://${location.host}/v1/watch/${name}`);
   ws.binaryType = 'arraybuffer';
   socket = ws;
 
   // Every handler checks it is still the current socket. A superseded one goes
   // on to report its own close, which would otherwise land after the
-  // replacement opened and leave the page saying "reconnecting" while connected.
-  ws.onopen = () => { if (ws === socket) status.textContent = 'live'; };
+  // replacement opened and leave the page saying it is reconnecting.
+  ws.onopen = () => { if (ws === socket) say('.watch', `watching ${name}`); };
 
   ws.onmessage = (ev) => {
     if (ws !== socket) return;
-    // Text is a control frame, binary is terminal output.
     if (typeof ev.data !== 'string') {
       term.write(new Uint8Array(ev.data));
       return;
     }
     const msg = JSON.parse(ev.data);
-    switch (msg.type) {
-      case 'size':
-        term.resize(msg.cols, msg.rows);
-        break;
-      case 'queued':
-        // A held message is the normal case, not a failure: the agent may be
-        // mid-answer, or asking the host to approve something.
-        say(msg.pending > 1
-          ? `${msg.nickname}: waiting, ${msg.pending} messages ahead of the agent`
-          : `${msg.nickname}: waiting for the agent to be ready`);
-        break;
-      case 'sent':
-        say(msg.pending > 0 ? `sent · ${msg.pending} still waiting` : 'sent');
-        break;
-      case 'error':
-        say(msg.reason, true);
-        break;
-    }
+    if (msg.type === 'size') term.resize(msg.cols, msg.rows);
   };
 
-  // A viewer that falls behind is disconnected rather than served a stream with
-  // a gap in it, so reconnecting is a normal event: the next snapshot resyncs.
+  // Falling behind, an agent restarting, and an agent that has not started yet
+  // all end the same way: reconnect, and the next repaint resyncs. So this is a
+  // normal event rather than a failure to report.
   ws.onclose = () => {
     if (ws !== socket) return;
-    status.textContent = 'reconnecting';
-    setTimeout(connect, 1000);
+    say('.watch', `${name} is not showing a screen — waiting`);
+    setTimeout(() => { if (watching === name) connect(name); }, 1000);
   };
   ws.onerror = () => ws.close();
 }
 
-compose.addEventListener('submit', (ev) => {
-  ev.preventDefault();
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    say('not connected', true);
+// ---- routing -----------------------------------------------------------
+
+el('.back').onclick = () => { location.hash = ''; };
+
+async function route() {
+  const data = await refresh();
+  if (!data) return;
+
+  const name = agentInURL();
+  if (!name) {
+    close();
+    term.reset();
+    show('list');
     return;
   }
-  socket.send(JSON.stringify({
-    type: 'message',
-    nickname: nickname.value,
-    text: text.value,
-  }));
-  text.value = '';
-});
+  show('watch');
+  if (watching !== name) watch(name);
+}
 
-connect();
+addEventListener('hashchange', route);
+route();
+// The list is a live thing: agents appear when somebody else makes one, and
+// change status on their own.
+setInterval(() => { if (signedIn && !agentInURL()) refresh(); }, 3000);
 </script>
 </body>
 </html>
