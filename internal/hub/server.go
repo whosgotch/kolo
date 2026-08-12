@@ -132,7 +132,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.registry.Join(h.ID, hello.Dirs, hello.Allow, sender(s.ctx, conn)); err != nil {
+	if err := s.registry.Join(h.ID, hello.Dirs, hello.Allow, hello.Agents, sender(s.ctx, conn)); err != nil {
 		conn.Close(websocket.StatusPolicyViolation, err.Error())
 		return
 	}
@@ -197,14 +197,14 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	if err := send(spawn{Type: "spawn", Name: agent.Name, Dir: agent.Dir, Command: agent.Command}); err != nil {
+	created, _ := s.registry.Agent(agent.Name)
+	if err := send(spawn{Type: "spawn", Agent: created}); err != nil {
 		// The host went away between being chosen and being asked. Leaving the
 		// agent listed would be listing something nobody ever started.
 		s.registry.Remove(agent.Name)
 		http.Error(w, "the host went away", http.StatusServiceUnavailable)
 		return
 	}
-	created, _ := s.registry.Agent(agent.Name)
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -241,6 +241,7 @@ type hostHello struct {
 	Type    string   `json:"type"`
 	Dirs    []string `json:"dirs"`
 	Allow   []string `json:"allow"`
+	Agents  []Agent  `json:"agents"`
 	Version string   `json:"version"`
 }
 
@@ -258,11 +259,12 @@ type agentReport struct {
 	Error  string `json:"error"`
 }
 
+// spawn carries the whole record, not just what is needed to start a process.
+// The host writes it down and reads it back in its hello, so who asked for an
+// agent and when survives both machines restarting.
 type spawn struct {
-	Type    string `json:"type"`
-	Name    string `json:"name"`
-	Dir     string `json:"dir"`
-	Command string `json:"command"`
+	Type  string `json:"type"`
+	Agent Agent  `json:"agent"`
 }
 
 type stop struct {

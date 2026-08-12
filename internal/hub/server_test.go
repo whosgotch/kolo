@@ -186,8 +186,13 @@ func TestCreateReachesTheHost(t *testing.T) {
 
 	var cmd spawn
 	readFrame(t, ctx, conn, &cmd)
-	if cmd.Type != "spawn" || cmd.Name != "checkups" || cmd.Dir != "/work/api" || cmd.Command != "claude" {
+	if cmd.Type != "spawn" || cmd.Agent.Name != "checkups" || cmd.Agent.Dir != "/work/api" || cmd.Agent.Command != "claude" {
 		t.Fatalf("the host was told %+v", cmd)
+	}
+	// The host writes this down and reads it back on reconnect, so attribution
+	// has to be in the command rather than only in the hub's memory.
+	if cmd.Agent.CreatedBy.ID != "artem" || cmd.Agent.CreatedAt.IsZero() {
+		t.Errorf("the spawn did not carry who asked: %+v", cmd.Agent)
 	}
 
 	got := list(t, s, memberToken)
@@ -337,5 +342,52 @@ func TestAHostLeavingTakesItsAgents(t *testing.T) {
 	waitFor(t, func() bool { return len(s.Registry().Agents()) == 0 })
 	if got := list(t, s, memberToken); len(got.Hosts) != 0 {
 		t.Errorf("hosts = %+v", got.Hosts)
+	}
+}
+
+// TestReconnectingRestoresTheList is the gap this milestone closes: a dropped
+// connection never stopped the processes, and the host says what it has when it
+// comes back.
+func TestReconnectingRestoresTheList(t *testing.T) {
+	s, memberToken, hostToken := hubFixture(t)
+	ctx := testContext(t)
+	conn := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, conn, &cmd)
+
+	conn.CloseNow()
+	waitFor(t, func() bool { return len(s.Registry().Agents()) == 0 })
+
+	back, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/host", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + hostToken}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { back.CloseNow() })
+
+	hello, err := json.Marshal(map[string]any{
+		"type": "hello", "dirs": []string{"/work/api"}, "allow": []string{"claude"},
+		"agents": []Agent{{Name: "checkups", Dir: "/work/api", Command: "claude", Status: StatusRunning,
+			CreatedBy: Person{ID: "artem", Name: "Artem"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := back.Write(ctx, websocket.MessageText, hello); err != nil {
+		t.Fatal(err)
+	}
+	var w hostWelcome
+	readFrame(t, ctx, back, &w)
+
+	got := list(t, s, memberToken)
+	if len(got.Agents) != 1 || got.Agents[0].Name != "checkups" {
+		t.Fatalf("agents = %+v", got.Agents)
+	}
+	if got.Agents[0].Status != StatusRunning || got.Agents[0].CreatedBy.ID != "artem" {
+		t.Errorf("came back as %+v", got.Agents[0])
 	}
 }

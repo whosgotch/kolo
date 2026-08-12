@@ -8,7 +8,7 @@ import (
 func registryFixture(t *testing.T) *Registry {
 	t.Helper()
 	r := NewRegistry()
-	err := r.Join("devbox", []string{"/work/api", "/work/web"}, []string{"claude"}, func(any) error { return nil })
+	err := r.Join("devbox", []string{"/work/api", "/work/web"}, []string{"claude"}, nil, func(any) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestLeavingTakesTheAgentsWithIt(t *testing.T) {
 
 func TestOneConnectionPerHost(t *testing.T) {
 	r := registryFixture(t)
-	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, func(any) error { return nil })
+	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, func(any) error { return nil })
 	if err == nil {
 		t.Fatal("a second connection claimed the same host")
 	}
@@ -116,5 +116,34 @@ func TestValidName(t *testing.T) {
 		if ValidName(s) {
 			t.Errorf("ValidName(%q) = true", s)
 		}
+	}
+}
+
+// TestJoinRestoresWhatTheHostIsRunning covers a dropped connection. The
+// processes never stopped; only the hub's knowledge of them did, and the host is
+// the only party that still knows.
+func TestJoinRestoresWhatTheHostIsRunning(t *testing.T) {
+	r := registryFixture(t)
+	if _, err := r.Add(agentFixture("checkups", "/work/api")); err != nil {
+		t.Fatal(err)
+	}
+	was, _ := r.Agent("checkups")
+	r.Leave("devbox")
+
+	was.Status = StatusRunning
+	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, []Agent{was}, func(any) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := r.Agent("checkups")
+	if !ok {
+		t.Fatal("it did not come back")
+	}
+	if got.Status != StatusRunning || got.Host != "devbox" {
+		t.Errorf("came back as %+v", got)
+	}
+	if _, err := r.Add(agentFixture("checkups", "/work/api")); err == nil {
+		t.Error("a restored agent did not hold its name")
 	}
 }

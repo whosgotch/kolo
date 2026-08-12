@@ -75,21 +75,35 @@ func NewRegistry() *Registry {
 	return &Registry{hosts: map[string]*host{}, now: time.Now}
 }
 
-// Join records a connected host. A second connection claiming the same host id
-// is refused rather than allowed to take over: two processes answering for one
-// machine would make every command ambiguous, and the usual cause is a host
-// started twice by mistake.
-func (r *Registry) Join(id string, dirs, allow []string, send Sender) error {
+// Join records a connected host, along with the agents it says it is already
+// running. A second connection claiming the same host id is refused rather than
+// allowed to take over: two processes answering for one machine would make every
+// command ambiguous, and the usual cause is a host started twice by mistake.
+//
+// The running set is the host's word. It is the machine with the processes on
+// it, and after a dropped connection or a hub restart it is the only party that
+// knows. A name another host has already claimed is skipped, since two agents
+// answering to one name is the thing names exist to prevent.
+func (r *Registry) Join(id string, dirs, allow []string, running []Agent, send Sender) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if _, taken := r.hosts[id]; taken {
 		return fmt.Errorf("hub: %s is already connected", id)
 	}
-	r.hosts[id] = &host{
+	h := &host{
 		info:   HostInfo{ID: id, Dirs: dirs, Allow: allow, Since: r.now()},
 		send:   send,
 		agents: map[string]*Agent{},
+	}
+	r.hosts[id] = h
+
+	for _, a := range running {
+		if _, taken := r.find(a.Name); taken != nil {
+			continue
+		}
+		a.Host = id
+		h.agents[a.Name] = &a
 	}
 	return nil
 }
