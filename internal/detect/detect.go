@@ -9,6 +9,12 @@
 // this session" — switch off prompting for the rest of the session, while the
 // guest's actual words are discarded. See docs/probe-findings.md #5.
 //
+// The agent running a shell command is the sharp case. Its input box is still
+// drawn, so the screen looks idle, and a line sent then goes to the child
+// process's stdin and is lost without a trace (findings #4). What tells them
+// apart is the hint under the box: "? for shortcuts" when it is yours to type
+// in, "esc to interrupt" when it is not.
+//
 // So the rule here is that nothing is safe unless it is recognised as safe.
 // Every screen this package does not understand comes back Unknown, and Unknown
 // holds the queue. A missed detection costs a guest a delay; the opposite
@@ -38,6 +44,11 @@ const (
 	// Dialog is a question on screen, waiting to be answered. Enter would
 	// answer it, so nothing may be sent.
 	Dialog
+
+	// Busy is the agent working — thinking, or running a shell command. Nothing
+	// may be sent, and it is worth telling apart from Unknown: this one clears
+	// on its own, and a queue held here is waiting rather than stuck.
+	Busy
 )
 
 func (s State) String() string {
@@ -46,6 +57,8 @@ func (s State) String() string {
 		return "idle"
 	case Dialog:
 		return "dialog"
+	case Busy:
+		return "busy"
 	default:
 		return "unknown"
 	}
@@ -70,14 +83,26 @@ const (
 	// whenever the input box is, and gone while a dialog is up: a dialog takes
 	// the whole screen and the input box is not drawn at all.
 	idleFooter = "? for shortcuts"
+
+	// busyFooter replaces idleFooter while the agent is working. The input box
+	// is still drawn, which is what made this state dangerous — it looks idle —
+	// but the hint under it changes, and that is the tell.
+	//
+	// The case matters. This is not dialogFooter with different words: "esc to
+	// interrupt" and "Esc to cancel" are separate states and a case-insensitive
+	// match would confuse them.
+	busyFooter = "esc to interrupt"
 )
 
 // Of classifies the agent's screen.
 func Of(screen string) State {
-	// Dialog is tested first. If a screen somehow carried both sets of
-	// markers, the answer that holds the queue is the one to give.
+	// Dialog is tested first. If a screen somehow carried two sets of markers,
+	// the answer that holds the queue is the one to give.
 	if strings.Contains(screen, dialogFooter) || strings.Contains(screen, dialogOption) {
 		return Dialog
+	}
+	if strings.Contains(screen, busyFooter) {
+		return Busy
 	}
 	if strings.Contains(screen, idleFooter) {
 		return Idle

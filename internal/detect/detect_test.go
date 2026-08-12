@@ -52,6 +52,20 @@ const (
  Esc to cancel · Tab to amend
 `
 
+	// The one that made the gate necessary. The input box is drawn, exactly as
+	// when idle, and the only difference is the hint under it.
+	busyScreen = `
+❯ run in bash: for i in 1 2 3; do echo $i; sleep 2; done
+
+⏺ Bash(for i in 1 2 3; do echo $i; sleep 2; done)
+
+✳ Levitating… (8s · ↓ 117 tokens)
+────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · esc to interrupt · ← for agents
+`
+
 	trustScreen = `
 ────────────────────────────────────────────────────────────────
  Accessing workspace:
@@ -78,6 +92,7 @@ func TestOf(t *testing.T) {
 		{"idle at the prompt", idleScreen, Idle},
 		{"tool permission dialog", permissionScreen, Dialog},
 		{"workspace trust dialog", trustScreen, Dialog},
+		{"running a shell command", busyScreen, Busy},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -133,8 +148,23 @@ func TestDialogWinsOverIdle(t *testing.T) {
 	}
 }
 
+// TestBusyKeepsItsInputBox is why this state needed a marker of its own rather
+// than being left to fall through as Unknown. It draws the input box, so the
+// absence of the idle footer is the only thing standing between a message and a
+// child process's stdin.
+func TestBusyKeepsItsInputBox(t *testing.T) {
+	if strings.Contains(busyScreen, idleFooter) {
+		t.Error("the busy screen carries the idle footer, so it reads as safe to send")
+	}
+	// Two footers, two states. A case-insensitive match would fold them
+	// together and a busy agent would read as a dialog.
+	if strings.Contains(busyScreen, dialogFooter) {
+		t.Error("the busy screen reads as a dialog")
+	}
+}
+
 func TestOnlyIdleCanSend(t *testing.T) {
-	for _, s := range []State{Unknown, Idle, Dialog} {
+	for _, s := range []State{Unknown, Idle, Dialog, Busy} {
 		if want := s == Idle; s.CanSend() != want {
 			t.Errorf("%s.CanSend() = %v, want %v", s, s.CanSend(), want)
 		}
