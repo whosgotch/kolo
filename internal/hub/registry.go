@@ -203,6 +203,16 @@ func (r *Registry) SetStatus(name, status, reason string) {
 	}
 }
 
+// Sender is how to reach the host running an agent.
+func (r *Registry) Sender(name string) (Sender, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, h := r.find(name); h != nil {
+		return h.send, true
+	}
+	return nil, false
+}
+
 // Remove forgets an agent and returns its host's sender.
 func (r *Registry) Remove(name string) (Sender, bool) {
 	r.mu.Lock()

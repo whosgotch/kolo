@@ -346,18 +346,21 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		// Bytes are the agent's language. Anything else on this socket is a
-		// control frame kolo does not understand yet, and is ignored rather than
-		// fed to a terminal that would render it.
+		// Bytes are the agent's language and go to the terminal. Text is what
+		// kolo says about the agent — the queue, the state — and is passed on
+		// to viewers without being read, since the hub has no opinion about it.
 		if kind == websocket.MessageBinary {
 			live.Write(data)
+		} else {
+			live.Announce(json.RawMessage(data))
 		}
 	}
 }
 
 // handleWatch fans one agent's screen out to a member's browser.
 func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authenticate(r); !ok {
+	member, ok := s.authenticate(r)
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -376,15 +379,9 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
-	// A browser that goes away is noticed by reading from it, which is also
-	// where what it sends will arrive once there is anything it may send.
 	go func() {
 		defer cancel()
-		for {
-			if _, _, err := conn.Read(ctx); err != nil {
-				return
-			}
-		}
+		s.takeFrom(ctx, conn, member, name)
 	}()
 
 	backlog, updates, unsubscribe := live.Subscribe()
@@ -399,6 +396,29 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 		if err := forward(ctx, conn, m); err != nil {
 			return
 		}
+	}
+}
+
+// takeFrom carries what a member sends to the machine running the agent. It also
+// notices the browser going away, which is what ends the connection.
+//
+// Who the message is from is decided here, from the credentials the connection
+// was opened with. Nothing the browser says about that is read, so a name on a
+// message cannot be somebody else's.
+func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Member, name string) {
+	for {
+		msg, err := read[viewerMessage](ctx, conn, 0)
+		if err != nil {
+			return
+		}
+		if msg.Type != "message" {
+			continue
+		}
+		send, ok := s.registry.Sender(name)
+		if !ok {
+			continue
+		}
+		send(toAgent{Type: "message", Name: name, From: member.Name, Text: msg.Text})
 	}
 }
 
@@ -433,6 +453,21 @@ type hostHello struct {
 	Allow   []string `json:"allow"`
 	Agents  []Agent  `json:"agents"`
 	Version string   `json:"version"`
+}
+
+// viewerMessage is what a browser may send. It is one thing, deliberately:
+// words. Keystrokes are not among them, because kolo submits with Enter and
+// Enter means something else entirely when the agent has a question on screen.
+type viewerMessage struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type toAgent struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+	From string `json:"from"`
+	Text string `json:"text"`
 }
 
 type screenHello struct {

@@ -668,3 +668,72 @@ func TestThePageIsServed(t *testing.T) {
 		t.Errorf("assets: %s", got.Status)
 	}
 }
+
+// TestAMessageReachesTheHost: what a member types goes to the machine running
+// the agent, with the hub's word for who sent it.
+func TestAMessageReachesTheHost(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken := hubFixture(t)
+	control := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, control, &cmd)
+	openScreen(t, ctx, s, hostToken, "checkups")
+	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	send := `{"type":"message","text":"run the checkups","from":"Somebody Else"}`
+	if err := viewer.Write(ctx, websocket.MessageText, []byte(send)); err != nil {
+		t.Fatal(err)
+	}
+
+	var got toAgent
+	readFrame(t, ctx, control, &got)
+	if got.Type != "message" || got.Name != "checkups" || got.Text != "run the checkups" {
+		t.Fatalf("the host was told %+v", got)
+	}
+	// The name is decided from the connection's credentials, so a browser
+	// claiming to be somebody else is simply not read.
+	if got.From != "Artem" {
+		t.Errorf("attributed to %q, want Artem", got.From)
+	}
+}
+
+// TestTheQueueIsVisibleToWatchers: what the host says about the queue reaches
+// everyone watching, not only whoever sent something.
+func TestTheQueueIsVisibleToWatchers(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, _, screen := withAgent(t, ctx)
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	readUntilBytes(t, ctx, viewer) // the repaint
+
+	queued := `{"type":"queued","from":"Dana","text":"deploy it","pending":1,"state":"busy"}`
+	if err := screen.Write(ctx, websocket.MessageText, []byte(queued)); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for {
+		kind, data, err := viewer.Read(deadline)
+		if err != nil {
+			t.Fatalf("never saw the queue event: %v", err)
+		}
+		if kind != websocket.MessageText {
+			continue
+		}
+		var event struct {
+			Type, From string
+			Pending    int
+		}
+		json.Unmarshal(data, &event)
+		if event.Type == "queued" {
+			if event.From != "Dana" || event.Pending != 1 {
+				t.Errorf("watchers were told %+v", event)
+			}
+			return
+		}
+	}
+}
