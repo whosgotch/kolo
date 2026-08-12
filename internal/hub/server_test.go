@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -546,5 +549,122 @@ func TestScreenRoutesRefuseTheWrongToken(t *testing.T) {
 		HTTPHeader: http.Header{"Authorization": {"Bearer " + hostToken}},
 	}); err == nil {
 		t.Error("a host carried a screen for an agent it was never asked to run")
+	}
+}
+
+// post sends a form without following the redirect, so the response that sets
+// the cookie is the one under test.
+func post(t *testing.T, s *Server, path string, form url.Values, cookie *http.Cookie) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest("POST", "http://"+s.Addr()+path, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	return resp
+}
+
+func sessionOf(resp *http.Response) *http.Cookie {
+	for _, c := range resp.Cookies() {
+		if c.Name == sessionCookie {
+			return c
+		}
+	}
+	return nil
+}
+
+// TestSignIn: a member pastes their token once and the browser carries it after
+// that, where script cannot read it.
+func TestSignIn(t *testing.T) {
+	s, memberToken, _ := hubFixture(t)
+
+	resp := post(t, s, "/login", url.Values{"token": {memberToken}}, nil)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login: %s", resp.Status)
+	}
+	c := sessionOf(resp)
+	if c == nil {
+		t.Fatal("no session cookie")
+	}
+	if !c.HttpOnly || c.SameSite != http.SameSiteLaxMode {
+		t.Errorf("cookie is reachable or cross-site: %+v", c)
+	}
+
+	req, err := http.NewRequest("GET", "http://"+s.Addr()+"/v1/agents", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(c)
+	got, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+	if got.StatusCode != http.StatusOK {
+		t.Fatalf("the cookie did not carry: %s", got.Status)
+	}
+	var body listResponse
+	if err := json.NewDecoder(got.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.You.ID != "artem" {
+		t.Errorf("signed in as %+v", body.You)
+	}
+}
+
+func TestSignInRefusesAndSignsOut(t *testing.T) {
+	s, memberToken, hostToken := hubFixture(t)
+
+	for _, tc := range []struct{ name, token string }{
+		{"a token nobody was issued", "kolo_nobody"},
+		{"nothing at all", ""},
+		{"a host's token", hostToken},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := post(t, s, "/login", url.Values{"token": {tc.token}}, nil)
+			if sessionOf(resp) != nil {
+				t.Error("a cookie was handed out")
+			}
+			if loc := resp.Header.Get("Location"); !strings.Contains(loc, "refused") {
+				t.Errorf("redirected to %q, which does not say it was refused", loc)
+			}
+		})
+	}
+
+	signedIn := sessionOf(post(t, s, "/login", url.Values{"token": {memberToken}}, nil))
+	out := post(t, s, "/logout", nil, signedIn)
+	if c := sessionOf(out); c == nil || c.MaxAge >= 0 {
+		t.Errorf("signing out left %+v", c)
+	}
+}
+
+func TestThePageIsServed(t *testing.T) {
+	s, _, _ := hubFixture(t)
+
+	// Served without a token: the page is what asks for one.
+	resp := call(t, s, "GET", "/", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /: %s", resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte("<title>kolo</title>")) {
+		t.Errorf("not the page: %.80s", body)
+	}
+	if got := call(t, s, "GET", "/assets/xterm.js", "", ""); got.StatusCode != http.StatusOK {
+		t.Errorf("assets: %s", got.Status)
 	}
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/whosgotch/kolo/internal/session"
+	"github.com/whosgotch/kolo/internal/ui"
 )
 
 const (
@@ -60,6 +61,10 @@ func Listen(org *Org, addr string) (*Server, error) {
 	mux.HandleFunc("DELETE /v1/agents/{name}", s.handleDelete)
 	mux.HandleFunc("GET /v1/agent/{name}", s.handleScreen)
 	mux.HandleFunc("GET /v1/watch/{name}", s.handleWatch)
+	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("POST /logout", s.handleLogout)
+	mux.Handle("GET /assets/", http.FileServerFS(ui.FS))
+	mux.HandleFunc("GET /{$}", s.handlePage)
 	s.srv = &http.Server{Handler: mux}
 	return s, nil
 }
@@ -84,16 +89,77 @@ func (s *Server) Close() error {
 	return s.srv.Close()
 }
 
-// authenticate resolves the bearer token on a request to a member.
+// sessionCookie holds a member's token in the browser.
+//
+// It is the same secret the header carries, kept where script cannot read it. A
+// separate session table would add a place for sessions to be looked up, expire
+// and get out of step, and would protect nothing extra: whoever has the cookie
+// has what the cookie was made from.
+const sessionCookie = "kolo_session"
+
+// authenticate resolves a request to a member, by header or by cookie.
 //
 // The token travels in a header rather than in the URL, because a URL is written
 // to the access log of every proxy between the two machines, and to the hub's own.
 func (s *Server) authenticate(r *http.Request) (Member, bool) {
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok {
-		return Member{}, false
+	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		return s.org.VerifyMember(token)
 	}
-	return s.org.VerifyMember(token)
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		return s.org.VerifyMember(c.Value)
+	}
+	return Member{}, false
+}
+
+// handlePage serves the one page there is. Which agent it is showing is decided
+// in the browser, so opening one and reloading lands in the same place.
+func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
+	page, err := ui.FS.ReadFile("index.html")
+	if err != nil {
+		http.Error(w, "no page", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(page)
+}
+
+// handleLogin takes a member's token once and keeps it in a cookie, so that it
+// is not pasted into a form on every visit — which is both tiresome and good
+// training for handing the token to whoever asks for it next.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.FormValue("token"))
+	if _, ok := s.org.VerifyMember(token); !ok {
+		http.Redirect(w, r, "/?refused=1", http.StatusSeeOther)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		// Lax is what keeps another site from posting to the hub in a member's
+		// name: a cross-site POST carries no cookie, and every route that
+		// changes anything is a POST or a DELETE.
+		SameSite: http.SameSiteLaxMode,
+		Secure:   overTLS(r),
+		MaxAge:   int((90 * 24 * time.Hour).Seconds()),
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name: sessionCookie, Path: "/", HttpOnly: true, MaxAge: -1,
+		SameSite: http.SameSiteLaxMode, Secure: overTLS(r),
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// overTLS reports whether the member's own connection was encrypted, which is
+// not the same as the hub's: the hub carries no TLS of its own and is expected
+// to sit behind something that does.
+func overTLS(r *http.Request) bool {
+	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 func (s *Server) authenticateHost(r *http.Request) (Host, bool) {
@@ -160,12 +226,14 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authenticate(r); !ok {
+	member, ok := s.authenticate(r)
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	writeJSON(w, http.StatusOK, listResponse{
 		Org:    s.org.Name,
+		You:    member.Person(),
 		Hosts:  s.registry.Hosts(),
 		Agents: s.registry.Agents(),
 	})
@@ -409,6 +477,7 @@ type createRequest struct {
 
 type listResponse struct {
 	Org    string     `json:"org"`
+	You    Person     `json:"you"`
 	Hosts  []HostInfo `json:"hosts"`
 	Agents []Agent    `json:"agents"`
 }
