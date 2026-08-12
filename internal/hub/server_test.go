@@ -391,3 +391,160 @@ func TestReconnectingRestoresTheList(t *testing.T) {
 		t.Errorf("came back as %+v", got.Agents[0])
 	}
 }
+
+// watch opens a member's view of an agent.
+func watch(t *testing.T, ctx context.Context, s *Server, token, name string) *websocket.Conn {
+	t.Helper()
+	conn, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/watch/"+name, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
+	})
+	if err != nil {
+		t.Fatalf("watch %s: %v", name, err)
+	}
+	t.Cleanup(func() { conn.CloseNow() })
+	return conn
+}
+
+// openScreen connects an agent's terminal as its host would.
+func openScreen(t *testing.T, ctx context.Context, s *Server, token, name string) *websocket.Conn {
+	t.Helper()
+	conn, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/agent/"+name, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
+	})
+	if err != nil {
+		t.Fatalf("screen %s: %v", name, err)
+	}
+	t.Cleanup(func() { conn.CloseNow() })
+	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"screen","cols":80,"rows":24}`)); err != nil {
+		t.Fatal(err)
+	}
+	return conn
+}
+
+// withAgent gets a hub to the state where one agent exists and its screen is up.
+func withAgent(t *testing.T, ctx context.Context) (_ *Server, memberToken, hostToken string, screen *websocket.Conn) {
+	t.Helper()
+	s, memberToken, hostToken := hubFixture(t)
+	control := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, control, &cmd)
+
+	screen = openScreen(t, ctx, s, hostToken, "checkups")
+	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
+	return s, memberToken, hostToken, screen
+}
+
+// readUntilBytes takes frames until terminal output arrives, skipping the
+// control frames a viewer also gets.
+func readUntilBytes(t *testing.T, ctx context.Context, conn *websocket.Conn) []byte {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for {
+		kind, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if kind == websocket.MessageBinary {
+			return data
+		}
+	}
+}
+
+// TestTheScreenReachesAWatcher is what the milestone is for: what the agent
+// draws on one machine is what somebody sees on another.
+func TestTheScreenReachesAWatcher(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, _, screen := withAgent(t, ctx)
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	// The subscription opens with a repaint, so what arrives first describes the
+	// screen as it already stands rather than only what happens next.
+	if got := readUntilBytes(t, ctx, viewer); len(got) == 0 {
+		t.Fatal("no repaint on joining")
+	}
+
+	if err := screen.Write(ctx, websocket.MessageBinary, []byte("hello from the agent")); err != nil {
+		t.Fatal(err)
+	}
+	if got := readUntilBytes(t, ctx, viewer); string(got) != "hello from the agent" {
+		t.Errorf("watcher got %q", got)
+	}
+}
+
+// TestWatchersDoNotDisturbEachOther: people are meant to watch together, and a
+// second viewer joining must not interrupt the first.
+func TestWatchersDoNotDisturbEachOther(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, _, screen := withAgent(t, ctx)
+
+	first := watch(t, ctx, s, memberToken, "checkups")
+	readUntilBytes(t, ctx, first)
+	second := watch(t, ctx, s, memberToken, "checkups")
+	readUntilBytes(t, ctx, second)
+
+	if err := screen.Write(ctx, websocket.MessageBinary, []byte("both of you")); err != nil {
+		t.Fatal(err)
+	}
+	for i, viewer := range []*websocket.Conn{first, second} {
+		if got := readUntilBytes(t, ctx, viewer); string(got) != "both of you" {
+			t.Errorf("viewer %d got %q", i, got)
+		}
+	}
+}
+
+// TestARestartedScreenReplacesTheOld: a new process is a new screen, and the old
+// viewers are dropped rather than left watching something that has gone.
+func TestARestartedScreenReplacesTheOld(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken, first := withAgent(t, ctx)
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	readUntilBytes(t, ctx, viewer)
+
+	was, _ := s.screens.get("checkups")
+	first.CloseNow()
+	second := openScreen(t, ctx, s, hostToken, "checkups")
+	waitFor(t, func() bool {
+		now, ok := s.screens.get("checkups")
+		return ok && now != was
+	})
+
+	if _, _, err := viewer.Read(ctx); err == nil {
+		t.Error("a viewer of the old screen was left connected to it")
+	}
+	back := watch(t, ctx, s, memberToken, "checkups")
+	if err := second.Write(ctx, websocket.MessageBinary, []byte("started again")); err != nil {
+		t.Fatal(err)
+	}
+	readUntilBytes(t, ctx, back)
+}
+
+func TestScreenRoutesRefuseTheWrongToken(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken, _ := withAgent(t, ctx)
+
+	if _, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/agent/checkups", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + memberToken}},
+	}); err == nil {
+		t.Error("a member carried an agent's screen")
+	}
+	if _, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/watch/checkups", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + hostToken}},
+	}); err == nil {
+		t.Error("a host watched an agent")
+	}
+	if _, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/watch/nothing", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + memberToken}},
+	}); err == nil {
+		t.Error("watching an agent that does not exist succeeded")
+	}
+	if _, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/agent/nothing", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + hostToken}},
+	}); err == nil {
+		t.Error("a host carried a screen for an agent it was never asked to run")
+	}
+}

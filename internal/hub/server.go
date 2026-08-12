@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/session"
 )
 
 const (
@@ -29,6 +30,7 @@ const (
 type Server struct {
 	org      *Org
 	registry *Registry
+	screens  *screens
 	ln       net.Listener
 	srv      *http.Server
 
@@ -49,13 +51,15 @@ func Listen(org *Org, addr string) (*Server, error) {
 		return nil, fmt.Errorf("hub: listen: %w", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{org: org, registry: NewRegistry(), ln: ln, ctx: ctx, cancel: cancel}
+	s := &Server{org: org, registry: NewRegistry(), screens: newScreens(), ln: ln, ctx: ctx, cancel: cancel}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/host", s.handleHost)
 	mux.HandleFunc("GET /v1/agents", s.handleList)
 	mux.HandleFunc("POST /v1/agents", s.handleCreate)
 	mux.HandleFunc("DELETE /v1/agents/{name}", s.handleDelete)
+	mux.HandleFunc("GET /v1/agent/{name}", s.handleScreen)
+	mux.HandleFunc("GET /v1/watch/{name}", s.handleWatch)
 	s.srv = &http.Server{Handler: mux}
 	return s, nil
 }
@@ -225,6 +229,124 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleScreen takes one agent's terminal from the machine running it.
+//
+// A connection of its own, per agent, rather than everything multiplexed down
+// the host's control socket. It costs a few sockets and means a screen that
+// stalls or drops belongs to one agent instead of all of them.
+func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.authenticateHost(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	name := r.PathValue("name")
+	// A host may only carry the screen of an agent the hub agrees is its own,
+	// so one machine cannot answer for another machine's agent.
+	if a, ok := s.registry.Agent(name); !ok || a.Host != h.ID {
+		http.Error(w, "no agent called "+name+" here", http.StatusNotFound)
+		return
+	}
+
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.CloseNow()
+
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-r.Context().Done():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	hello, err := read[screenHello](ctx, conn, helloTimeout)
+	if err != nil || hello.Type != "screen" || hello.Cols <= 0 || hello.Rows <= 0 {
+		conn.Close(websocket.StatusPolicyViolation, "expected a screen size")
+		return
+	}
+
+	live := s.screens.open(name, hello.Cols, hello.Rows)
+	defer s.screens.close(name, live)
+
+	for {
+		kind, data, err := conn.Read(ctx)
+		if err != nil {
+			return
+		}
+		// Bytes are the agent's language. Anything else on this socket is a
+		// control frame kolo does not understand yet, and is ignored rather than
+		// fed to a terminal that would render it.
+		if kind == websocket.MessageBinary {
+			live.Write(data)
+		}
+	}
+}
+
+// handleWatch fans one agent's screen out to a member's browser.
+func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authenticate(r); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	name := r.PathValue("name")
+	live, ok := s.screens.get(name)
+	if !ok {
+		http.Error(w, "no screen for "+name, http.StatusNotFound)
+		return
+	}
+
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.CloseNow()
+
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+	// A browser that goes away is noticed by reading from it, which is also
+	// where what it sends will arrive once there is anything it may send.
+	go func() {
+		defer cancel()
+		for {
+			if _, _, err := conn.Read(ctx); err != nil {
+				return
+			}
+		}
+	}()
+
+	backlog, updates, unsubscribe := live.Subscribe()
+	defer unsubscribe()
+
+	for _, m := range backlog {
+		if err := forward(ctx, conn, m); err != nil {
+			return
+		}
+	}
+	for m := range updates {
+		if err := forward(ctx, conn, m); err != nil {
+			return
+		}
+	}
+}
+
+// forward sends one message to a viewer. Terminal output goes as binary and
+// everything kolo says about it goes as text, so a browser can tell them apart
+// without looking inside.
+func forward(ctx context.Context, conn *websocket.Conn, m session.Message) error {
+	kind := websocket.MessageBinary
+	if m.Control {
+		kind = websocket.MessageText
+	}
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	return conn.Write(ctx, kind, m.Data)
+}
+
 // sender writes commands to one host. Writes are serialised: a spawn and a stop
 // can be dispatched by two members' requests at the same instant, and two
 // goroutines writing to one websocket interleave frames.
@@ -243,6 +365,12 @@ type hostHello struct {
 	Allow   []string `json:"allow"`
 	Agents  []Agent  `json:"agents"`
 	Version string   `json:"version"`
+}
+
+type screenHello struct {
+	Type string `json:"type"`
+	Cols int    `json:"cols"`
+	Rows int    `json:"rows"`
 }
 
 type hostWelcome struct {
