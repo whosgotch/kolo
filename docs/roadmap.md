@@ -1,77 +1,83 @@
 # Roadmap
 
-The order matters more than the list. Each step exists to make the next one
-cheap, and two of them are deliberately later than they look.
+One feature: long-lived shared agents that several people use at once. Nothing
+else is built until that is good.
 
-## Now — presence
+Each step should be demonstrable on two machines, because a multiplayer feature
+that works on one proves nothing.
 
-Two people, two machines, one org, each able to see the other's agent is there.
+## 1. An agent on a lent machine
 
-- `kolo serve` — the hub. One org, members and hashed tokens in a config file.
-- `kolo run <agent>` — dials the hub, authenticates, registers, stays connected.
-- `kolo who` — lists who is connected.
+`kolo host` connects to the hub and spawns an agent when asked. The hub keeps the
+list; the browser creates and stops.
 
-Nothing is sent anywhere. No channels, no projects, no skills, no web UI.
+*Demo: create an agent from a browser on another machine, watch it appear, stop
+it.*
 
-This is the floor for calling anything multiplayer: it cannot be faked on one
-machine. Everything smaller is infrastructure you cannot tell is working, and the
-moment two machines see each other, the outbound connection, identity, org
-membership, presence and shared state are all proven at once.
+## 2. Watch it
 
-The token model and reconnection get done properly even here. Both are cheap now
-and awkward to retrofit, and everything later inherits them.
+Screen frames go host → hub → browsers. Joining repaints what is already there.
+Several people watch at once.
 
-## Next — projects
+*Demo: two browsers on the same agent, seeing the same thing.*
 
-Shared context bound to a body of work: the repo, the conventions, the decisions,
-how things are done here. Distributed to every member's agent.
+## 3. Talk to it
 
-The payoff is immediate and easy to feel with three people: a new joiner's agent
-knows the conventions on day one, instead of each person explaining the same
-things privately and each agent learning them separately.
+Messages go browser → hub → the queue, released by the gate. Attributed to the
+member the hub authenticated, not a name they typed.
 
-## Then — skills
+*Demo: two people sending work to one agent, each seeing who asked for what.*
 
-Someone writes a skill that works. It is reviewed, versioned, promoted, and every
-member's agent has it. The org gets better at its own work instead of each person
-rediscovering the same tricks.
+One gap has to close here. The detector tells idle from dialog, but not from
+**busy running a shell command** — a state where the input box is still on screen
+and an injected line is silently swallowed (`docs/probe-findings.md` #4). Today
+that costs a guest a lost message on one machine. With the org sending work to a
+shared agent it happens constantly. Closing it means recording that state and
+reading what distinguishes it; the recording stays out of the repository, since
+it is a picture of somebody's session.
 
-**Projects come before skills on purpose.** They are the same distribution
-problem — the org has a thing, every member's agent should have it — but a
-project is data and a skill is code that executes on every member's machine with
-their permissions. Get the pipe right while it is carrying cargo that cannot hurt
-anyone, then upgrade the cargo and spend the design effort on promotion: who may
-promote, what review it gets, versioning, rollback.
+## 4. Use it without the host
 
-## Last of the four — channels
+Answer a dialog, interrupt, restart, start fresh — all from the browser.
 
-Shared places where people and agents talk, with agents as members rather than
-tools.
+Until this exists the product does not work: every permission prompt stops the
+agent until the host walks back to their keyboard, and the host is not supposed
+to be there at all. An agent nobody can interrupt is worse — it goes down a wrong
+path and the org watches.
 
-They are last because they are the most familiar part of the idea and the least
-differentiating, and because they are much better once agents already share
-project context — there is something worth talking about that both sides
-understand. Built first, this is a chat app.
+## 5. More than one
 
-## Carried over
+Several agents on a host, and the list becomes the front door rather than the
+terminal. One agent per directory, enforced.
 
-Work already finished that the above depends on, or that returns later:
+*Demo: three agents in three directories, people moving between them.*
 
-- Running an agent under a PTY, modelling its screen, and repainting that screen
-  for someone who joins mid-session.
-- The injection gate for **shared agents** — an agent belonging to a channel or a
-  project rather than a person, which several people send to. See
-  `docs/probe-findings.md` #4 and #5 for why sending at the wrong moment is
-  dangerous rather than untidy.
-- One gap remains in that gate: the detector cannot yet recognise an agent that
-  is busy running a shell command, where an injected line is silently swallowed.
-  Closing it means recording that state locally and reading what distinguishes
-  it; the recording itself stays out of the repository, since one is a picture
-  of somebody's session.
+## 6. A second agent kind
+
+Screen markers and a resume command for one more agent. This is what proves the
+seam is real rather than a shape Claude Code happens to fit.
+
+## Then
+
+The log — who asked for what, when, who stopped it — durable across restarts.
+Enough to open an agent in the morning and know what happened overnight. It is
+also what stands in for roles, so it is not optional for long.
+
+## Already built
+
+- Running an agent under a PTY, modelling its screen with vt10x, and repainting
+  that screen for someone who joins mid-session.
+- The queue and the gate, and the findings behind them.
+
+Both survive the change of shape. What goes with it: the host's raw-mode
+passthrough, `-lan` and its URL secret, guest nicknames, and presence as a list
+of members who are online.
 
 ## Not doing
 
-- A tunnel. The outbound connection removes the need for one.
-- Peer-to-peer. It keeps the no-infrastructure property but makes presence,
-  membership and history hard, and cannot become a hosted product without a
-  rewrite.
+- Projects, promoted skills, channels, per-member personal agents, roles. Each
+  was scoped and cut. They are additions to a working product and there is not
+  one yet.
+- A tunnel. The outbound connection removes the need.
+- Peer-to-peer. It makes membership and history hard and cannot become a hosted
+  product without a rewrite.

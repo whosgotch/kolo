@@ -2,99 +2,135 @@
 
 ## The shape
 
-**Execution is local. Context is shared.**
-
-Every member runs their own agent on their own machine, with their own files and
-their own permissions. Nobody's agent can reach anyone else's machine. Adding a
-member adds their machine; nothing gets more loaded.
-
-What the org holds is everything that makes those agents behave like they work at
-the same company: shared project context, promoted skills, and the conversation
-around the work.
+A host lends a machine to the org. Agents run on it. Everyone else uses a
+browser.
 
 ```
-  Artem's machine            Kolo hub               Dana's machine
-  ┌──────────────┐                                 ┌──────────────┐
-  │ agent (PTY)  │                                 │ agent (PTY)  │
-  │      │       │                                 │      │       │
-  │  kolo client ├──── outbound websocket ────────►│  kolo client │
-  └──────────────┘         ▲         ▲             └──────────────┘
-                           │         │
-                    presence, later: projects,
-                    skills, channels
+   browser      browser                       host machine
+   (dana)       (artem)                     ┌─────────────────┐
+      │            │                        │ kolo host       │
+      └─────┬──────┘                        │   ├ agent (PTY) │
+            ▼                               │   ├ agent (PTY) │
+        ┌───────┐ ◄──── outbound websocket ─┤   └ agent (PTY) │
+        │  hub  │                           └─────────────────┘
+        └───────┘
 ```
 
-The agent's machine **dials out**. It is never listened to. That means no inbound
-port, no firewall rule, and no NAT traversal problem — and it is the same shape
-whether the hub is a VPS today or Kolo Cloud later. It also removes the need for
-a tunnel: there is nothing to tunnel to.
+The host dials out and is never listened to: no inbound port, no firewall rule,
+nothing to tunnel. It is the same shape whether the hub is a VPS today or hosted
+later.
+
+Only hosts install kolo. Members open a link.
+
+## An agent
+
+An agent is a name, a directory on the host, and a command. Anyone in the org
+creates one from the browser and the host spawns it.
+
+**One agent per directory.** Resuming a conversation is directory-scoped, and two
+agents editing the same files would collide, so creating a second agent in a
+directory that already has one is refused. Working on the same repo in parallel
+means a second checkout.
+
+Agents are communal. Anyone may watch, send to, interrupt, restart or stop any of
+them. There are no roles; every action is attributed instead, which is what makes
+their absence workable.
+
+## The host
+
+```
+kolo host --dir ~/work/api --dir ~/work/web --allow claude
+```
+
+The host contributes a machine and does not participate. Nothing about the
+product may require the host to be at their keyboard.
+
+The flags bound what the org can **start**: those directories, those commands,
+nothing else. They do not bound what a running agent can **reach**. It runs as
+the host's user and can read `~/.ssh`, `~/.aws`, and every other repo on the
+disk, because any member can ask it to.
+
+Containment is therefore the host's own arrangement, not something kolo
+provides — a dedicated user account that owns only what it should, a container,
+or a machine that holds nothing else.
 
 ## Identity
 
-A member is a person in an org. They authenticate with a token, not a nickname.
+Members authenticate with a token and the hub decides who they are — never the
+client, which is why attribution on a message cannot be forged. The hub's config
+holds the org, its members, and a hash of each token; revoking a member is
+removing their line.
 
-- The hub's config lists the org, its members, and a **hash** of each member's
-  token. A leaked config file does not hand over anyone's token.
-- Tokens are long random strings carrying a `kolo_` prefix, so one can be
-  recognised on sight and by secret scanners.
-- The client sends its token in the `Authorization` header of the connection
-  upgrade. It never appears in a URL, where it would be logged by every proxy in
-  between.
-- Revoking a member is removing their line from the config.
+Tokens carry a `kolo_` prefix so one is recognisable on sight and by secret
+scanners, and travel in the `Authorization` header rather than a URL.
 
-One member may be connected from several machines at once, so presence is keyed
-by member *and* connection, not by member alone.
+## Input
 
-## Protocol
+A message is never typed straight into the agent. It joins a queue and is
+released only while the screen says the agent is idle at its input box. Released
+at the wrong moment it is swallowed without trace, or its Enter answers a
+question the agent was asking. See `docs/probe-findings.md` #3–#5 — this is the
+sharpest thing kolo knows.
 
-One websocket per connected agent, carrying JSON text frames with a `type`
-field. It starts deliberately small — presence and nothing else — because every
-later feature is a new payload on a pipe whose shape is already settled.
+Three things are not messages. They go directly, each permitted only where it is
+safe:
 
-| direction | type | meaning |
-|---|---|---|
-| client → hub | `hello` | agent kind, machine name, kolo version |
-| hub → client | `welcome` | who the hub thinks you are, and which org |
-| hub → client | `error` | why the connection is being closed |
+| action | permitted when |
+|---|---|
+| answer a dialog | a dialog is on screen |
+| interrupt | always |
+| restart, start fresh, stop | always |
 
-Liveness is the websocket's own ping/pong rather than an application-level
-heartbeat, so a dead connection is noticed by the transport that owns it.
+Answering a dialog is the inverse of the danger above: the keystroke that must
+never arrive by accident is fine when it is deliberate, attributed, and gated on
+the same detection.
 
-`kolo who` is a plain authenticated `GET /v1/presence`, not a websocket. Asking a
-question and getting an answer does not need a persistent connection.
+## What kolo knows about each agent kind
 
-## Reconnection
+Two things:
 
-Laptops sleep and wifi drops. A client reconnects on its own with exponential
-backoff and jitter, and an agent that disappears for thirty seconds must not need
-restarting to come back.
+- how its screen looks when idle, and when it is asking a question
+- how to resume its last conversation
 
-Presence is derived from live connections: a drop removes the member, a
-reconnection re-adds them. There is no separate liveness bookkeeping to get out
-of step with reality.
+Claude Code is the first. An agent kind kolo has neither for is still watchable,
+because an unrecognised screen never reads as idle — so nothing is ever sent to
+it.
+
+## Restart
+
+Agents are supervised, and resume on restart. When resume fails — killed
+mid-tool-call, CLI upgraded, state gone — the agent starts clean and the log says
+so. Silent context loss is worse than visible context loss.
+
+A restart replaces the screen, so the buffer is cleared and re-seeded from the
+new process rather than repainting newcomers with a picture of a process that no
+longer exists.
+
+Context accumulates across everyone who has used the agent, and nobody owns the
+decision to clear it. Hence **start fresh** as an ordinary, logged action.
 
 ## What runs where
 
-| | host's machine | hub |
+| | host | hub |
 |---|---|---|
-| the agent process | ✓ | |
-| the agent's files and permissions | ✓ | |
-| the virtual terminal and its snapshot | ✓ | |
-| the injection gate for shared agents | ✓ | |
-| identity and org membership | | ✓ |
-| presence | | ✓ |
-| projects, skills, channels (later) | | ✓ |
+| agent processes, their files and permissions | ✓ | |
+| terminal emulation, the screen, the input gate | ✓ | |
+| members, tokens, attribution | | ✓ |
+| the agent list and the browser UI | | ✓ |
+| the log | | ✓ |
 
-The gate that decides when a message may be typed into a shared agent stays on
-the machine that agent runs on, next to the screen it reads. No part of that
-trust boundary moves onto the network.
+The gate that decides when a line may be typed stays next to the screen it reads.
+No part of that boundary moves onto the network.
 
-## Security posture
+## Security
 
-The dangerous thing in this design is not a message: it is a **promoted skill**,
-which is code that runs on every member's machine with their permissions.
-Promotion is a supply-chain event and is designed as one when it arrives — who
-may promote, what review it gets, how it is versioned, and how it is rolled back.
-
-That is why the distribution pipe is built first carrying **projects**, which are
-data, and only then upgraded to carry skills, which are not.
+- `--dir` and `--allow` decide what may be started, not what may be reached. The
+  agent has the host user's whole account; run the host as a user that owns
+  nothing you would not hand over.
+- The hub is a remote code execution endpoint. Its authentication is what stands
+  between the internet and the host's machine.
+- The hub carries no TLS. Reaching it across the internet means putting it behind
+  something that does.
+- Every member has the same power over every agent, including stopping one
+  mid-task and approving a permission dialog for everybody. Roles wait until
+  there is evidence of the shape they should take; the log stands in until then.
