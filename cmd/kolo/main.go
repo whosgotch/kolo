@@ -2,6 +2,7 @@
 //
 //	kolo serve     the hub an org connects to
 //	kolo token     mint credentials
+//	kolo host      lend this machine to the org
 //
 // Agents run on a machine somebody lends to the org; everyone else reaches them
 // through the hub, in a browser.
@@ -24,6 +25,7 @@ var commands = map[string]struct {
 }{
 	"serve": {serveCmd, "run the hub for an org"},
 	"token": {tokenCmd, "mint credentials"},
+	"host":  {hostCmd, "lend this machine to the org"},
 }
 
 func main() {

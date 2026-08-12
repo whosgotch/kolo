@@ -1,0 +1,102 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+
+	"github.com/whosgotch/kolo/internal/host"
+)
+
+// hostCmd lends this machine to the org.
+//
+// Whoever runs it is not a participant. Nothing about an agent should need them
+// at the keyboard, and this command takes no input and draws nothing.
+func hostCmd(args []string) error {
+	fs := flag.NewFlagSet("host", flag.ExitOnError)
+	var dirs, allow list
+	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more)")
+	fs.Var(&allow, "allow", "an agent command the org may run (repeat, or comma-separated)")
+	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join (default $KOLO_HUB)")
+	token := fs.String("token", os.Getenv("KOLO_TOKEN"), "this machine's token (default $KOLO_TOKEN)")
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: kolo host -dir <path> [-dir <path>...] -allow <command>")
+		fs.PrintDefaults()
+		fmt.Fprintln(os.Stderr, "\nThese flags bound what the org may start here, not what a running")
+		fmt.Fprintln(os.Stderr, "agent may reach: it has this user's whole account. Run a host as a")
+		fmt.Fprintln(os.Stderr, "user that owns only what the org should have.")
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	switch {
+	case *hubURL == "" || *token == "":
+		return fmt.Errorf("-hub and -token are both needed (or $KOLO_HUB and $KOLO_TOKEN)")
+	case len(dirs) == 0:
+		return fmt.Errorf("-dir is needed: a host that lends no directory can run nothing")
+	case len(allow) == 0:
+		return fmt.Errorf("-allow is needed: say which agent commands the org may run, such as -allow claude")
+	}
+
+	// Resolved and checked here, so a typo is a refusal at startup rather than
+	// every create failing later for a reason nobody can see.
+	for i, d := range dirs {
+		abs, err := filepath.Abs(d)
+		if err != nil {
+			return fmt.Errorf("-dir %s: %w", d, err)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return fmt.Errorf("-dir %s: %w", d, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("-dir %s is not a directory", d)
+		}
+		dirs[i] = abs
+	}
+
+	agents := host.NewAgents(dirs, allow)
+	defer agents.StopAll()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	log.Printf("lending %s, running %s", strings.Join(dirs, " "), strings.Join(allow, " "))
+	host.Run(ctx, host.Config{
+		Hub:     *hubURL,
+		Token:   *token,
+		Dirs:    dirs,
+		Allow:   allow,
+		Version: version,
+	}, agents, func(e host.Event) {
+		switch {
+		case e.Connected:
+			log.Printf("joined %s as %s", e.Org, e.Host)
+		case e.Err != nil:
+			log.Printf("%v; retrying in %s", e.Err, e.Retry.Round(100_000_000))
+		}
+	})
+	return nil
+}
+
+// list is a flag that may be given more than once, and may carry a
+// comma-separated set each time.
+type list []string
+
+func (l *list) String() string { return strings.Join(*l, ",") }
+
+func (l *list) Set(v string) error {
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			*l = append(*l, part)
+		}
+	}
+	return nil
+}
