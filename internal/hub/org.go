@@ -1,9 +1,9 @@
-// Package hub is the shared half of kolo: it knows who belongs to an org and
-// which of them are connected right now.
+// Package hub is the shared half of kolo: it knows who belongs to an org, which
+// machines are lending themselves to it, and what agents are running on them.
 //
-// Members' agents run on their own machines and dial in. The hub never reaches
-// back into a machine, and holds nothing that lets it: no files, no commands,
-// no way to type into anyone's agent.
+// Hosts dial in; the hub is never the one to open a connection. What it can ask
+// a host to do is bounded by what that host was started with, not by anything
+// the hub holds.
 package hub
 
 import (
@@ -22,6 +22,18 @@ import (
 type Org struct {
 	Name    string   `json:"org"`
 	Members []Member `json:"members"`
+	Hosts   []Host   `json:"hosts"`
+}
+
+// Host is a machine lending itself to the org.
+//
+// It authenticates as itself rather than as the person who set it up. The log is
+// what stands in for roles here, and "devbox started an agent for dana" says
+// something that "artem started an agent" — because the machine happened to be
+// his — does not.
+type Host struct {
+	ID        string `json:"id"`
+	TokenHash string `json:"token_hash"`
 }
 
 // Member is one person in an org.
@@ -74,34 +86,47 @@ func Load(path string) (*Org, error) {
 // it and hoping. A duplicate id or an unreadable hash is a mistake in a file
 // someone typed, and saying so at startup beats a member silently unable to
 // connect.
+// Ids are unique across members and hosts together, so that a name in the log
+// identifies one thing.
 func (o *Org) validate() error {
 	if o.Name == "" {
 		return fmt.Errorf("org needs a name")
 	}
-	seen := make(map[string]bool, len(o.Members))
-	for i, m := range o.Members {
+	seen := map[string]bool{}
+	check := func(kind, id, hash string, i int) error {
 		switch {
-		case m.ID == "":
-			return fmt.Errorf("member %d has no id", i)
-		case seen[m.ID]:
-			return fmt.Errorf("member id %q appears twice", m.ID)
-		case m.TokenHash == "":
-			return fmt.Errorf("member %q has no token hash", m.ID)
+		case id == "":
+			return fmt.Errorf("%s %d has no id", kind, i)
+		case seen[id]:
+			return fmt.Errorf("id %q appears twice", id)
+		case hash == "":
+			return fmt.Errorf("%s %q has no token hash", kind, id)
 		}
-		if _, err := hex.DecodeString(m.TokenHash); err != nil {
-			return fmt.Errorf("member %q has an unreadable token hash", m.ID)
+		if _, err := hex.DecodeString(hash); err != nil {
+			return fmt.Errorf("%s %q has an unreadable token hash", kind, id)
 		}
-		seen[m.ID] = true
+		seen[id] = true
+		return nil
+	}
+	for i, m := range o.Members {
+		if err := check("member", m.ID, m.TokenHash, i); err != nil {
+			return err
+		}
+	}
+	for i, h := range o.Hosts {
+		if err := check("host", h.ID, h.TokenHash, i); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// Verify returns the member a token belongs to.
+// VerifyMember returns the member a token belongs to.
 //
 // Every member is compared against, and each comparison is constant-time, so
 // neither how long the call takes nor which member matched can be read from the
 // outside.
-func (o *Org) Verify(token string) (Member, bool) {
+func (o *Org) VerifyMember(token string) (Member, bool) {
 	want := HashToken(token)
 	var found Member
 	var ok bool
@@ -113,12 +138,17 @@ func (o *Org) Verify(token string) (Member, bool) {
 	return found, ok
 }
 
-// Member returns a member by id.
-func (o *Org) Member(id string) (Member, bool) {
-	for _, m := range o.Members {
-		if m.ID == id {
-			return m, true
+// VerifyHost returns the host a token belongs to. A member's token is not a
+// host's and never resolves here: the two are asked for on different routes and
+// carry different powers.
+func (o *Org) VerifyHost(token string) (Host, bool) {
+	want := HashToken(token)
+	var found Host
+	var ok bool
+	for _, h := range o.Hosts {
+		if subtle.ConstantTimeCompare([]byte(h.TokenHash), []byte(want)) == 1 {
+			found, ok = h, true
 		}
 	}
-	return Member{}, false
+	return found, ok
 }

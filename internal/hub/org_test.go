@@ -35,7 +35,7 @@ func TestLoad(t *testing.T) {
 	if org.Name != "acme" || len(org.Members) != 1 {
 		t.Fatalf("loaded %+v", org)
 	}
-	m, ok := org.Verify(token)
+	m, ok := org.VerifyMember(token)
 	if !ok || m.ID != "artem" {
 		t.Errorf("Verify(the member's own token) = %+v, %v", m, ok)
 	}
@@ -60,7 +60,7 @@ func TestVerifyRejects(t *testing.T) {
 		"uppercased":          strings.ToUpper(token),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if m, ok := org.Verify(attempt); ok {
+			if m, ok := org.VerifyMember(attempt); ok {
 				t.Errorf("Verify(%s) let in %q", name, m.ID)
 			}
 		})
@@ -73,7 +73,7 @@ func TestVerifyIgnoresSurroundingSpace(t *testing.T) {
 	token, hash, _ := NewToken()
 	org := &Org{Name: "acme", Members: []Member{{ID: "artem", TokenHash: hash}}}
 
-	if _, ok := org.Verify("  " + token + "\n"); !ok {
+	if _, ok := org.VerifyMember("  " + token + "\n"); !ok {
 		t.Error("a token with surrounding whitespace was rejected")
 	}
 }
@@ -82,12 +82,12 @@ func TestVerifyIgnoresSurroundingSpace(t *testing.T) {
 func TestRevocation(t *testing.T) {
 	token, hash, _ := NewToken()
 	org := &Org{Name: "acme", Members: []Member{{ID: "artem", TokenHash: hash}}}
-	if _, ok := org.Verify(token); !ok {
+	if _, ok := org.VerifyMember(token); !ok {
 		t.Fatal("member cannot connect before revocation")
 	}
 
 	org.Members = nil
-	if m, ok := org.Verify(token); ok {
+	if m, ok := org.VerifyMember(token); ok {
 		t.Errorf("revoked token still admits %q", m.ID)
 	}
 }
@@ -145,4 +145,54 @@ func mustToken(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return token
+}
+
+// TestTokenKindsDoNotCross is the point of having two lists. A host's token
+// carries the power to run processes on a machine and a member's does not, so
+// one resolving as the other would be an escalation in either direction.
+func TestTokenKindsDoNotCross(t *testing.T) {
+	memberToken, memberHash, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostToken, hostHash, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	org := &Org{
+		Name:    "acme",
+		Members: []Member{{ID: "artem", Name: "Artem", TokenHash: memberHash}},
+		Hosts:   []Host{{ID: "devbox", TokenHash: hostHash}},
+	}
+
+	if h, ok := org.VerifyHost(hostToken); !ok || h.ID != "devbox" {
+		t.Errorf("VerifyHost(the host's own token) = %+v, %v", h, ok)
+	}
+	if m, ok := org.VerifyMember(memberToken); !ok || m.ID != "artem" {
+		t.Errorf("VerifyMember(the member's own token) = %+v, %v", m, ok)
+	}
+	if m, ok := org.VerifyMember(hostToken); ok {
+		t.Errorf("a host's token verified as member %q", m.ID)
+	}
+	if h, ok := org.VerifyHost(memberToken); ok {
+		t.Errorf("a member's token verified as host %q", h.ID)
+	}
+}
+
+func TestAnIdIsUniqueAcrossMembersAndHosts(t *testing.T) {
+	_, hash, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(Org{
+		Name:    "acme",
+		Members: []Member{{ID: "devbox", Name: "Devbox", TokenHash: hash}},
+		Hosts:   []Host{{ID: "devbox", TokenHash: hash}},
+	})
+
+	if _, err := Load(orgFile(t, string(body))); err == nil {
+		t.Error("loaded an org where a member and a host share an id")
+	} else if !strings.Contains(err.Error(), "twice") {
+		t.Errorf("unhelpful error: %v", err)
+	}
 }

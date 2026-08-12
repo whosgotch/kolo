@@ -82,16 +82,18 @@ func nextAddr(addr string) string {
 	return host + ":" + strconv.Itoa(n+1)
 }
 
-// tokenCmd mints credentials for one member.
+// tokenCmd mints credentials for one member or one host.
 //
 // The token is shown once, here, and never stored by kolo: the hub keeps only a
 // hash of it. Losing it means issuing another, which is the intended cost.
 func tokenCmd(args []string) error {
 	fs := flag.NewFlagSet("token", flag.ExitOnError)
-	id := fs.String("id", "", "member id, as used by kolo who")
+	id := fs.String("id", "", "member or host id")
 	name := fs.String("name", "", "member's display name (defaults to the id)")
+	asHost := fs.Bool("host", false, "credentials for a machine that will run agents, not a person")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo token -id <id> [-name <name>]")
+		fmt.Fprintln(os.Stderr, "       kolo token -host -id <id>")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -109,14 +111,21 @@ func tokenCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	entry, err := json.MarshalIndent(hub.Member{ID: *id, Name: *name, TokenHash: hash}, "    ", "  ")
+
+	var entry any = hub.Member{ID: *id, Name: *name, TokenHash: hash}
+	who, list := *name, "members"
+	if *asHost {
+		entry = hub.Host{ID: *id, TokenHash: hash}
+		who, list = "the machine that will run agents", "hosts"
+	}
+	body, err := json.MarshalIndent(entry, "    ", "  ")
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Give this to %s, once. It is not stored anywhere:\n\n", *name)
+	fmt.Printf("Give this to %s, once. It is not stored anywhere:\n\n", who)
 	fmt.Printf("    KOLO_TOKEN=%s\n\n", token)
-	fmt.Printf("Add this to the members list in your org file:\n\n    %s\n\n", entry)
+	fmt.Printf("Add this to the %s list in your org file:\n\n    %s\n\n", list, body)
 	fmt.Println("The hub keeps only the hash, so a lost token is replaced rather than recovered.")
 	return nil
 }
