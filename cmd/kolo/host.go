@@ -25,6 +25,7 @@ func hostCmd(args []string) error {
 	fs.Var(&allow, "allow", "an agent command the org may run (repeat, or comma-separated)")
 	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join (default $KOLO_HUB)")
 	token := fs.String("token", os.Getenv("KOLO_TOKEN"), "this machine's token (default $KOLO_TOKEN)")
+	state := fs.String("state", defaultState(), "where to record the agents running here")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo host -dir <path> [-dir <path>...] -allow <command>")
 		fs.PrintDefaults()
@@ -62,13 +63,22 @@ func hostCmd(args []string) error {
 		dirs[i] = abs
 	}
 
-	agents := host.NewAgents(dirs, allow)
+	agents := host.NewAgents(dirs, allow, *state)
 	defer agents.StopAll()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	log.Printf("lending %s, running %s", strings.Join(dirs, " "), strings.Join(allow, " "))
+
+	// Before the hub is reached, so that agents come back whether or not it is
+	// up. They are the org's, not the connection's.
+	if err := agents.Restore(); err != nil {
+		log.Print(err)
+	}
+	if names := agents.Names(); len(names) > 0 {
+		log.Printf("brought back %s", strings.Join(names, " "))
+	}
 	host.Run(ctx, host.Config{
 		Hub:     *hubURL,
 		Token:   *token,
@@ -99,4 +109,15 @@ func (l *list) Set(v string) error {
 		}
 	}
 	return nil
+}
+
+// defaultState is where a host records what it is running. It goes under the
+// user's config directory rather than the working directory, because a host is
+// started from wherever and has to find the same file next time.
+func defaultState() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "kolo", "agents.json")
 }

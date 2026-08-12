@@ -70,7 +70,13 @@ open to whoever is driving it. Run the host as a user that owns only what the or
 should have — a dedicated account, or a machine that holds nothing else.
 
 The host dials out, so there is no port to open. An unreachable hub is reported
-and retried; agents keep running and rejoin when it comes back.
+and retried; agents keep running and say what they are when it comes back.
+
+Agents are meant to outlive the things that interrupt them. One that exits is
+started again, and one that will not stay up is marked failed rather than
+restarted for ever. What is running is written to `-state`, so restarting the
+host — or the machine — brings the org's agents back rather than an empty
+machine.
 
 Whoever runs the host does not use it. They do not need a terminal open, and
 nothing the org does with an agent should ever require them.

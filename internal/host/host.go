@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/hub"
 )
 
 // Backoff bounds. A dropped wifi connection comes back in seconds, so the first
@@ -89,8 +90,12 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 	}
 	defer conn.CloseNow()
 
+	// The hello carries what is already running. A host whose connection dropped
+	// kept its agents; the hub lost them, because an agent it cannot reach is one
+	// it should not be listing. This is what puts them back.
 	hello, _ := json.Marshal(map[string]any{
-		"type": "hello", "dirs": cfg.Dirs, "allow": cfg.Allow, "version": cfg.Version,
+		"type": "hello", "dirs": cfg.Dirs, "allow": cfg.Allow,
+		"agents": agents.Specs(), "version": cfg.Version,
 	})
 	if err := send(ctx, conn, hello); err != nil {
 		return fmt.Errorf("host: hello: %w", err)
@@ -136,8 +141,8 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			// run the process, so this is the only refusal that is worth
 			// anything: the hub's copy of the rules exists to give a person a
 			// reason, not to be relied on.
-			if err := agents.Start(c.Name, c.Dir, c.Command); err != nil {
-				agents.reportf(c.Name, statusFailed, err.Error())
+			if err := agents.Start(c.Agent); err != nil {
+				agents.report(c.Agent.Name, hub.StatusFailed, err.Error())
 			}
 		case "stop":
 			agents.Stop(c.Name)
@@ -176,10 +181,9 @@ type welcome struct {
 }
 
 type command struct {
-	Type    string `json:"type"`
-	Name    string `json:"name"`
-	Dir     string `json:"dir"`
-	Command string `json:"command"`
+	Type  string    `json:"type"`
+	Name  string    `json:"name"`
+	Agent hub.Agent `json:"agent"`
 }
 
 // wsURL turns a hub's base URL into a websocket one, so that a hub reached over
