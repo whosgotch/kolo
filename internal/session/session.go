@@ -67,13 +67,16 @@ func (s *Session) Write(p []byte) (int, error) {
 }
 
 // State reads the agent's screen and reports whether it could take a line now.
-// It is what the relay asks before releasing anything, so it reads the same
-// screen the viewer is looking at rather than a second, separately maintained
-// one.
-func (s *Session) State() detect.State {
+// It is the same screen the viewer is looking at rather than a second,
+// separately maintained one.
+func (s *Session) State() detect.State { return detect.Of(s.Text()) }
+
+// Text is the agent's screen as it stands. It is what the relay reads before
+// writing anything: the state it may send in, and the choices it may answer.
+func (s *Session) Text() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return detect.Of(s.screen.Text())
+	return s.screen.Text()
 }
 
 // Announce sends the viewer a control frame describing something that happened

@@ -23,11 +23,26 @@ func (r *recorder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// fixture builds a relay whose agent state the test controls.
-func fixture(state detect.State) (*Relay, *recorder, *detect.State) {
+// screens carry the marker of each state and nothing else. The relay is given a
+// screen rather than a verdict, so these go through the real detector — a test
+// that stubbed the verdict would pass with a relay that reads the screen wrongly.
+var screens = map[detect.State]string{
+	detect.Idle:    "❯\n  ? for shortcuts\n",
+	detect.Busy:    "✳ Levitating…\n❯\n  esc to interrupt\n",
+	detect.Dialog:  " Do you want to create note.txt?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel\n",
+	detect.Unknown: "some other tool\n",
+}
+
+// fixture builds a relay whose screen the test controls, and returns the way to
+// change it.
+func fixture(state detect.State) (*Relay, *recorder, func(detect.State)) {
 	rec := &recorder{}
-	current := state
-	return New(rec, func() detect.State { return current }), rec, &current
+	current := screens[state]
+	r := New(rec, func() string { return current })
+	if got := r.state(); got != state {
+		panic("fixture screen for " + state.String() + " reads as " + got.String())
+	}
+	return r, rec, func(s detect.State) { current = screens[s] }
 }
 
 func TestHeldWhileADialogIsUp(t *testing.T) {
@@ -123,7 +138,7 @@ func TestOneMessagePerTick(t *testing.T) {
 }
 
 func TestQueueSurvivesUntilTheAgentIsReady(t *testing.T) {
-	r, _, state := fixture(detect.Dialog)
+	r, _, becomes := fixture(detect.Dialog)
 	r.Submit("ada", "first")
 	r.Submit("bob", "second")
 
@@ -132,7 +147,7 @@ func TestQueueSurvivesUntilTheAgentIsReady(t *testing.T) {
 		t.Fatalf("queue lost messages while held: %v", r.Pending())
 	}
 
-	*state = detect.Idle
+	becomes(detect.Idle)
 	first, _ := r.Tick()
 	second, _ := r.Tick()
 	if first == nil || second == nil {
@@ -202,6 +217,82 @@ func TestEscapeSequencesCannotReachTheAgent(t *testing.T) {
 	for _, r := range rec.writes[0] {
 		if r < 0x20 || r == 0x7f {
 			t.Errorf("control character %q reached the agent in %q", r, rec.writes[0])
+		}
+	}
+}
+
+func TestAnswerPressesTheNumber(t *testing.T) {
+	r, rec, _ := fixture(detect.Dialog)
+	if err := r.Answer(2, "No"); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.writes) != 1 || rec.writes[0] != "2" {
+		t.Errorf("writes = %q, want one write of %q", rec.writes, "2")
+	}
+}
+
+// TestAnswerNeedsTheQuestionItWasGiven is the guarantee that makes answering
+// from a browser safe. Between reading the screen and clicking, the dialog may
+// have been answered by somebody else and replaced by the next one — which has
+// the same numbers on it and means something else entirely.
+func TestAnswerNeedsTheQuestionItWasGiven(t *testing.T) {
+	tests := []struct {
+		name   string
+		state  detect.State
+		number int
+		label  string
+	}{
+		{"the label has changed", detect.Dialog, 1, "Yes, allow all edits during this session"},
+		{"the number is not offered", detect.Dialog, 3, "No"},
+		{"a number that is two keystrokes", detect.Dialog, 12, "No"},
+		{"the question has gone", detect.Idle, 1, "Yes"},
+		{"the agent is working", detect.Busy, 1, "Yes"},
+		{"the screen is unrecognised", detect.Unknown, 1, "Yes"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, rec, _ := fixture(tt.state)
+			if err := r.Answer(tt.number, tt.label); err == nil {
+				t.Error("the answer was accepted")
+			}
+			if len(rec.writes) != 0 {
+				t.Errorf("wrote %q to the agent", rec.writes)
+			}
+		})
+	}
+}
+
+func TestInterruptOnlyWhileWorking(t *testing.T) {
+	for _, state := range []detect.State{detect.Idle, detect.Dialog, detect.Unknown} {
+		t.Run("refused when "+state.String(), func(t *testing.T) {
+			r, rec, _ := fixture(state)
+			if err := r.Interrupt(); err == nil {
+				t.Error("the interrupt was accepted")
+			}
+			if len(rec.writes) != 0 {
+				t.Errorf("wrote %q to the agent", rec.writes)
+			}
+		})
+	}
+
+	r, rec, _ := fixture(detect.Busy)
+	if err := r.Interrupt(); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.writes) != 1 || rec.writes[0] != "\x1b" {
+		t.Errorf("writes = %q, want one Esc", rec.writes)
+	}
+}
+
+// TestOptionsAreOnlyOfferedForAQuestion keeps a page from showing choices for a
+// screen that has moved on.
+func TestOptionsAreOnlyOfferedForAQuestion(t *testing.T) {
+	if r, _, _ := fixture(detect.Dialog); len(r.Options()) != 2 {
+		t.Errorf("Options() = %v, want the two on screen", r.Options())
+	}
+	for _, state := range []detect.State{detect.Idle, detect.Busy, detect.Unknown} {
+		if r, _, _ := fixture(state); len(r.Options()) != 0 {
+			t.Errorf("Options() offered choices while %s", state)
 		}
 	}
 }

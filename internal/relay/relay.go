@@ -11,10 +11,17 @@
 // The text and the Enter go as two separate writes. Sent as one, the agent's
 // terminal reads them as a paste, the Enter becomes a literal newline, and the
 // line is never submitted at all (findings #3).
+//
+// Answering a question and interrupting the agent come through here as well,
+// because this is the only thing that writes to the agent and two writers to one
+// terminal interleave. They are not queued, though: both mean the screen that is
+// up at the moment somebody asks for them, and a screen that has moved on is not
+// one anybody may answer or interrupt.
 package relay
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -22,6 +29,10 @@ import (
 
 	"github.com/whosgotch/kolo/internal/detect"
 )
+
+// esc is the interrupt. It is the key the agent's own footer tells the person at
+// the keyboard to press.
+const esc = 0x1b
 
 const (
 	// maxText is a generous limit on one message. It exists so a guest cannot
@@ -50,7 +61,11 @@ func (m Message) Line() string { return m.Nickname + ": " + m.Text }
 // Relay is the queue between the guests and the agent.
 type Relay struct {
 	agent Sender
-	state func() detect.State
+	// screen is the agent's screen as text, read fresh each time. The relay takes
+	// the picture rather than a verdict about it, because releasing a line needs
+	// only the state while answering a question needs the choices in it — and
+	// both must be read from the same screen everybody is watching.
+	screen func() string
 
 	mu      sync.Mutex
 	queue   []Message
@@ -58,10 +73,13 @@ type Relay struct {
 	sending bool
 }
 
-// New returns a Relay that writes to agent and asks state whether it may.
-func New(agent Sender, state func() detect.State) *Relay {
-	return &Relay{agent: agent, state: state}
+// New returns a Relay that writes to agent and reads screen to decide whether it
+// may.
+func New(agent Sender, screen func() string) *Relay {
+	return &Relay{agent: agent, screen: screen}
 }
+
+func (r *Relay) state() detect.State { return detect.Of(r.screen()) }
 
 // Submit queues a guest's line. It is never written to the agent here, however
 // idle the agent happens to be: everything goes through the queue, so there is
@@ -122,6 +140,76 @@ func (r *Relay) Tick() (*Message, error) {
 	}
 	r.queue = r.queue[1:]
 	return &m, nil
+}
+
+// Options are the choices the agent is offering, for showing a member what they
+// would be answering. Empty whenever there is no question on screen.
+func (r *Relay) Options() []detect.Option { return detect.Options(r.screen()) }
+
+// Answer chooses one of the options on screen, by pressing its number.
+//
+// The number is checked against the label the member was shown, and both against
+// the screen as it stands the instant before the key is written. A dialog that
+// has been answered by somebody else, or replaced by the next question, is a
+// different question with the same numbers on it — and answering the wrong
+// question is the failure this whole package exists to prevent.
+//
+// Pressing the number rather than walking the highlight down with arrows is the
+// safer of the two guesses. Neither was probed, but a key this dialog does not
+// understand is discarded (docs/probe-findings.md #5), so a wrong guess here
+// costs a member an answer that does not land — where a wrong guess about arrows
+// leaves a different option highlighted and Enter still meaning yes.
+func (r *Relay) Answer(number int, label string) error {
+	// Two digits would be two keystrokes, and the first of them is an answer.
+	if number < 1 || number > 9 {
+		return fmt.Errorf("relay: %d is not a choice", number)
+	}
+	return r.exclusive(func() error {
+		screen := r.screen()
+		if detect.Of(screen) != detect.Dialog {
+			return fmt.Errorf("relay: there is no question on screen")
+		}
+		for _, o := range detect.Options(screen) {
+			if o.Number == number && o.Label == label {
+				_, err := r.agent.Write([]byte(strconv.Itoa(number)))
+				return err
+			}
+		}
+		return fmt.Errorf("relay: the screen has moved on from that question")
+	})
+}
+
+// Interrupt stops the agent working, and only then: Esc at an input box clears
+// what is in it, and Esc at a dialog answers by cancelling. Both are somebody
+// else's business, taken by a member who meant to stop something.
+func (r *Relay) Interrupt() error {
+	return r.exclusive(func() error {
+		if r.state() != detect.Busy {
+			return fmt.Errorf("relay: the agent is not working")
+		}
+		_, err := r.agent.Write([]byte{esc})
+		return err
+	})
+}
+
+// exclusive runs one write to the agent with nothing else writing at the same
+// time. The lock is not held across the write itself, so a queue that is stuck
+// against a full PTY buffer is still one people can add to.
+func (r *Relay) exclusive(write func() error) error {
+	r.mu.Lock()
+	if r.sending {
+		r.mu.Unlock()
+		return fmt.Errorf("relay: something else is being sent")
+	}
+	r.sending = true
+	r.mu.Unlock()
+
+	err := write()
+
+	r.mu.Lock()
+	r.sending = false
+	r.mu.Unlock()
+	return err
 }
 
 // send writes the line and then the Enter, as two separate writes. See the
