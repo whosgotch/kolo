@@ -163,6 +163,68 @@ func TestBusyKeepsItsInputBox(t *testing.T) {
 	}
 }
 
+func TestOptions(t *testing.T) {
+	tests := []struct {
+		name   string
+		screen string
+		want   []Option
+	}{
+		{"tool permission dialog", permissionScreen, []Option{
+			{1, "Yes", true},
+			{2, "Yes, allow all edits during this session (shift+tab)", false},
+			{3, "No", false},
+		}},
+		{"workspace trust dialog", trustScreen, []Option{
+			{1, "Yes, I trust this folder", true},
+			{2, "No, exit", false},
+		}},
+		// Nothing to answer means nothing to offer. An idle or busy screen must
+		// not produce choices, or a page would show a question that has gone.
+		{"idle at the prompt", idleScreen, nil},
+		{"running a shell command", busyScreen, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Options(tt.screen)
+			if len(got) != len(tt.want) {
+				t.Fatalf("Options(%s) = %v, want %v", tt.name, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("option %d = %+v, want %+v", i+1, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestOptionsIgnoresNumbersThatAreNotChoices is the sharp case for the parser.
+// The permission dialog shows a numbered diff of the file it is asking about, so
+// the screen carries numbers that mean nothing and must not be offered as
+// answers.
+func TestOptionsIgnoresNumbersThatAreNotChoices(t *testing.T) {
+	for name, screen := range map[string]string{
+		"a numbered diff above the question": permissionScreen,
+		"prose that enumerates": `
+ Do you want to proceed?
+ It does 1. one thing, then 2. another.
+
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, o := range Options(screen) {
+				if strings.Contains(o.Label, "hello") || strings.Contains(o.Label, "one thing") {
+					t.Errorf("offered %q as a choice", o.Label)
+				}
+			}
+		})
+	}
+}
+
 func TestOnlyIdleCanSend(t *testing.T) {
 	for _, s := range []State{Unknown, Idle, Dialog, Busy} {
 		if want := s == Idle; s.CanSend() != want {

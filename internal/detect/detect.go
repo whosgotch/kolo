@@ -20,13 +20,21 @@
 // holds the queue. A missed detection costs a guest a delay; the opposite
 // mistake costs the host a command they never approved.
 //
+// Reading the dialog's choices is here too, and for the same reason. A member
+// answering from a browser must answer the question that is on screen now, and
+// the screen is the only account of what that question is.
+//
 // The markers are Claude Code's. A detector that works for one agent's TUI is
 // worth more than one that half-works for every agent, and the fallback for an
 // unrecognised agent is the safe one: its screens never match, so nothing is
 // ever sent.
 package detect
 
-import "strings"
+import (
+	"regexp"
+	"strconv"
+	"strings"
+)
 
 // State is what the agent's screen says about sending it a line.
 type State int
@@ -93,6 +101,62 @@ const (
 	// match would confuse them.
 	busyFooter = "esc to interrupt"
 )
+
+// Option is one numbered choice of the dialog on screen.
+type Option struct {
+	Number   int    `json:"number"`
+	Label    string `json:"label"`
+	Selected bool   `json:"selected"`
+}
+
+// optionLine matches a choice in a numbered list, with the marker that the agent
+// draws against the highlighted one.
+var optionLine = regexp.MustCompile(`^\s*(❯)?\s*(\d{1,2})\.\s+(\S.*?)\s*$`)
+
+// Options reads the choices out of the dialog on screen, so that a member can be
+// offered the question in words rather than told to steer through it blind.
+//
+// It is the same screen the detector classifies and the same one everybody is
+// watching. That matters for what happens with the answer: a choice is only
+// meaningful against the arrangement it was read from, so what is returned here
+// is what the answer is later checked against.
+//
+// Nothing is returned for a screen that is not a dialog, or for one whose
+// numbering does not run 1, 2, 3 down consecutive lines. Prose and diffs contain
+// numbers; a list does not have to be found, and finding one that is not there is
+// how a member ends up answering a question nobody asked.
+func Options(screen string) []Option {
+	if Of(screen) != Dialog {
+		return nil
+	}
+	var out []Option
+	last := -2
+	for i, line := range strings.Split(screen, "\n") {
+		m := optionLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		n, _ := strconv.Atoi(m[2])
+		opt := Option{Number: n, Label: m[3], Selected: m[1] != ""}
+		switch {
+		case n == len(out)+1 && i == last+1:
+			out = append(out, opt)
+		case n == 1:
+			// A list further down the screen replaces one found above it. The
+			// dialog is drawn at the bottom, under whatever it is asking about.
+			out = []Option{opt}
+		default:
+			continue
+		}
+		last = i
+	}
+	// One line reading "1." is a sentence. A question offers something to choose
+	// between.
+	if len(out) < 2 {
+		return nil
+	}
+	return out
+}
 
 // Of classifies the agent's screen.
 func Of(screen string) State {
