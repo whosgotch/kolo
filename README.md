@@ -37,8 +37,9 @@ See [docs/architecture.md](docs/architecture.md) for the shape,
 ## What works today
 
 The loop. A host lends a machine, anyone in the org makes an agent on it from a
-browser, watches it work, and sends it messages — and the agents survive being
-killed and outlive the host restarting.
+browser, watches it work, sends it messages, answers the questions it asks and
+stops it when it is going wrong — and the agents survive being killed and
+outlive the host restarting.
 
 ```
 $ go build -o kolo ./cmd/kolo
@@ -54,8 +55,13 @@ without trace or its Enter answers a question the agent was asking. See
 [docs/probe-findings.md](docs/probe-findings.md); every part of it was found by
 experiment, not guessed at.
 
-What is missing is the rest of using an agent without the host: answering its
-permission dialogs, interrupting it, and restarting it from the browser.
+Answering works the same way round. The choices are read off the agent's screen
+and offered as buttons, and the answer carries the label the member was shown —
+so an answer either lands on the question they were looking at or is refused. No
+keystroke a member makes ever reaches the terminal.
+
+What is missing is restarting an agent from the browser, and starting one fresh
+when its conversation is not worth resuming.
 
 An earlier single-machine version — one agent, its host at the keyboard, a
 secret in a URL — has been removed rather than kept alongside. The screen model

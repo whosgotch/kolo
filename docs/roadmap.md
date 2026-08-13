@@ -45,6 +45,16 @@ agent until the host walks back to their keyboard, and the host is not supposed
 to be there at all. An agent nobody can interrupt is worse — it goes down a wrong
 path and the org watches.
 
+Answering and interrupting are built. Neither sends a keystroke: the choices are
+read off the screen and offered as buttons, an answer is the number of the option
+plus the label the member was shown, and it is refused if the screen has moved on
+to a different question. Interrupt is Esc, and only while the agent is working —
+Esc means cancel at a dialog and clear at an input box, and neither is what
+somebody pressing stop is asking for.
+
+What is left is restart and start fresh, which are a different mechanism: the
+process, and the resume command in the per-agent adapter.
+
 ## 5. More than one
 
 Several agents on a host, and the list becomes the front door rather than the
