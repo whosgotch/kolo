@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/session"
 	"github.com/whosgotch/kolo/internal/ui"
 )
@@ -392,11 +393,39 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	for m := range updates {
-		if err := forward(ctx, conn, m); err != nil {
+	if err := forward(ctx, conn, catchUp(live)); err != nil {
+		return
+	}
+	// Waiting on the context as well as the screen, so that a browser which has
+	// gone is let go of when takeFrom notices rather than whenever the agent next
+	// draws something. A quiet agent could hold that goroutine for hours.
+	for {
+		select {
+		case <-ctx.Done():
 			return
+		case m, ok := <-updates:
+			if !ok {
+				return
+			}
+			if err := forward(ctx, conn, m); err != nil {
+				return
+			}
 		}
 	}
+}
+
+// catchUp is what a joining viewer is missing. The repaint gives it the screen,
+// but what may be done with that screen was announced by the host when it last
+// changed — which was before this browser arrived. Somebody opening an agent
+// that is mid-question would otherwise see the question and be offered no way to
+// answer it until the next one.
+func catchUp(live *session.Session) session.Message {
+	b, _ := json.Marshal(struct {
+		Type    string          `json:"type"`
+		State   string          `json:"state"`
+		Options []detect.Option `json:"options"`
+	}{"state", live.State().String(), detect.Options(live.Text())})
+	return session.Message{Control: true, Data: b}
 }
 
 // takeFrom carries what a member sends to the machine running the agent. It also

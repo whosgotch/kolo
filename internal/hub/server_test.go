@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/detect"
 )
 
 // hubFixture starts a hub with one member and one host, and returns both tokens.
@@ -516,7 +518,16 @@ func TestARestartedScreenReplacesTheOld(t *testing.T) {
 		return ok && now != was
 	})
 
-	if _, _, err := viewer.Read(ctx); err == nil {
+	// Read on rather than once: what a viewer was already told stays readable
+	// after the screen behind it has gone, so the end of the connection is the
+	// thing to wait for.
+	read, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var err error
+	for err == nil {
+		_, _, err = viewer.Read(read)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
 		t.Error("a viewer of the old screen was left connected to it")
 	}
 	back := watch(t, ctx, s, memberToken, "checkups")
@@ -697,6 +708,50 @@ func TestAMessageReachesTheHost(t *testing.T) {
 	// claiming to be somebody else is simply not read.
 	if got.From != "Artem" {
 		t.Errorf("attributed to %q, want Artem", got.From)
+	}
+}
+
+// TestAJoinerIsToldWhatItMayDo: somebody opening an agent that is already
+// mid-question sees the question repainted, and must be given the way to answer
+// it. The host announced that when it changed, which was before this browser
+// existed.
+func TestAJoinerIsToldWhatItMayDo(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, _, screen := withAgent(t, ctx)
+
+	dialog := " Do you want to create note.txt?\r\n ❯ 1. Yes\r\n   2. No\r\n\r\n Esc to cancel\r\n"
+	if err := screen.Write(ctx, websocket.MessageBinary, []byte(dialog)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		live, ok := s.screens.get("checkups")
+		return ok && live.State() == detect.Dialog
+	})
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	var state struct {
+		Type    string          `json:"type"`
+		State   string          `json:"state"`
+		Options []detect.Option `json:"options"`
+	}
+	// Past the size and the repaint, which are the rest of catching up.
+	for state.Type != "state" {
+		kind, data, err := viewer.Read(ctx)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if kind != websocket.MessageText {
+			continue
+		}
+		if err := json.Unmarshal(data, &state); err != nil {
+			t.Fatalf("unmarshal %s: %v", data, err)
+		}
+	}
+	if state.State != "dialog" || len(state.Options) != 2 {
+		t.Fatalf("a joiner was told %+v", state)
+	}
+	if state.Options[1].Label != "No" || !state.Options[0].Selected {
+		t.Errorf("the choices arrived as %+v", state.Options)
 	}
 }
 

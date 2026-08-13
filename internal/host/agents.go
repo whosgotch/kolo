@@ -501,6 +501,12 @@ func (a *Agents) push(ctx context.Context, name string, live *session.Session) e
 		return err
 	}
 
+	// The hub says nothing on this socket, so reading it is only ever how the
+	// connection dying is noticed. Without that, an agent sitting quietly at its
+	// prompt writes nothing, discovers nothing, and never comes back after the
+	// hub restarts — its screen is simply missing until it happens to move.
+	ctx = conn.CloseRead(ctx)
+
 	backlog, updates, unsubscribe := live.Subscribe()
 	defer unsubscribe()
 
@@ -509,12 +515,19 @@ func (a *Agents) push(ctx context.Context, name string, live *session.Session) e
 			return err
 		}
 	}
-	for m := range updates {
-		if err := sendScreen(ctx, conn, m); err != nil {
-			return err
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case m, ok := <-updates:
+			if !ok {
+				return nil
+			}
+			if err := sendScreen(ctx, conn, m); err != nil {
+				return err
+			}
 		}
 	}
-	return nil
 }
 
 // sendScreen puts terminal output on the wire as binary and anything kolo says
