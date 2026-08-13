@@ -59,6 +59,12 @@
   #term { flex: 1; min-height: 0; overflow: hidden; padding: 4px; }
   form.compose { display: flex; gap: 8px; padding: 0 12px 12px; }
   form.compose input { flex: 1; }
+  /* The question the agent is asking, drawn as buttons rather than left for
+     somebody to steer through blind. */
+  .ask { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px 0; }
+  .ask button { text-align: left; }
+  .ask button.selected { border-color: var(--dim); }
+
   .note { min-height: 1.4em; padding: 6px 12px; color: var(--dim); }
   .note.problem { color: var(--warn); }
   .empty { color: var(--dim); padding: 24px 0; }
@@ -109,10 +115,12 @@
 
   <section class="watch" hidden>
     <div id="term"></div>
+    <div class="ask" hidden></div>
     <p class="note"></p>
     <form class="compose" autocomplete="off">
       <input name="text" placeholder="send the agent a message" maxlength="2000" required>
       <button type="submit">send</button>
+      <button type="button" class="interrupt" disabled>interrupt</button>
     </form>
   </section>
 </main>
@@ -250,8 +258,9 @@ function say(view, message, problem) {
 // ---- watching one agent ------------------------------------------------
 
 const term = new Terminal({
-  // Nothing typed here reaches the agent yet. Sending is a message through a
-  // queue, not keystrokes into somebody else's terminal.
+  // Nothing typed here reaches the agent, ever. What a member sends is a
+  // message through a queue or a choice from the question on screen — never
+  // keystrokes into somebody else's terminal.
   disableStdin: true,
   cursorBlink: false,
   fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
@@ -282,6 +291,7 @@ function watch(name) {
 
 function close() {
   watching = null;
+  offer('unknown', []);
   if (socket) { const was = socket; socket = null; was.close(); }
 }
 
@@ -318,10 +328,20 @@ function connect(name) {
       case 'state':
         say('.watch', msg.pending > 0 ? waiting(msg.state, msg.pending) : describe(msg.state));
         break;
+      case 'answered':
+        say('.watch', `${msg.from} answered: ${msg.text}`);
+        break;
+      case 'interrupted':
+        say('.watch', `${msg.from} stopped the agent`);
+        break;
       case 'refused':
         say('.watch', msg.text, true);
         break;
     }
+    // What can be done to the agent comes from the same events as what it is
+    // doing, so the buttons are never offering something the screen has left
+    // behind. An event with no options is a screen with no question on it.
+    if (msg.state) offer(msg.state, msg.options || []);
   };
 
   // Falling behind, an agent restarting, and an agent that has not started yet
@@ -329,6 +349,9 @@ function connect(name) {
   // normal event rather than a failure to report.
   ws.onclose = () => {
     if (ws !== socket) return;
+    // Nothing may be offered about a screen this page is no longer being told
+    // about: the agent may be answering, restarting, or gone.
+    offer('unknown', []);
     say('.watch', `${name} is not showing a screen — waiting`);
     setTimeout(() => { if (watching === name) connect(name); }, 1000);
   };
@@ -341,7 +364,7 @@ function describe(state) {
   switch (state) {
     case 'idle': return 'ready';
     case 'busy': return 'working';
-    case 'dialog': return 'asking the org a question — answer it on screen';
+    case 'dialog': return 'asking the org a question — answer it below';
     default: return 'kolo does not recognise this screen, so nothing will be sent';
   }
 }
@@ -352,17 +375,45 @@ function waiting(state, pending) {
   return `waiting — the agent is ${describe(state)}${ahead}`;
 }
 
+// offer draws what a member may do to the agent as it stands: the choices of the
+// question on screen, and a stop while it is working.
+//
+// The buttons are built from the agent's own screen every time rather than left
+// up and reasoned about, because the question they belong to can be answered by
+// somebody else at any moment.
+function offer(state, options) {
+  const ask = el('.ask');
+  ask.replaceChildren();
+  ask.hidden = options.length === 0;
+  for (const option of options) {
+    const button = document.createElement('button');
+    // Set as text: this is a line off the screen of somebody else's machine.
+    button.textContent = `${option.number}. ${option.label}`;
+    button.classList.toggle('selected', option.selected);
+    button.onclick = () => tell({ type: 'answer', choice: option.number, label: option.label });
+    ask.append(button);
+  }
+  el('.interrupt').disabled = state !== 'busy';
+}
+
+el('.interrupt').onclick = () => tell({ type: 'interrupt' });
+
+// tell sends one thing to the agent. Who it is from is the hub's word, taken
+// from the connection, so there is nothing to send about that.
+function tell(what) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    say('.watch', 'not connected', true);
+    return false;
+  }
+  socket.send(JSON.stringify(what));
+  return true;
+}
+
 el('.compose').onsubmit = (ev) => {
   ev.preventDefault();
   const input = ev.target.querySelector('[name=text]');
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    say('.watch', 'not connected', true);
-    return;
-  }
-  // Words only. Who it is from is the hub's word, taken from the connection,
-  // so there is nothing to send about that.
-  socket.send(JSON.stringify({ type: 'message', text: input.value }));
-  input.value = '';
+  // Words only. A keystroke is never sent, whatever is on screen.
+  if (tell({ type: 'message', text: input.value })) input.value = '';
 };
 
 // ---- routing -----------------------------------------------------------
