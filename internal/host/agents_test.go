@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/whosgotch/kolo/internal/agent"
+	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/hub"
 	"github.com/whosgotch/kolo/internal/relay"
+	"github.com/whosgotch/kolo/internal/session"
 )
 
 func agentsFixture(t *testing.T) (*Agents, string) {
@@ -233,6 +235,18 @@ func fakeAgent(t *testing.T, dir, body string) string {
 	return path
 }
 
+// screenOf is the agent's screen as everybody watching it sees it.
+func screenOf(t *testing.T, a *Agents, name string) *session.Session {
+	t.Helper()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	p, ok := a.running[name]
+	if !ok || p.live == nil {
+		t.Fatalf("%s has no screen", name)
+	}
+	return p.live
+}
+
 func queueOf(t *testing.T, a *Agents, name string) *relay.Relay {
 	t.Helper()
 	a.mu.Lock()
@@ -298,4 +312,69 @@ func TestSendingToAnAgentThatIsNotHere(t *testing.T) {
 	if err := a.Send("nothing", "Artem", "hello"); err == nil {
 		t.Error("accepted a message for an agent that is not running")
 	}
+	if err := a.Answer("nothing", "Artem", 1, "Yes"); err == nil {
+		t.Error("accepted an answer for an agent that is not running")
+	}
+	if err := a.Interrupt("nothing", "Artem"); err == nil {
+		t.Error("accepted an interrupt for an agent that is not running")
+	}
+}
+
+// TestAnAnswerReachesTheDialog: a member's choice arrives as the keystroke that
+// answers the question they were shown, and only while that question is up.
+func TestAnAnswerReachesTheDialog(t *testing.T) {
+	dir := t.TempDir()
+	// Raw mode, because that is what an agent's TUI does and it is what makes a
+	// single keystroke arrive without an Enter behind it.
+	script := fakeAgent(t, dir, `stty raw -echo
+printf ' Do you want to create note.txt?\r\n ❯ 1. Yes\r\n   2. No\r\n\r\n Esc to cancel\r\n'
+c=$(dd bs=1 count=1 2>/dev/null)
+printf '\033[2J\033[Hchose %s\r\n' "$c"
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	waitFor(t, func() bool { return screenOf(t, a, "checkups").State() == detect.Dialog })
+
+	// The label the member was shown is part of the answer. One that does not
+	// match is an answer to a question that has been replaced.
+	if err := a.Answer("checkups", "Artem", 1, "Yes, allow all edits this session"); err == nil {
+		t.Error("answered a question the member was not looking at")
+	}
+	if err := a.Answer("checkups", "Artem", 2, "No"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "chose 2") })
+}
+
+// TestAnInterruptReachesTheAgent: Esc, and only while the agent is working.
+func TestAnInterruptReachesTheAgent(t *testing.T) {
+	dir := t.TempDir()
+	script := fakeAgent(t, dir, `stty raw -echo
+printf '✳ Levitating…\r\n❯\r\n  esc to interrupt\r\n'
+c=$(dd bs=1 count=1 2>/dev/null | od -An -t o1 | tr -d ' \n')
+printf '\033[2J\033[Hgot %s\r\n' "$c"
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	waitFor(t, func() bool { return screenOf(t, a, "checkups").State() == detect.Busy })
+
+	if err := a.Interrupt("checkups", "Artem"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "got 033") })
+
+	// The agent has stopped working, so there is nothing left to interrupt.
+	waitFor(t, func() bool { return a.Interrupt("checkups", "Artem") != nil })
 }

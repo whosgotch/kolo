@@ -147,7 +147,7 @@ func (a *Agents) launch(name string) error {
 	live := session.New(cols, rows)
 	// The queue reads the same screen the hub is shown, so what decides when a
 	// line may be typed is looking at what everybody else is looking at.
-	queue := relay.New(started, live.State)
+	queue := relay.New(started, live.Text)
 	screen, closeScreen := context.WithCancel(context.Background())
 	p.agent, p.started, p.live, p.queue = started, time.Now(), live, queue
 	a.mu.Unlock()
@@ -166,22 +166,69 @@ func (a *Agents) launch(name string) error {
 // idle the agent looks: everything goes through the queue, so there is one path
 // to the agent and one place that decides when it opens.
 func (a *Agents) Send(name, from, text string) error {
-	a.mu.Lock()
-	p, ok := a.running[name]
-	a.mu.Unlock()
-	if !ok || p.queue == nil {
-		return fmt.Errorf("%s is not running here", name)
+	p, err := a.reach(name)
+	if err != nil {
+		return err
 	}
 
 	m, err := p.queue.Submit(from, text)
 	if err != nil {
 		return err
 	}
-	p.live.Announce(event{
-		Type: "queued", From: m.Nickname, Text: m.Text,
-		Pending: len(p.queue.Pending()), State: p.live.State().String(),
-	})
+	p.announce(event{Type: "queued", From: m.Nickname, Text: m.Text})
 	return nil
+}
+
+// Answer gives the agent a member's choice from the question on its screen.
+//
+// Unlike a message it is never queued. The relay checks the choice against the
+// screen as it stands and refuses it otherwise, so an answer either lands on the
+// question the member was looking at or does not land at all.
+func (a *Agents) Answer(name, from string, choice int, label string) error {
+	p, err := a.reach(name)
+	if err != nil {
+		return err
+	}
+	if err := p.queue.Answer(choice, label); err != nil {
+		return err
+	}
+	p.announce(event{Type: "answered", From: from, Text: label})
+	return nil
+}
+
+// Interrupt stops the agent working, on behalf of the member who asked. It is
+// what the org has instead of walking to the host's keyboard when an agent is
+// going down a wrong path.
+func (a *Agents) Interrupt(name, from string) error {
+	p, err := a.reach(name)
+	if err != nil {
+		return err
+	}
+	if err := p.queue.Interrupt(); err != nil {
+		return err
+	}
+	p.announce(event{Type: "interrupted", From: from})
+	return nil
+}
+
+// reach finds an agent that is running and has a screen to act on.
+func (a *Agents) reach(name string) (*process, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	p, ok := a.running[name]
+	if !ok || p.queue == nil {
+		return nil, fmt.Errorf("%s is not running here", name)
+	}
+	return p, nil
+}
+
+// announce fills in what everyone watching needs alongside the news itself: what
+// the agent looks like now, and how much is still waiting.
+func (p *process) announce(e event) {
+	e.Pending = len(p.queue.Pending())
+	e.State = p.live.State().String()
+	e.Options = p.queue.Options()
+	p.live.Announce(e)
 }
 
 // release gives the agent one queued line whenever its screen says it may take
@@ -194,6 +241,7 @@ func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.
 	defer ticker.Stop()
 
 	was := detect.Unknown
+	var asked []detect.Option
 	for {
 		select {
 		case <-ctx.Done():
@@ -202,10 +250,17 @@ func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.
 		}
 
 		// Announced on change rather than every tick, so that a page can show
-		// why a message is waiting without being told sixty times a second.
-		if now := live.State(); now != was {
-			was = now
-			live.Announce(event{Type: "state", State: now.String(), Pending: len(queue.Pending())})
+		// why a message is waiting without being told sixty times a second. The
+		// choices count as a change of their own: one question answered and
+		// replaced by the next never leaves the dialog state, and a page left
+		// showing the old one would offer an answer to a question that has gone.
+		now, options := live.State(), queue.Options()
+		if now != was || !slices.Equal(options, asked) {
+			was, asked = now, options
+			live.Announce(event{
+				Type: "state", State: now.String(),
+				Options: options, Pending: len(queue.Pending()),
+			})
 		}
 
 		m, err := queue.Tick()
@@ -222,11 +277,12 @@ func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.
 // event is what a page is told about the queue. The screen shows what the agent
 // is doing; this is what kolo is doing with what people said to it.
 type event struct {
-	Type    string `json:"type"`
-	From    string `json:"from,omitempty"`
-	Text    string `json:"text,omitempty"`
-	Pending int    `json:"pending"`
-	State   string `json:"state,omitempty"`
+	Type    string          `json:"type"`
+	From    string          `json:"from,omitempty"`
+	Text    string          `json:"text,omitempty"`
+	Pending int             `json:"pending"`
+	State   string          `json:"state,omitempty"`
+	Options []detect.Option `json:"options,omitempty"`
 }
 
 // wait watches one agent and starts it again when it goes.

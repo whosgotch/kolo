@@ -152,6 +152,14 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			if err := agents.Send(c.Name, c.From, c.Text); err != nil {
 				agents.refuse(c.Name, err.Error())
 			}
+		case "answer":
+			if err := agents.Answer(c.Name, c.From, c.Choice, c.Label); err != nil {
+				agents.refuse(c.Name, err.Error())
+			}
+		case "interrupt":
+			if err := agents.Interrupt(c.Name, c.From); err != nil {
+				agents.refuse(c.Name, err.Error())
+			}
 		}
 	}
 }
@@ -187,11 +195,13 @@ type welcome struct {
 }
 
 type command struct {
-	Type  string    `json:"type"`
-	Name  string    `json:"name"`
-	From  string    `json:"from"`
-	Text  string    `json:"text"`
-	Agent hub.Agent `json:"agent"`
+	Type   string    `json:"type"`
+	Name   string    `json:"name"`
+	From   string    `json:"from"`
+	Text   string    `json:"text"`
+	Choice int       `json:"choice"`
+	Label  string    `json:"label"`
+	Agent  hub.Agent `json:"agent"`
 }
 
 // wsURL turns a hub's base URL into a websocket one, so that a hub reached over
