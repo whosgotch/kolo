@@ -411,14 +411,22 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 		if err != nil {
 			return
 		}
-		if msg.Type != "message" {
+		// Three things a member may do, and the hub reads none of them beyond
+		// their name. What an answer means, and whether the agent is in a state
+		// to take it, is known on the machine holding the screen.
+		switch msg.Type {
+		case "message", "answer", "interrupt":
+		default:
 			continue
 		}
 		send, ok := s.registry.Sender(name)
 		if !ok {
 			continue
 		}
-		send(toAgent{Type: "message", Name: name, From: member.Name, Text: msg.Text})
+		send(toAgent{
+			Type: msg.Type, Name: name, From: member.Name,
+			Text: msg.Text, Choice: msg.Choice, Label: msg.Label,
+		})
 	}
 }
 
@@ -455,19 +463,28 @@ type hostHello struct {
 	Version string   `json:"version"`
 }
 
-// viewerMessage is what a browser may send. It is one thing, deliberately:
-// words. Keystrokes are not among them, because kolo submits with Enter and
-// Enter means something else entirely when the agent has a question on screen.
+// viewerMessage is what a browser may send: words, an answer to the question on
+// screen, or a stop. Keystrokes are not among them and never will be — kolo
+// submits with Enter, and Enter means something else entirely when the agent has
+// a question up.
+//
+// An answer is a choice, not a key: the number of an option and the label the
+// member was shown next to it. The label travels so the machine running the
+// agent can refuse an answer to a question that has since been replaced.
 type viewerMessage struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type   string `json:"type"`
+	Text   string `json:"text"`
+	Choice int    `json:"choice"`
+	Label  string `json:"label"`
 }
 
 type toAgent struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
-	From string `json:"from"`
-	Text string `json:"text"`
+	Type   string `json:"type"`
+	Name   string `json:"name"`
+	From   string `json:"from"`
+	Text   string `json:"text,omitempty"`
+	Choice int    `json:"choice,omitempty"`
+	Label  string `json:"label,omitempty"`
 }
 
 type screenHello struct {

@@ -700,6 +700,49 @@ func TestAMessageReachesTheHost(t *testing.T) {
 	}
 }
 
+// TestAnAnswerAndAnInterruptReachTheHost: the two things a member does that are
+// not words. The hub passes both on without reading them — whether the agent is
+// in a state to take either is known where the screen is.
+func TestAnAnswerAndAnInterruptReachTheHost(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken := hubFixture(t)
+	control := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, control, &cmd)
+	openScreen(t, ctx, s, hostToken, "checkups")
+	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	for _, send := range []string{
+		// Unrecognised first: it must be dropped rather than passed on, so the
+		// frames read below are the two that were meant.
+		`{"type":"keystroke","text":""}`,
+		`{"type":"answer","choice":2,"label":"No"}`,
+		`{"type":"interrupt"}`,
+	} {
+		if err := viewer.Write(ctx, websocket.MessageText, []byte(send)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var answer toAgent
+	readFrame(t, ctx, control, &answer)
+	if answer.Type != "answer" || answer.Choice != 2 || answer.Label != "No" {
+		t.Fatalf("the host was told %+v", answer)
+	}
+	if answer.From != "Artem" || answer.Name != "checkups" {
+		t.Errorf("answer arrived as %+v", answer)
+	}
+
+	var interrupt toAgent
+	readFrame(t, ctx, control, &interrupt)
+	if interrupt.Type != "interrupt" || interrupt.Name != "checkups" || interrupt.From != "Artem" {
+		t.Errorf("the host was told %+v", interrupt)
+	}
+}
+
 // TestTheQueueIsVisibleToWatchers: what the host says about the queue reaches
 // everyone watching, not only whoever sent something.
 func TestTheQueueIsVisibleToWatchers(t *testing.T) {
