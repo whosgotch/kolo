@@ -5,33 +5,62 @@ a machine for agents to run on. They can be the same machine or different ones.
 
 ## The hub
 
-Mint credentials for each member, and one for each machine that will run agents.
-A token is printed once and is not stored; losing it means issuing another.
+An org file starts as its name. It is the only thing kolo cannot pick for you:
 
 ```
-$ kolo token -id artem -name "Artem"
-$ kolo token -id dana  -name "Dana"
-$ kolo token -host -id devbox
+$ echo '{"org": "acme"}' > org.json
 ```
 
-Collect the entries into an org file:
+Then mint credentials — one per member, and one for each machine that will run
+agents. Each is written into the org file and printed once, here, and nowhere
+else; losing one means issuing another.
+
+```
+$ kolo token -id dana -name "Dana"
+Added Dana to org.json.
+
+Send Dana these two, once. The token is stored nowhere:
+
+    http://127.0.0.1:7300
+    kolo_bAXFSPCQ01No…
+```
+
+```
+$ kolo token -host -id devbox -hub https://hub.acme.com
+Added devbox to org.json.
+
+Run this on devbox. It carries both the hub and the token, and is stored nowhere:
+
+    kolo host -join kolo_join_eyJodWIiOiJod… \
+        -dir <a directory to lend> -allow claude
+```
+
+`-hub` is where they will reach the hub, and it defaults to the address `kolo
+serve` listens on, so everything on one machine needs no flag at all.
+
+The file that results is small enough to read at a glance and belongs in version
+control — it holds hashes, never tokens:
 
 ```json
 {
   "org": "acme",
   "members": [
-    {"id": "artem", "name": "Artem", "token_hash": "a9b6…"},
-    {"id": "dana",  "name": "Dana",  "token_hash": "4c11…"}
+    {"id": "dana", "name": "Dana", "token_hash": "1d7fe6…"}
   ],
   "hosts": [
-    {"id": "devbox", "token_hash": "7e02…"}
+    {"id": "devbox", "token_hash": "f9e1ac…"}
   ]
 }
 ```
 
 A machine authenticates as itself, not as whoever set it up, so the log can say
 which machine ran something without pinning it on a person who was not involved.
-Ids are unique across both lists.
+Ids are unique across both lists, and `kolo token` refuses one that is taken
+rather than writing an org the hub would then refuse to start.
+
+**The hub reads this file once, at startup.** Somebody minted after it started
+cannot connect until it is restarted, which is the same thing that makes
+revoking work.
 
 Start it. It listens on localhost unless told otherwise:
 
@@ -51,12 +80,18 @@ kolo: hub for acme on 0.0.0.0:7300, 2 member(s)
 One machine in the org runs agents for everybody. It should be one that stays
 on — a dev box or a spare desktop, not a laptop that closes at six.
 
+Run what `kolo token -host` printed, saying which directories this machine lends:
+
 ```
-$ export KOLO_HUB=https://hub.example.com
-$ export KOLO_TOKEN=kolo_…
-$ kolo host --dir ~/work/api --dir ~/work/web --allow claude
-kolo: hosting for acme, 2 directories
+$ kolo host -join kolo_join_eyJodWIiOiJod… -dir ~/work/api -dir ~/work/web -allow claude
+kolo: lending /Users/you/work/api /Users/you/work/web, running claude
+kolo: joined acme as devbox
 ```
+
+The join string carries the hub and this machine's token together, because they
+were minted together and are useless apart. A host that keeps its two halves
+somewhere else — a secret store, a unit file — can pass `-hub` and `-token`
+instead, or `$KOLO_HUB` and `$KOLO_TOKEN`.
 
 Anyone in the org can now create an agent in one of those directories, running
 one of those commands, and nothing else.
@@ -80,9 +115,10 @@ nothing the org does with an agent should ever require them.
 
 ## Everyone else
 
-Open the hub in a browser and sign in with a token. The agent list is the front
-door: create one, join one someone else is already using, send it work, answer
-its questions, stop it.
+Open the hub in a browser and sign in with the token that was sent to you — the
+two lines `kolo token` printed are the whole of what a member needs. The agent
+list is the front door: create one, join one someone else is already using, send
+it work, answer its questions, restart it, stop it.
 
 ## Revoking a member
 

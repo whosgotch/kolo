@@ -43,9 +43,17 @@ without — and the agents survive being killed and outlive the host restarting.
 
 ```
 $ go build -o kolo ./cmd/kolo
+$ echo '{"org": "acme"}' > org.json
+$ ./kolo token -host -id devbox                     # prints the line to run below
+$ ./kolo token -id dana -name "Dana"                # prints what to send Dana
 $ ./kolo serve -org org.json                        # the hub
-$ ./kolo host -dir ~/work/api -allow claude         # the machine you lend
+
+$ ./kolo host -join kolo_join_… -dir ~/work/api -allow claude   # the machine you lend
 ```
+
+Minting writes to the org file rather than printing something to paste into it,
+and a machine's hub and token travel as one join string, because they were minted
+together and are useless apart.
 
 Everyone else opens the hub, pastes their token once, and picks an agent.
 
