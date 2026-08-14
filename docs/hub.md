@@ -3,9 +3,6 @@
 Two things run: a **hub**, which the org connects to, and a **host**, which lends
 a machine for agents to run on. They can be the same machine or different ones.
 
-The hub exists today. The host does not yet — `kolo run` is still the
-single-machine shape it replaces. See `docs/roadmap.md`.
-
 ## The hub
 
 Mint credentials for each member, and one for each machine that will run agents.

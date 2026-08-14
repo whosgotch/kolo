@@ -37,9 +37,9 @@ See [docs/architecture.md](docs/architecture.md) for the shape,
 ## What works today
 
 The loop. A host lends a machine, anyone in the org makes an agent on it from a
-browser, watches it work, sends it messages, answers the questions it asks and
-stops it when it is going wrong — and the agents survive being killed and
-outlive the host restarting.
+browser, watches it work, sends it messages, answers the questions it asks,
+stops it when it is going wrong, and restarts it — with its conversation, or
+without — and the agents survive being killed and outlive the host restarting.
 
 ```
 $ go build -o kolo ./cmd/kolo
@@ -60,8 +60,13 @@ and offered as buttons, and the answer carries the label the member was shown �
 so an answer either lands on the question they were looking at or is refused. No
 keystroke a member makes ever reaches the terminal.
 
-What is missing is restarting an agent from the browser, and starting one fresh
-when its conversation is not worth resuming.
+A restart resumes the conversation, and one whose resume is refused — the CLI
+upgraded, the state gone — comes back clean and says so on the page. Silent
+context loss is worse than visible context loss.
+
+What is missing is a second agent kind, which is what would prove the seam is
+real rather than a shape Claude Code happens to fit, and a log that outlives the
+hub.
 
 An earlier single-machine version — one agent, its host at the keyboard, a
 secret in a URL — has been removed rather than kept alongside. The screen model

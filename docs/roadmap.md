@@ -28,13 +28,12 @@ member the hub authenticated, not a name they typed.
 
 *Demo: two people sending work to one agent, each seeing who asked for what.*
 
-One gap has to close here. The detector tells idle from dialog, but not from
+The gap here has closed. The detector could tell idle from dialog but not from
 **busy running a shell command** — a state where the input box is still on screen
-and an injected line is silently swallowed (`docs/probe-findings.md` #4). Today
-that costs a guest a lost message on one machine. With the org sending work to a
-shared agent it happens constantly. Closing it means recording that state and
-reading what distinguishes it; the recording stays out of the repository, since
-it is a picture of somebody's session.
+and an injected line is silently swallowed (`docs/probe-findings.md` #4). What
+tells them apart turned out to be the hint under the box, which the recordings
+show changing from "? for shortcuts" to "esc to interrupt". Busy is now a state
+of its own, and one the page can explain a wait with rather than only hold on.
 
 ## 4. Use it without the host
 
@@ -45,15 +44,18 @@ agent until the host walks back to their keyboard, and the host is not supposed
 to be there at all. An agent nobody can interrupt is worse — it goes down a wrong
 path and the org watches.
 
-Answering and interrupting are built. Neither sends a keystroke: the choices are
-read off the screen and offered as buttons, an answer is the number of the option
-plus the label the member was shown, and it is refused if the screen has moved on
-to a different question. Interrupt is Esc, and only while the agent is working —
-Esc means cancel at a dialog and clear at an input box, and neither is what
-somebody pressing stop is asking for.
+All four are built. Answering and interrupting send no keystroke anybody chose:
+the choices are read off the screen and offered as buttons, an answer is the
+number of the option plus the label the member was shown, and it is refused if
+the screen has moved on to a different question. Interrupt is Esc, and only while
+the agent is working — Esc means cancel at a dialog and clear at an input box,
+and neither is what somebody pressing stop is asking for.
 
-What is left is restart and start fresh, which are a different mechanism: the
-process, and the resume command in the per-agent adapter.
+Restart and start fresh are a different mechanism: the process, and the resume
+command in the per-agent adapter. Neither needs a particular screen, because
+killing a process is safe on every screen there is. A restart resumes; a restart
+whose resume is refused starts clean and says so, because silent context loss is
+worse than visible context loss.
 
 ## 5. More than one
 
