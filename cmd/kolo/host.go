@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/whosgotch/kolo/internal/host"
+	"github.com/whosgotch/kolo/internal/hub"
 )
 
 // hostCmd lends this machine to the org. Whoever runs it is not a participant:
@@ -21,8 +22,9 @@ func hostCmd(args []string) error {
 	var dirs, allow list
 	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more)")
 	fs.Var(&allow, "allow", "an agent command the org may run (repeat, or comma-separated)")
-	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join (default $KOLO_HUB)")
-	token := fs.String("token", os.Getenv("KOLO_TOKEN"), "this machine's token (default $KOLO_TOKEN)")
+	join := fs.String("join", os.Getenv("KOLO_JOIN"), "the join string the hub printed for this machine; supplies both -hub and -token (default $KOLO_JOIN)")
+	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join, if not joining with -join (default $KOLO_HUB)")
+	token := fs.String("token", os.Getenv("KOLO_TOKEN"), "this machine's token, if not joining with -join (default $KOLO_TOKEN)")
 	state := fs.String("state", defaultState(), "where to record the agents running here")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo host -dir <path> [-dir <path>...] -allow <command>")
@@ -35,9 +37,21 @@ func hostCmd(args []string) error {
 		return err
 	}
 
+	// A join string is where the hub and the token come from together, which is
+	// how they were minted. The separate flags stay for a host whose two halves
+	// come from somewhere else, such as a secret store.
+	if *join != "" {
+		reached, minted, err := hub.ParseJoin(*join)
+		if err != nil {
+			return err
+		}
+		*hubURL, *token = reached, minted
+	}
+
 	switch {
 	case *hubURL == "" || *token == "":
-		return fmt.Errorf("-hub and -token are both needed (or $KOLO_HUB and $KOLO_TOKEN)")
+		return fmt.Errorf("-join is needed: the string the hub printed when this machine was added\n" +
+			"(or -hub and -token separately, or $KOLO_HUB and $KOLO_TOKEN)")
 	case len(dirs) == 0:
 		return fmt.Errorf("-dir is needed: a host that lends no directory can run nothing")
 	case len(allow) == 0:

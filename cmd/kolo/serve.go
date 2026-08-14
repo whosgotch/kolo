@@ -1,10 +1,10 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/signal"
@@ -81,13 +81,16 @@ func nextAddr(addr string) string {
 	return host + ":" + strconv.Itoa(n+1)
 }
 
-// tokenCmd mints credentials for one member or one host. The token is shown once
-// and never stored: the hub keeps only a hash, so losing it means issuing another.
+// tokenCmd mints credentials for one member or one host and records them in the
+// org file. The token is shown once and never stored: the hub keeps only a hash,
+// so losing it means issuing another.
 func tokenCmd(args []string) error {
 	fs := flag.NewFlagSet("token", flag.ExitOnError)
+	orgPath := fs.String("org", "org.json", "org file to add them to")
 	id := fs.String("id", "", "member or host id")
 	name := fs.String("name", "", "member's display name (defaults to the id)")
 	asHost := fs.Bool("host", false, "credentials for a machine that will run agents, not a person")
+	hubURL := fs.String("hub", defaultHubURL, "where they will reach the hub")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo token -id <id> [-name <name>]")
 		fmt.Fprintln(os.Stderr, "       kolo token -host -id <id>")
@@ -109,20 +112,40 @@ func tokenCmd(args []string) error {
 		return err
 	}
 
-	var entry any = hub.Member{ID: *id, Name: *name, TokenHash: hash}
-	who, list := *name, "members"
+	// Written to the org file rather than printed to be pasted into it: the
+	// command that mints a token is the one that knows which list its hash
+	// belongs in, and a hash in the wrong list fails quietly, later.
 	if *asHost {
-		entry = hub.Host{ID: *id, TokenHash: hash}
-		who, list = "the machine that will run agents", "hosts"
-	}
-	body, err := json.MarshalIndent(entry, "    ", "  ")
-	if err != nil {
-		return err
+		if _, err := hub.AddHost(*orgPath, hub.Host{ID: *id, TokenHash: hash}); err != nil {
+			return missingOrg(err, *orgPath)
+		}
+		fmt.Printf("Added %s to %s.\n\n", *id, *orgPath)
+		fmt.Printf("Run this on %s. It carries both the hub and the token, and is stored nowhere:\n\n", *id)
+		fmt.Printf("    kolo host -join %s \\\n        -dir <a directory to lend> -allow claude\n\n", hub.NewJoin(*hubURL, token))
+		fmt.Printf("It will dial %s. Pass -hub to kolo token if %s meets the hub elsewhere.\n", *hubURL, *id)
+		return nil
 	}
 
-	fmt.Printf("Give this to %s, once. It is not stored anywhere:\n\n", who)
-	fmt.Printf("    KOLO_TOKEN=%s\n\n", token)
-	fmt.Printf("Add this to the %s list in your org file:\n\n    %s\n\n", list, body)
+	if _, err := hub.AddMember(*orgPath, hub.Member{ID: *id, Name: *name, TokenHash: hash}); err != nil {
+		return missingOrg(err, *orgPath)
+	}
+	fmt.Printf("Added %s to %s.\n\n", *name, *orgPath)
+	fmt.Printf("Send %s these two, once. The token is stored nowhere:\n\n", *name)
+	fmt.Printf("    %s\n    %s\n\n", *hubURL, token)
 	fmt.Println("The hub keeps only the hash, so a lost token is replaced rather than recovered.")
 	return nil
+}
+
+// defaultHubURL is the address kolo serve listens on by default, so everything
+// on one machine needs no flag at all.
+const defaultHubURL = "http://127.0.0.1:7300"
+
+// missingOrg turns the first thing a new operator meets into instructions. There
+// is nobody to add until the org has a name, and its name is the one thing kolo
+// cannot pick for them.
+func missingOrg(err error, path string) error {
+	if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return fmt.Errorf("%w\n\nAn org file starts as its name:\n\n    echo '{\"org\": \"acme\"}' > %s", err, path)
 }
