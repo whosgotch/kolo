@@ -325,7 +325,7 @@ func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.
 			continue
 		}
 		live.Announce(event{
-			Type: "sent", From: m.Nickname, Text: m.Text,
+			Type: "sent", From: m.Nickname, Text: m.Text, Command: m.Command,
 			Pending: len(queue.Pending()), State: live.State().String(),
 		})
 	}
@@ -334,9 +334,13 @@ func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.
 // event is what a page is told about the queue. The screen shows what the agent
 // is doing; this is what kolo is doing with what people said to it.
 type event struct {
-	Type    string          `json:"type"`
-	From    string          `json:"from,omitempty"`
-	Text    string          `json:"text,omitempty"`
+	Type string `json:"type"`
+	From string `json:"from,omitempty"`
+	Text string `json:"text,omitempty"`
+	// Command says the line went to the agent unattributed, because it was for
+	// the agent's CLI. The page is then the only place its sender is named, so
+	// it says so louder than it does for a message.
+	Command bool            `json:"command,omitempty"`
 	Pending int             `json:"pending"`
 	State   string          `json:"state,omitempty"`
 	Options []detect.Option `json:"options,omitempty"`

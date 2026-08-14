@@ -320,9 +320,14 @@ function connect(name) {
       case 'queued':
         say('.watch', `${msg.from}: ${waiting(msg.state, msg.pending)}`);
         break;
-      case 'sent':
-        say('.watch', msg.pending > 0 ? `sent · ${msg.pending} still waiting` : `sent ${msg.from}'s message`);
+      // A command reached the agent with nobody's name on it — it had to, or
+      // the agent's CLI would not have read it as one — so this line is the
+      // only place it is attributed.
+      case 'sent': {
+        const what = msg.command ? `${msg.from} ran ${msg.text}` : `sent ${msg.from}'s message`;
+        say('.watch', msg.pending > 0 ? `${what} · ${msg.pending} still waiting` : what);
         break;
+      }
       case 'state':
         say('.watch', msg.pending > 0 ? waiting(msg.state, msg.pending) : describe(msg.state));
         break;
