@@ -71,6 +71,52 @@ func Load(path string) (*Org, error) {
 	return &org, nil
 }
 
+// AddMember records a new person in the org file at path.
+func AddMember(path string, m Member) (*Org, error) {
+	return update(path, func(o *Org) { o.Members = append(o.Members, m) })
+}
+
+// AddHost records a new machine in the org file at path.
+func AddHost(path string, h Host) (*Org, error) {
+	return update(path, func(o *Org) { o.Hosts = append(o.Hosts, h) })
+}
+
+// update applies a change to the org file.
+//
+// The command that mints a token is the one that knows which list the entry
+// belongs in, so it writes it rather than printing it for somebody to paste into
+// the right place. A hash in the wrong list is a member who cannot connect, or a
+// machine that can, and neither says so at the time.
+//
+// The file is written whole and renamed into place: it is read by a hub that may
+// be running, and a half-written org is one nobody belongs to.
+func update(path string, change func(*Org)) (*Org, error) {
+	org, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+	change(org)
+	// The same check the hub makes at startup, so a duplicate id is refused here
+	// rather than written down and met later as a hub that will not start.
+	if err := org.validate(); err != nil {
+		return nil, fmt.Errorf("hub: %s: %w", path, err)
+	}
+
+	b, err := json.MarshalIndent(org, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("hub: write %s: %w", path, err)
+	}
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
+		return nil, fmt.Errorf("hub: write %s: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return nil, fmt.Errorf("hub: write %s: %w", path, err)
+	}
+	return org, nil
+}
+
 // validate rejects a config that would behave surprisingly. A duplicate id or an
 // unreadable hash is a typo, and saying so at startup beats a member silently
 // unable to connect. Ids are unique across members and hosts together, so a name

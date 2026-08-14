@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -27,6 +28,48 @@ func NewToken() (token, hash string, err error) {
 	}
 	token = TokenPrefix + base64.RawURLEncoding.EncodeToString(b)
 	return token, HashToken(token), nil
+}
+
+// JoinPrefix marks a host's join string. It carries the kolo_ prefix too, so a
+// scanner that knows one knows the other.
+const JoinPrefix = TokenPrefix + "join_"
+
+// join is what a machine needs to reach an org: where the hub is, and the token
+// to arrive with. They are minted together and used together, so they travel as
+// one thing. Two halves of one secret sent separately is a ritual rather than a
+// safeguard — they end up in the same message anyway, and the halves are what
+// somebody setting up a host has to get right by hand.
+type join struct {
+	Hub   string `json:"hub"`
+	Token string `json:"token"`
+}
+
+// NewJoin packs a hub and a host's token into one string to paste.
+func NewJoin(hubURL, token string) string {
+	b, _ := json.Marshal(join{Hub: hubURL, Token: token})
+	return JoinPrefix + base64.RawURLEncoding.EncodeToString(b)
+}
+
+// ParseJoin reads a join string back. It is not a security boundary — the token
+// inside is checked by the hub like any other — so what is refused here is only
+// what would otherwise fail later with nothing to point at.
+func ParseJoin(s string) (hubURL, token string, err error) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, JoinPrefix) {
+		return "", "", fmt.Errorf("hub: not a join string: one starts with %s", JoinPrefix)
+	}
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(s, JoinPrefix))
+	if err != nil {
+		return "", "", fmt.Errorf("hub: this join string is damaged; ask for another")
+	}
+	var j join
+	if err := json.Unmarshal(b, &j); err != nil {
+		return "", "", fmt.Errorf("hub: this join string is damaged; ask for another")
+	}
+	if j.Hub == "" || !strings.HasPrefix(j.Token, TokenPrefix) {
+		return "", "", fmt.Errorf("hub: this join string carries no hub and token; ask for another")
+	}
+	return j.Hub, j.Token, nil
 }
 
 // HashToken returns the hex SHA-256 of a token.

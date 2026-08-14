@@ -2,6 +2,8 @@ package hub
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,5 +196,138 @@ func TestAnIdIsUniqueAcrossMembersAndHosts(t *testing.T) {
 		t.Error("loaded an org where a member and a host share an id")
 	} else if !strings.Contains(err.Error(), "twice") {
 		t.Errorf("unhelpful error: %v", err)
+	}
+}
+
+// TestAddPutsThemInTheRightList is the point of writing the org file rather than
+// printing an entry to paste into it: nobody has to decide which list a hash
+// belongs in, and a person and a machine do not end up in each other's.
+func TestAddPutsThemInTheRightList(t *testing.T) {
+	path := orgFile(t, `{"org": "acme"}`)
+
+	memberToken, memberHash, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostToken, hostHash, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddMember(path, Member{ID: "artem", Name: "Artem", TokenHash: memberHash}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddHost(path, Host{ID: "devbox", TokenHash: hostHash}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read back from disk, because what the hub will do with it is read the file.
+	org, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, ok := org.VerifyMember(memberToken); !ok || m.Name != "Artem" {
+		t.Errorf("the member did not come back: %+v, %v", m, ok)
+	}
+	if h, ok := org.VerifyHost(hostToken); !ok || h.ID != "devbox" {
+		t.Errorf("the machine did not come back: %+v, %v", h, ok)
+	}
+	if _, ok := org.VerifyMember(hostToken); ok {
+		t.Error("the machine was written into the members list")
+	}
+}
+
+func TestAddKeepsWhoIsAlreadyThere(t *testing.T) {
+	path := orgFile(t, `{"org": "acme"}`)
+	for _, id := range []string{"artem", "dana", "kirill"} {
+		_, hash, err := NewToken()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := AddMember(path, Member{ID: id, Name: id, TokenHash: hash}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	org, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(org.Members) != 3 || org.Name != "acme" {
+		t.Fatalf("adding a third left %+v", org)
+	}
+}
+
+// TestAddRefusesADuplicate: the hub would refuse this org at startup, so it is
+// refused now, while there is somebody to tell.
+func TestAddRefusesADuplicate(t *testing.T) {
+	path := orgFile(t, `{"org": "acme"}`)
+	_, hash, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddMember(path, Member{ID: "artem", Name: "Artem", TokenHash: hash}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddHost(path, Host{ID: "artem", TokenHash: hash}); err == nil {
+		t.Fatal("a machine took a name a member already had")
+	}
+
+	// The refusal must not have written anything: an org file left holding the
+	// entry it just refused is worse than the entry never arriving.
+	org, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(org.Hosts) != 0 {
+		t.Errorf("the refused entry was written anyway: %+v", org.Hosts)
+	}
+}
+
+func TestAddNeedsAnOrgFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "org.json")
+	_, err := AddMember(path, Member{ID: "artem", Name: "Artem", TokenHash: "ab"})
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a missing org file reported as %v, which callers cannot recognise", err)
+	}
+}
+
+func TestJoinCarriesTheHubAndTheToken(t *testing.T) {
+	token, _, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := NewJoin("https://hub.acme.com", token)
+	if !strings.HasPrefix(joined, TokenPrefix) {
+		t.Errorf("a join string does not look like a kolo secret: %s", joined)
+	}
+
+	gotHub, gotToken, err := ParseJoin(joined)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotHub != "https://hub.acme.com" || gotToken != token {
+		t.Errorf("came back as %q, %q", gotHub, gotToken)
+	}
+	// Pasting is how it travels, and a paste picks up whitespace.
+	if _, _, err := ParseJoin("  " + joined + "\n"); err != nil {
+		t.Errorf("refused a join string with space around it: %v", err)
+	}
+}
+
+func TestParseJoinRefusesWhatIsNotOne(t *testing.T) {
+	token, _, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, in string }{
+		{"nothing", ""},
+		{"a plain token, which is half of one", token},
+		{"a damaged one", JoinPrefix + "!!!not base64!!!"},
+		{"one carrying nothing", JoinPrefix + "e30"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, err := ParseJoin(tc.in); err == nil {
+				t.Error("accepted")
+			}
+		})
 	}
 }
