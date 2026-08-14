@@ -41,10 +41,41 @@ type Message struct {
 	ID       int
 	Nickname string
 	Text     string
+	// Command marks a line the agent's own CLI reads as an instruction to
+	// itself. It reaches the agent unattributed, so whoever sent it is carried
+	// by the event watchers are told about instead.
+	Command bool
 }
 
-// Line is what actually reaches the agent: the guest's words, attributed.
-func (m Message) Line() string { return m.Nickname + ": " + m.Text }
+// commandSigils begin a line that belongs to the agent's CLI rather than to the
+// model behind it: a slash command, a shell line, a note for its memory.
+//
+// These are Claude Code's, as internal/detect's screen markers are, and they are
+// the third thing kolo knows about an agent kind. A kind kolo has none for is
+// still usable — its members simply cannot reach whatever it keeps behind a
+// sigil, which is where an unknown agent kind already stands.
+const commandSigils = "/!#"
+
+// isCommand reports whether text is for the CLI rather than the conversation.
+//
+// Only the first character decides. A line mentioning /tmp halfway through is
+// prose, and prose is attributed.
+func isCommand(text string) bool {
+	return text != "" && strings.IndexByte(commandSigils, text[0]) >= 0
+}
+
+// Line is what actually reaches the agent: the member's words, attributed.
+//
+// A command is the exception, and has to be. The attribution would put the sigil
+// out of the first column, where the CLI stops reading it as a command at all
+// and runs the whole line into the model as prose — which is what a member
+// typing /clear finds happening instead.
+func (m Message) Line() string {
+	if m.Command {
+		return m.Text
+	}
+	return m.Nickname + ": " + m.Text
+}
 
 // Relay is the queue between the guests and the agent.
 type Relay struct {
@@ -82,7 +113,7 @@ func (r *Relay) Submit(nickname, text string) (Message, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nextID++
-	m := Message{ID: r.nextID, Nickname: nickname, Text: text}
+	m := Message{ID: r.nextID, Nickname: nickname, Text: text, Command: isCommand(text)}
 	r.queue = append(r.queue, m)
 	return m, nil
 }

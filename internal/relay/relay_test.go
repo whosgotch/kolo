@@ -324,3 +324,95 @@ func TestLongMessagesAreCut(t *testing.T) {
 		t.Error("text was cut in the middle of a rune")
 	}
 }
+
+// TestACommandGoesUnattributed is why the exception exists. Attributed, the
+// sigil leaves the first column, the agent's CLI stops reading it as a command,
+// and a member who typed /clear has said "ada: /clear" to the model instead.
+func TestACommandGoesUnattributed(t *testing.T) {
+	for _, text := range []string{"/clear", "!ls -la", "#remember the release chore"} {
+		t.Run(text, func(t *testing.T) {
+			r, rec, _ := fixture(detect.Idle)
+			m, err := r.Submit("ada", text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !m.Command {
+				t.Fatal("not read as a command")
+			}
+			if _, err := r.Tick(); err != nil {
+				t.Fatal(err)
+			}
+			if rec.writes[0] != text {
+				t.Errorf("wrote %q, want it exactly as typed", rec.writes[0])
+			}
+			// Still two writes: the Enter is separate for a command as well,
+			// because what makes it separate is the terminal, not the content.
+			if len(rec.writes) != 2 || rec.writes[1] != "\r" {
+				t.Errorf("wrote %q; want the line and the Enter apart", rec.writes)
+			}
+		})
+	}
+}
+
+// TestOnlyTheFirstCharacterMakesACommand: prose is attributed, and prose is
+// most of what anyone sends. A path or a shell line quoted mid-sentence is not
+// an instruction to the CLI.
+func TestOnlyTheFirstCharacterMakesACommand(t *testing.T) {
+	for _, text := range []string{
+		"clear the /tmp directory",
+		"what does !important mean in css?",
+		"the tag is #release",
+	} {
+		t.Run(text, func(t *testing.T) {
+			r, rec, _ := fixture(detect.Idle)
+			m, err := r.Submit("ada", text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if m.Command {
+				t.Fatal("read as a command")
+			}
+			if _, err := r.Tick(); err != nil {
+				t.Fatal(err)
+			}
+			if want := "ada: " + text; rec.writes[0] != want {
+				t.Errorf("wrote %q, want %q", rec.writes[0], want)
+			}
+		})
+	}
+}
+
+// TestACommandIsStillHeldByTheGate: nothing about being a command lets a line
+// past the screen. Sent while the agent is asking a question, its Enter answers
+// the question — which is the whole reason the queue exists.
+func TestACommandIsStillHeldByTheGate(t *testing.T) {
+	r, rec, idle := fixture(detect.Dialog)
+	if _, err := r.Submit("ada", "/clear"); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := r.Tick(); err != nil || m != nil {
+		t.Fatalf("released at a dialog: %v, %v", m, err)
+	}
+	if len(rec.writes) != 0 {
+		t.Fatalf("wrote %q at a dialog", rec.writes)
+	}
+
+	idle(detect.Idle)
+	if m, err := r.Tick(); err != nil || m == nil {
+		t.Fatalf("not released once idle: %v, %v", m, err)
+	}
+}
+
+// TestPaddingDoesNotHideACommand: clean() collapses what surrounds a line, so a
+// pasted command with a space in front of it is still a command rather than
+// prose that happens to start with a slash.
+func TestPaddingDoesNotHideACommand(t *testing.T) {
+	r, _, _ := fixture(detect.Idle)
+	m, err := r.Submit("ada", "  /clear  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Command || m.Line() != "/clear" {
+		t.Errorf("line = %q, command = %v", m.Line(), m.Command)
+	}
+}
