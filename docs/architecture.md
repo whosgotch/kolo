@@ -85,16 +85,24 @@ Answering a dialog is the inverse of the danger above: the keystroke that must
 never arrive by accident is fine when it is deliberate, attributed, and gated on
 the same detection.
 
+A message beginning with `/`, `!` or `#` is the agent's CLI being addressed
+rather than its model, and it goes through the queue and the gate like any other
+line — but unattributed, because a name in front of it puts the sigil out of the
+first column and the CLI reads the whole thing as prose. So attribution moves to
+the event every watcher is sent: the page says who ran what. This is the only
+input kolo does not sign, and it is the reason it is worth naming here.
+
 ## What kolo knows about each agent kind
 
-Two things:
+Three things:
 
 - how its screen looks when idle, and when it is asking a question
 - how to resume its last conversation
+- which lines are for its own CLI rather than for the model behind it
 
-Claude Code is the first. An agent kind kolo has neither for is still watchable,
-because an unrecognised screen never reads as idle — so nothing is ever sent to
-it.
+Claude Code is the first. An agent kind kolo has none of these for is still
+watchable, because an unrecognised screen never reads as idle — so nothing is
+ever sent to it.
 
 ## Restart
 
