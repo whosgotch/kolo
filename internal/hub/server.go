@@ -440,11 +440,11 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 		if err != nil {
 			return
 		}
-		// Three things a member may do, and the hub reads none of them beyond
+		// The few things a member may do, and the hub reads none of them beyond
 		// their name. What an answer means, and whether the agent is in a state
 		// to take it, is known on the machine holding the screen.
 		switch msg.Type {
-		case "message", "answer", "interrupt":
+		case "message", "answer", "interrupt", "restart", "fresh":
 		default:
 			continue
 		}
@@ -493,9 +493,9 @@ type hostHello struct {
 }
 
 // viewerMessage is what a browser may send: words, an answer to the question on
-// screen, or a stop. Keystrokes are not among them and never will be — kolo
-// submits with Enter, and Enter means something else entirely when the agent has
-// a question up.
+// screen, a stop, a restart, or a start-fresh. Keystrokes are not among them and
+// never will be — kolo submits with Enter, and Enter means something else
+// entirely when the agent has a question up.
 //
 // An answer is a choice, not a key: the number of an option and the label the
 // member was shown next to it. The label travels so the machine running the

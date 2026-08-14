@@ -798,6 +798,35 @@ func TestAnAnswerAndAnInterruptReachTheHost(t *testing.T) {
 	}
 }
 
+// TestARestartAndAStartFreshReachTheHost: both are the process rather than the
+// screen, and the hub passes them on like everything else — attributed, unread.
+func TestARestartAndAStartFreshReachTheHost(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken := hubFixture(t)
+	control := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, control, &cmd)
+	openScreen(t, ctx, s, hostToken, "checkups")
+	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	for _, send := range []string{`{"type":"restart"}`, `{"type":"fresh"}`} {
+		if err := viewer.Write(ctx, websocket.MessageText, []byte(send)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, want := range []string{"restart", "fresh"} {
+		var got toAgent
+		readFrame(t, ctx, control, &got)
+		if got.Type != want || got.Name != "checkups" || got.From != "Artem" {
+			t.Errorf("the host was told %+v, want a %s", got, want)
+		}
+	}
+}
+
 // TestTheQueueIsVisibleToWatchers: what the host says about the queue reaches
 // everyone watching, not only whoever sent something.
 func TestTheQueueIsVisibleToWatchers(t *testing.T) {
