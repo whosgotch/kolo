@@ -1,22 +1,14 @@
 // Package relay holds guests' messages and gives them to the agent only when
 // the agent is ready for one.
 //
-// Two rules come from Milestone 0 and neither is negotiable:
+// Two rules, neither negotiable: a line is released only while internal/detect
+// says the agent is idle, and the text and the Enter go as two separate writes.
+// See docs/architecture.md "Input" and docs/probe-findings.md #3, #4 and #5.
 //
-// A line is only ever released while the screen says the agent is idle at its
-// input box (internal/detect). Released at the wrong moment it is either
-// swallowed without trace or, worse, its Enter answers a question the agent was
-// asking the host — see docs/probe-findings.md #4 and #5.
-//
-// The text and the Enter go as two separate writes. Sent as one, the agent's
-// terminal reads them as a paste, the Enter becomes a literal newline, and the
-// line is never submitted at all (findings #3).
-//
-// Answering a question and interrupting the agent come through here as well,
-// because this is the only thing that writes to the agent and two writers to one
-// terminal interleave. They are not queued, though: both mean the screen that is
-// up at the moment somebody asks for them, and a screen that has moved on is not
-// one anybody may answer or interrupt.
+// Answering and interrupting come through here too, because this is the only
+// thing that writes to the agent and two writers to one terminal interleave.
+// They are not queued: both mean the screen that is up at the moment somebody
+// asks for them.
 package relay
 
 import (
@@ -30,20 +22,16 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// esc is the interrupt. It is the key the agent's own footer tells the person at
-// the keyboard to press.
+// The key the agent's own footer tells the person at the keyboard to press.
 const esc = 0x1b
 
 const (
-	// maxText is a generous limit on one message. It exists so a guest cannot
-	// paste a novel into the host's agent, not to shape what people say.
-	maxText = 2000
-	// maxNickname keeps the prefix from crowding out the message.
+	maxText     = 2000
 	maxNickname = 32
 )
 
-// Sender is the agent's input. It is an interface so the queue can be tested
-// without an agent attached to it.
+// Sender is the agent's input, an interface so the queue can be tested without
+// an agent attached to it.
 type Sender interface {
 	Write(p []byte) (int, error)
 }
@@ -61,10 +49,9 @@ func (m Message) Line() string { return m.Nickname + ": " + m.Text }
 // Relay is the queue between the guests and the agent.
 type Relay struct {
 	agent Sender
-	// screen is the agent's screen as text, read fresh each time. The relay takes
-	// the picture rather than a verdict about it, because releasing a line needs
-	// only the state while answering a question needs the choices in it — and
-	// both must be read from the same screen everybody is watching.
+	// The screen as text, read fresh each time — the picture rather than a
+	// verdict about it, because releasing a line needs only the state while
+	// answering needs the choices, and both must come from the same screen.
 	screen func() string
 
 	mu      sync.Mutex
@@ -82,8 +69,7 @@ func New(agent Sender, screen func() string) *Relay {
 func (r *Relay) state() detect.State { return detect.Of(r.screen()) }
 
 // Submit queues a guest's line. It is never written to the agent here, however
-// idle the agent happens to be: everything goes through the queue, so there is
-// one path to the agent and one place that decides when it opens.
+// idle the agent happens to be: everything goes through the queue.
 func (r *Relay) Submit(nickname, text string) (Message, error) {
 	nickname, text = clean(nickname, maxNickname), clean(text, maxText)
 	if nickname == "" {
@@ -108,13 +94,11 @@ func (r *Relay) Pending() []Message {
 	return append([]Message(nil), r.queue...)
 }
 
-// Tick releases at most one message, and only if the agent is idle. It reports
-// what it sent, or nothing if the queue is empty or the agent is not ready.
+// Tick releases at most one message, and only if the agent is idle.
 //
-// One message per tick is deliberate. Submitting a line stops the agent being
-// idle, so the second line of a queue must wait for the screen to say so again
-// rather than be written on the strength of a reading taken before the first
-// was sent.
+// One per tick is deliberate: submitting a line stops the agent being idle, so
+// the next must wait for the screen to say so again rather than go out on a
+// reading taken before the first was sent.
 func (r *Relay) Tick() (*Message, error) {
 	r.mu.Lock()
 	if r.sending || len(r.queue) == 0 || !r.state().CanSend() {
@@ -131,11 +115,9 @@ func (r *Relay) Tick() (*Message, error) {
 	defer r.mu.Unlock()
 	r.sending = false
 	if err != nil {
-		// The message stays at the head of the queue for the next tick. If the
-		// text landed but the Enter did not, it is sitting in the agent's input
-		// box, and resending would double it — but a failed write to the PTY
-		// means the agent is going away, so there is no next tick to worry
-		// about in practice.
+		// Stays at the head of the queue. If the text landed but the Enter did
+		// not, resending would double it — but a failed PTY write means the agent
+		// is going away, so in practice there is no next tick.
 		return nil, err
 	}
 	r.queue = r.queue[1:]
@@ -149,16 +131,13 @@ func (r *Relay) Options() []detect.Option { return detect.Options(r.screen()) }
 // Answer chooses one of the options on screen, by pressing its number.
 //
 // The number is checked against the label the member was shown, and both against
-// the screen as it stands the instant before the key is written. A dialog that
-// has been answered by somebody else, or replaced by the next question, is a
-// different question with the same numbers on it — and answering the wrong
-// question is the failure this whole package exists to prevent.
+// the screen the instant before the key is written: a dialog replaced by the next
+// question is a different question with the same numbers on it.
 //
-// Pressing the number rather than walking the highlight down with arrows is the
-// safer of the two guesses. Neither was probed, but a key this dialog does not
-// understand is discarded (docs/probe-findings.md #5), so a wrong guess here
-// costs a member an answer that does not land — where a wrong guess about arrows
-// leaves a different option highlighted and Enter still meaning yes.
+// Pressing the number rather than walking the highlight with arrows is the safer
+// guess. A key the dialog does not understand is discarded (probe-findings #5),
+// so a wrong guess costs an answer that does not land — where a wrong guess about
+// arrows leaves a different option highlighted and Enter still meaning yes.
 func (r *Relay) Answer(number int, label string) error {
 	// Two digits would be two keystrokes, and the first of them is an answer.
 	if number < 1 || number > 9 {
@@ -180,8 +159,7 @@ func (r *Relay) Answer(number int, label string) error {
 }
 
 // Interrupt stops the agent working, and only then: Esc at an input box clears
-// what is in it, and Esc at a dialog answers by cancelling. Both are somebody
-// else's business, taken by a member who meant to stop something.
+// what is in it, and Esc at a dialog answers by cancelling.
 func (r *Relay) Interrupt() error {
 	return r.exclusive(func() error {
 		if r.state() != detect.Busy {
@@ -193,8 +171,8 @@ func (r *Relay) Interrupt() error {
 }
 
 // exclusive runs one write to the agent with nothing else writing at the same
-// time. The lock is not held across the write itself, so a queue that is stuck
-// against a full PTY buffer is still one people can add to.
+// time. The lock is not held across the write, so a queue stuck against a full
+// PTY buffer is still one people can add to.
 func (r *Relay) exclusive(write func() error) error {
 	r.mu.Lock()
 	if r.sending {
@@ -227,15 +205,10 @@ func (r *Relay) send(m Message) error {
 // clean reduces a guest's input to text, which is the whole of what a guest is
 // allowed to send.
 //
-// Every control character goes. A guest is typing into a terminal attached to
-// the host's machine, so an escape sequence is not text — it is a keystroke:
-// arrows that move through a dialog, or the Enter that answers one. Newlines
-// and tabs become spaces instead of being dropped, so pasted text stays
-// readable rather than running together.
-//
-// Format characters go too. They are invisible by definition, and among them
-// are the bidirectional overrides, which can make a line render as something
-// other than what it says.
+// Control characters go: in a terminal an escape sequence is not text, it is a
+// keystroke — arrows through a dialog, or the Enter that answers one. Format
+// characters go too, bidirectional overrides among them, which can make a line
+// render as something other than what it says.
 func clean(s string, max int) string {
 	var b strings.Builder
 	for _, r := range strings.ToValidUTF8(s, "") {

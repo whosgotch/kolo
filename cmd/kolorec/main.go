@@ -1,18 +1,17 @@
 // Command kolorec records an agent session for use as a test fixture.
 //
-// The detector that decides when a guest's line may be injected has to be built
-// against screens a real agent actually produces, not screens we imagine. This
-// drives an agent through a scripted sequence and writes down what came back:
+// internal/detect has to be built against screens a real agent produces, not ones
+// we imagine. This drives an agent through a scripted sequence and writes down
+// what came back:
 //
 //	kolorec -script scripts/permission-dialog.txt -out /tmp/recordings claude
 //
-// The raw log it produces replays through internal/term, so a fixture is a
-// recording of the session rather than a transcription of one.
+// The raw log replays through internal/term, so a fixture is a recording of the
+// session rather than a transcription of one.
 //
-// Recordings capture whatever is on screen — paths, an email in a welcome box,
-// anything else that happened to be there — so they stay out of the repository
-// and out of version control. Write them somewhere temporary, look at them, and
-// keep what you learned rather than the recording.
+// Recordings capture whatever is on screen — paths, an email in a welcome box —
+// so they stay out of version control. Write them somewhere temporary, look at
+// them, and keep what you learned rather than the recording.
 package main
 
 import (
@@ -58,9 +57,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// The recorder chdirs rather than passing a directory through the agent
-	// package: which directory an agent starts in is a recording concern, and
-	// kolo itself always runs where the host ran it.
+	// chdir rather than passing a directory through the agent package: where an
+	// agent starts is a recording concern, and kolo runs where the host ran it.
 	if *dir != "" {
 		if err := os.Chdir(*dir); err != nil {
 			log.Fatal(err)
@@ -132,8 +130,8 @@ func parseScript(path string) ([]step, error) {
 	return steps, sc.Err()
 }
 
-// keys are the control sequences a script may send. They exist to drive the
-// agent into a state worth recording; kolo never exposes them to a guest.
+// Control sequences a script may send, to drive the agent into a state worth
+// recording. kolo never exposes them to a guest.
 var keys = map[string]string{
 	"enter": "\r",
 	"esc":   "\x1b",

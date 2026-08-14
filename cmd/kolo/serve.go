@@ -37,9 +37,8 @@ func serveCmd(args []string) error {
 	}
 	s, err := hub.Listen(org, *addr)
 	if err != nil {
-		// The common way to meet this is to start a second hub without
-		// noticing the first, so say what to look for rather than only what
-		// the operating system said.
+		// Usually a second hub started without noticing the first, so say what
+		// to look for rather than only what the operating system said.
 		if errors.Is(err, syscall.EADDRINUSE) {
 			return fmt.Errorf("%w\n\nSomething is already listening there — another kolo serve, most likely.\n"+
 				"Find it with:   lsof -nP -i:%s\n"+
@@ -51,8 +50,8 @@ func serveCmd(args []string) error {
 
 	log.Printf("hub for %s on %s, %d member(s)", org.Name, s.Addr(), len(org.Members))
 
-	// Shut down on a signal so that agents are disconnected deliberately and
-	// come back on their own, rather than being left holding a dead socket.
+	// Shut down on a signal, so agents are disconnected deliberately and come
+	// back on their own rather than holding a dead socket.
 	stopping := make(chan os.Signal, 1)
 	signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -82,10 +81,8 @@ func nextAddr(addr string) string {
 	return host + ":" + strconv.Itoa(n+1)
 }
 
-// tokenCmd mints credentials for one member or one host.
-//
-// The token is shown once, here, and never stored by kolo: the hub keeps only a
-// hash of it. Losing it means issuing another, which is the intended cost.
+// tokenCmd mints credentials for one member or one host. The token is shown once
+// and never stored: the hub keeps only a hash, so losing it means issuing another.
 func tokenCmd(args []string) error {
 	fs := flag.NewFlagSet("token", flag.ExitOnError)
 	id := fs.String("id", "", "member or host id")

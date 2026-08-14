@@ -11,24 +11,19 @@ import (
 	"unicode/utf8"
 )
 
-// Agent statuses. An agent is Starting from the moment the org asks for it until
-// the host says otherwise, so a name is taken and shown immediately rather than
-// after a round trip nobody can see.
+// An agent is Starting from the moment the org asks for it until the host says
+// otherwise, so a name is taken and shown without waiting for a round trip.
 const (
 	StatusStarting = "starting"
 	StatusRunning  = "running"
 	StatusFailed   = "failed"
 )
 
-// maxLabel bounds the strings a client chooses for itself. They are displayed,
-// so they are kept to a length that fits a line rather than trusted.
 const maxLabel = 64
 
-// Agent is one agent the org has asked a host to run.
-//
-// The name is the identifier: there is no second id underneath it. One name per
-// org means a person can say "the checkups agent" and be understood, and it
-// means a URL is readable. Reusing a name means stopping the agent that has it.
+// Agent is one agent the org has asked a host to run. The name is the
+// identifier: there is no second id underneath it, and reusing a name means
+// stopping the agent that has it.
 type Agent struct {
 	Name      string    `json:"name"`
 	Host      string    `json:"host"`
@@ -40,9 +35,8 @@ type Agent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// HostInfo is a connected host as the org sees it: which directories it lends
-// and which commands it will run. The browser needs both to offer a choice that
-// will not be refused.
+// HostInfo is a connected host as the org sees it. The browser needs the
+// directories and commands to offer a choice that will not be refused.
 type HostInfo struct {
 	ID    string    `json:"id"`
 	Dirs  []string  `json:"dirs"`
@@ -61,10 +55,9 @@ type host struct {
 
 // Registry is every connected host and the agents on them.
 //
-// A host that disconnects takes its agents out of the registry with it. They may
-// still be running on the far machine, but nothing here can reach them, and a
-// list that shows an agent nobody can watch or stop is worse than a short one.
-// The host re-announces what it has when it comes back.
+// A host that disconnects takes its agents with it: they may still be running,
+// but nothing here can reach them, and listing an agent nobody can watch or stop
+// is worse than a short list. The host re-announces what it has on return.
 type Registry struct {
 	mu    sync.Mutex
 	hosts map[string]*host
@@ -75,15 +68,13 @@ func NewRegistry() *Registry {
 	return &Registry{hosts: map[string]*host{}, now: time.Now}
 }
 
-// Join records a connected host, along with the agents it says it is already
-// running. A second connection claiming the same host id is refused rather than
-// allowed to take over: two processes answering for one machine would make every
-// command ambiguous, and the usual cause is a host started twice by mistake.
+// Join records a connected host and the agents it says it is already running. A
+// second connection claiming the same host id is refused: two processes answering
+// for one machine would make every command ambiguous.
 //
-// The running set is the host's word. It is the machine with the processes on
-// it, and after a dropped connection or a hub restart it is the only party that
-// knows. A name another host has already claimed is skipped, since two agents
-// answering to one name is the thing names exist to prevent.
+// The running set is the host's word — it is the machine with the processes, and
+// after a dropped connection the only party that knows. A name another host has
+// claimed is skipped.
 func (r *Registry) Join(id string, dirs, allow []string, running []Agent, send Sender) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -158,10 +149,9 @@ func (r *Registry) Agent(name string) (Agent, bool) {
 // Add records an agent and returns the host's sender, so the caller can dispatch
 // the spawn without holding the lock.
 //
-// Every rule the host enforces is checked here too. The host checks again, and
-// has to: it is the machine running the process and the only place a refusal is
-// worth anything. This copy exists so the person creating an agent is told why
-// it will not work, in the response to their own request.
+// Every rule the host enforces is checked here too. The host still checks, and
+// has to — it is the only place a refusal is worth anything. This copy exists so
+// the person creating an agent is told why it will not work, in their response.
 func (r *Registry) Add(a Agent) (Sender, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -179,9 +169,8 @@ func (r *Registry) Add(a Agent) (Sender, error) {
 	if !slices.Contains(h.info.Allow, a.Command) {
 		return nil, fmt.Errorf("%s does not run %s", a.Host, a.Command)
 	}
-	// One agent per directory. Resuming a conversation is directory-scoped and
-	// two agents editing the same files would collide, so the second one is
-	// refused rather than allowed to fight the first.
+	// One agent per directory: resuming is directory-scoped, and two agents
+	// editing the same files would collide.
 	for _, other := range h.agents {
 		if other.Dir == a.Dir {
 			return nil, fmt.Errorf("%s is already working in %s", other.Name, a.Dir)
@@ -236,10 +225,9 @@ func (r *Registry) find(name string) (*Agent, *host) {
 	return nil, nil
 }
 
-// ValidName reports whether a name is one an agent may have.
-//
-// It ends up in a URL, in a log line and in a sentence somebody says out loud,
-// so it is kept to the shape all three can carry.
+// ValidName reports whether a name is one an agent may have. It ends up in a
+// URL, a log line and a sentence said out loud, so it is kept to a shape all
+// three can carry.
 func ValidName(s string) bool {
 	if len(s) == 0 || len(s) > 32 {
 		return false
@@ -255,9 +243,8 @@ func ValidName(s string) bool {
 	return true
 }
 
-// label reduces a string a client chose for itself to something safe to print.
-// A control character here would be an escape sequence rendered in somebody
-// else's terminal.
+// label reduces a string a client chose for itself to something safe to print: a
+// control character here is an escape sequence in somebody else's terminal.
 func label(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToValidUTF8(s, "") {

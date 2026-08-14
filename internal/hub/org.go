@@ -14,33 +14,26 @@ import (
 	"os"
 )
 
-// Org is an organisation and the people in it.
-//
-// It is a file the operator edits by hand. Membership is small and changes
-// rarely, and a file that can be read at a glance and kept in version control is
-// worth more at this size than anywhere to click.
+// Org is an organisation and the people in it: a file the operator edits by
+// hand. Membership is small and changes rarely, so a file that reads at a glance
+// and lives in version control beats anywhere to click.
 type Org struct {
 	Name    string   `json:"org"`
 	Members []Member `json:"members"`
 	Hosts   []Host   `json:"hosts"`
 }
 
-// Host is a machine lending itself to the org.
-//
-// It authenticates as itself rather than as the person who set it up. The log is
-// what stands in for roles here, and "devbox started an agent for dana" says
-// something that "artem started an agent" — because the machine happened to be
-// his — does not.
+// Host is a machine lending itself to the org. It authenticates as itself rather
+// than as whoever set it up: "devbox started an agent for dana" says something
+// that "artem started an agent" — because the machine was his — does not.
 type Host struct {
 	ID        string `json:"id"`
 	TokenHash string `json:"token_hash"`
 }
 
-// Member is one person in an org.
-//
-// Only the hash of their token is stored. A hub's config file ends up in
-// backups, in version control and on screens; storing the token itself would
-// mean each of those hands out working credentials.
+// Member is one person in an org. Only the hash of their token is stored: this
+// file ends up in backups, version control and on screens, each of which would
+// otherwise hand out working credentials.
 type Member struct {
 	// ID is the stable handle used in the protocol and by kolo who.
 	ID string `json:"id"`
@@ -50,10 +43,9 @@ type Member struct {
 	TokenHash string `json:"token_hash"`
 }
 
-// Person is a member as everyone else sees them. It exists so that the type
-// carrying a token hash and the type sent over the wire are not the same type:
-// keeping the secret out of a response is then a property of the design rather
-// than something to remember at each call site.
+// Person is a member as everyone else sees them. A separate type from the one
+// carrying the token hash, so keeping the secret out of a response is a property
+// of the design rather than something to remember at each call site.
 type Person struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -62,11 +54,8 @@ type Person struct {
 // Person returns the member without their secret.
 func (m Member) Person() Person { return Person{ID: m.ID, Name: m.Name} }
 
-// Load reads an org from a JSON file.
-//
-// Changes take effect when the hub restarts. Revoking a member is removing
-// their line and restarting, which is a blunt instrument and an honest one at
-// this size.
+// Load reads an org from a JSON file. Changes take effect on restart, so
+// revoking a member is removing their line and restarting.
 func Load(path string) (*Org, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -82,12 +71,10 @@ func Load(path string) (*Org, error) {
 	return &org, nil
 }
 
-// validate rejects a config that would behave surprisingly rather than loading
-// it and hoping. A duplicate id or an unreadable hash is a mistake in a file
-// someone typed, and saying so at startup beats a member silently unable to
-// connect.
-// Ids are unique across members and hosts together, so that a name in the log
-// identifies one thing.
+// validate rejects a config that would behave surprisingly. A duplicate id or an
+// unreadable hash is a typo, and saying so at startup beats a member silently
+// unable to connect. Ids are unique across members and hosts together, so a name
+// in the log identifies one thing.
 func (o *Org) validate() error {
 	if o.Name == "" {
 		return fmt.Errorf("org needs a name")
@@ -121,11 +108,9 @@ func (o *Org) validate() error {
 	return nil
 }
 
-// VerifyMember returns the member a token belongs to.
-//
-// Every member is compared against, and each comparison is constant-time, so
-// neither how long the call takes nor which member matched can be read from the
-// outside.
+// VerifyMember returns the member a token belongs to. Every member is compared
+// against, each comparison constant-time, so neither the duration nor the match
+// can be read from outside.
 func (o *Org) VerifyMember(token string) (Member, bool) {
 	want := HashToken(token)
 	var found Member

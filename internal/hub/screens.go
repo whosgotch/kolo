@@ -8,11 +8,10 @@ import (
 
 // screens holds one live terminal per agent.
 //
-// The hub keeps its own copy of each screen rather than passing bytes through.
-// It costs a terminal emulator per agent and buys the thing a pipe cannot do:
-// somebody opening an agent is repainted from the screen as it stands, without
-// asking the host for it and without the redraw landing in front of everyone
-// already watching.
+// The hub keeps its own copy rather than passing bytes through. It costs an
+// emulator per agent and buys what a pipe cannot: somebody opening an agent is
+// repainted from the screen as it stands, without asking the host and without the
+// redraw landing in front of everyone already watching.
 type screens struct {
 	mu sync.Mutex
 	m  map[string]*session.Session
@@ -20,12 +19,9 @@ type screens struct {
 
 func newScreens() *screens { return &screens{m: map[string]*session.Session{}} }
 
-// open starts a screen for an agent, replacing whatever was there.
-//
-// A replacement is what a restarted agent looks like from here: a new process
-// with a new screen. Viewers of the old one are dropped and reconnect, which is
-// the honest outcome — the alternative is repainting them with a picture of a
-// process that no longer exists.
+// open starts a screen for an agent, replacing whatever was there — which is what
+// a restarted agent looks like from here. Viewers of the old one are dropped and
+// reconnect, rather than being repainted with a process that no longer exists.
 func (s *screens) open(name string, cols, rows int) *session.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()

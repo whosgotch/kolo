@@ -15,8 +15,8 @@ import (
 	"sort"
 )
 
-// version is reported to the hub, so that a member running something ancient
-// can be identified as such rather than guessed at.
+// Reported to the hub, so a member running something ancient can be identified
+// rather than guessed at.
 const version = "dev"
 
 var commands = map[string]struct {

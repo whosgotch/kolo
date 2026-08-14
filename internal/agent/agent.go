@@ -1,8 +1,8 @@
 // Package agent runs a CLI agent under a pseudo-terminal.
 //
-// The agent believes it owns a real terminal: it is what draws the TUI that
-// viewers end up watching. Everything the process writes comes back out of
-// Read; everything written to it arrives as if typed.
+// The agent believes it owns a real terminal, which is what draws the TUI viewers
+// watch. Everything it writes comes out of Read; everything written to it arrives
+// as if typed.
 package agent
 
 import (
@@ -15,16 +15,15 @@ import (
 	"github.com/creack/pty"
 )
 
-// scrubbed environment variables, and why.
+// Scrubbed environment variables, and why.
 //
 // COLORTERM makes the agent emit 24-bit colour, which vt10x packs into the same
 // integer space as its palette indices — rgb(0,0,200) becomes indistinguishable
-// from palette 200. Removing it keeps the agent on 256 colours, where the
-// snapshot encoder is lossless (see internal/term.writeColor).
+// from palette 200. Without it the agent stays on 256 colours, where the snapshot
+// encoder is lossless (internal/term.writeColor).
 //
-// CLAUDE_CODE_CHILD_SESSION is inherited when kolo is itself run from inside an
-// agent session. It disables the child's transcript saving and puts a warning in
-// its footer, neither of which the host asked for (docs/probe-findings.md,
+// CLAUDE_CODE_CHILD_SESSION is inherited when kolo is run from inside an agent
+// session, and disables the child's transcript saving (probe-findings,
 // incidental #2).
 var scrubbed = []string{"COLORTERM", "CLAUDE_CODE_CHILD_SESSION"}
 
@@ -33,11 +32,8 @@ type Agent struct {
 	cmd *exec.Cmd
 	pty *os.File
 
-	// mu makes each write indivisible. Nothing may interleave inside one, or a
-	// line arrives at the agent split down the middle. In Milestone 1 the host's
-	// keystrokes are the only writer; guest messages join them here later, as do
-	// any emulator replies if the emulator is ever changed for one that answers
-	// capability queries (docs/probe-findings.md #2, #3).
+	// Each write is indivisible: nothing may interleave inside one, or a line
+	// arrives at the agent split down the middle (probe-findings #2, #3).
 	mu sync.Mutex
 }
 

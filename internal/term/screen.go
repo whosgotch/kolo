@@ -16,12 +16,9 @@ import (
 	"github.com/hinshun/vt10x"
 )
 
-// Attribute bits mirrored from vt10x's state.go.
-//
-// Glyph.Mode is exported but the bits it holds are not, and a repaint has no
-// other way to recover bold/underline/... The library has been frozen since
-// 2022 so these are stable, but they must be rechecked against state.go if the
-// dependency ever moves.
+// Attribute bits mirrored from vt10x's state.go, because Glyph.Mode is exported
+// but the bits it holds are not. Frozen since 2022, so stable — but recheck
+// against state.go if the dependency ever moves.
 const (
 	attrReverse = 1 << iota
 	attrUnderline
@@ -37,8 +34,7 @@ type Screen struct {
 	term vt10x.Terminal
 
 	mu sync.Mutex
-	// partial holds the leading bytes of a rune that the last write ended in
-	// the middle of. See Write.
+	// Leading bytes of a rune the last write ended in the middle of. See Write.
 	partial []byte
 }
 
@@ -47,20 +43,15 @@ func New(cols, rows int) *Screen {
 	return &Screen{term: vt10x.New(vt10x.WithSize(cols, rows))}
 }
 
-// Write feeds agent output into the emulator. It never fails, and it always
-// reports the whole slice consumed.
+// Write feeds agent output into the emulator. It never fails, and always reports
+// the whole slice consumed.
 //
-// Both of those matter. Reads off a PTY split wherever they like, so a
-// multi-byte rune — every box-drawing and block character an agent's TUI is
-// made of — regularly straddles two writes. vt10x handles that badly: it
-// returns a short count with a nil error and drops the bytes it could not
-// decode (vt_posix.go, the "not enough bytes for a full rune" branch).
-//
-// A short count with no error breaks the io.Writer contract, and the damage is
-// not local: io.MultiWriter turns it into ErrShortWrite, io.Copy stops, nothing
-// drains the PTY, and the agent blocks forever part-way through a frame. So
-// Write splits on a rune boundary itself and carries the remainder into the
-// next call.
+// Both matter. PTY reads split anywhere, so a multi-byte rune regularly straddles
+// two writes, and vt10x returns a short count with a nil error and drops what it
+// could not decode (vt_posix.go, "not enough bytes for a full rune"). That breaks
+// io.Writer: io.MultiWriter turns it into ErrShortWrite, io.Copy stops, nothing
+// drains the PTY, and the agent blocks forever. So Write splits on a rune
+// boundary itself and carries the remainder into the next call.
 func (s *Screen) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -118,16 +109,13 @@ type style struct {
 
 // styleOf reads the attributes a repaint has to reproduce.
 //
-// It deliberately ignores three bits. attrReverse is already applied: vt10x
-// swaps FG and BG in the stored glyph as the cell is written (state.go,
-// setChar) and leaves the bit set, so re-emitting SGR 7 would swap them back.
-// attrGfx is also already applied — the glyph holds the translated line-drawing
-// rune, not the ASCII that selected it. attrWrap is line-wrap bookkeeping and
-// draws nothing.
+// Three bits are ignored deliberately. attrReverse is already applied — vt10x
+// swaps FG and BG in the stored glyph (state.go, setChar) and leaves the bit set,
+// so re-emitting SGR 7 would swap them back. attrGfx is likewise applied: the
+// glyph holds the translated rune. attrWrap draws nothing.
 //
-// attrBold gets the same colour treatment (FG is promoted to its bright
-// counterpart below 8) but bold is a font weight too, so it is kept; re-emitting
-// SGR 1 over an already-bright colour is idempotent.
+// attrBold gets the same colour treatment but is a font weight too, so it is
+// kept; re-emitting SGR 1 over an already-bright colour is idempotent.
 func styleOf(g vt10x.Glyph) style {
 	return style{
 		fg:        g.FG,

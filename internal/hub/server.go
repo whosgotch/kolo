@@ -36,11 +36,8 @@ type Server struct {
 	ln       net.Listener
 	srv      *http.Server
 
-	// ctx is cancelled by Close, which is the only thing that reaches a host
-	// connection. net/http does not: a websocket has been hijacked out of the
-	// server's hands. Reads take this context so that shutting the hub down
-	// disconnects hosts rather than leaving them blocked on a socket to a hub
-	// that is gone.
+	// Cancelled by Close, which is the only thing that reaches a host connection:
+	// net/http does not, a websocket having been hijacked out of its hands.
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -90,18 +87,14 @@ func (s *Server) Close() error {
 	return s.srv.Close()
 }
 
-// sessionCookie holds a member's token in the browser.
-//
-// It is the same secret the header carries, kept where script cannot read it. A
-// separate session table would add a place for sessions to be looked up, expire
-// and get out of step, and would protect nothing extra: whoever has the cookie
-// has what the cookie was made from.
+// sessionCookie holds a member's token in the browser: the same secret the
+// header carries, kept where script cannot read it. A separate session table
+// would protect nothing extra, since whoever has the cookie has what it was
+// made from.
 const sessionCookie = "kolo_session"
 
-// authenticate resolves a request to a member, by header or by cookie.
-//
-// The token travels in a header rather than in the URL, because a URL is written
-// to the access log of every proxy between the two machines, and to the hub's own.
+// authenticate resolves a request to a member, by header or by cookie. The token
+// travels in a header rather than the URL, which every proxy in between logs.
 func (s *Server) authenticate(r *http.Request) (Member, bool) {
 	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		return s.org.VerifyMember(token)
@@ -124,9 +117,8 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	w.Write(page)
 }
 
-// handleLogin takes a member's token once and keeps it in a cookie, so that it
-// is not pasted into a form on every visit — which is both tiresome and good
-// training for handing the token to whoever asks for it next.
+// handleLogin takes a member's token once and keeps it in a cookie, so it is not
+// pasted into a form on every visit.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimSpace(r.FormValue("token"))
 	if _, ok := s.org.VerifyMember(token); !ok {
@@ -156,9 +148,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// overTLS reports whether the member's own connection was encrypted, which is
-// not the same as the hub's: the hub carries no TLS of its own and is expected
-// to sit behind something that does.
+// overTLS reports whether the member's own connection was encrypted, which is not
+// the hub's: it carries no TLS itself and sits behind something that does.
 func overTLS(r *http.Request) bool {
 	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
@@ -240,8 +231,8 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleCreate asks a host to run an agent. Every member may; there are no roles,
-// and the record of who asked is what stands in for them.
+// handleCreate asks a host to run an agent. Every member may: there are no roles,
+// and the record of who asked stands in for them.
 func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	member, ok := s.authenticate(r)
 	if !ok {
@@ -298,11 +289,9 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleScreen takes one agent's terminal from the machine running it.
-//
-// A connection of its own, per agent, rather than everything multiplexed down
-// the host's control socket. It costs a few sockets and means a screen that
-// stalls or drops belongs to one agent instead of all of them.
+// handleScreen takes one agent's terminal from the machine running it. A
+// connection per agent rather than everything multiplexed down the host's
+// control socket, so a screen that stalls belongs to one agent instead of all.
 func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 	h, ok := s.authenticateHost(r)
 	if !ok {
@@ -347,9 +336,8 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		// Bytes are the agent's language and go to the terminal. Text is what
-		// kolo says about the agent — the queue, the state — and is passed on
-		// to viewers without being read, since the hub has no opinion about it.
+		// Bytes are the agent's language and go to the terminal. Text is what kolo
+		// says about it, passed on unread: the hub has no opinion about it.
 		if kind == websocket.MessageBinary {
 			live.Write(data)
 		} else {
@@ -396,9 +384,8 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	if err := forward(ctx, conn, catchUp(live)); err != nil {
 		return
 	}
-	// Waiting on the context as well as the screen, so that a browser which has
-	// gone is let go of when takeFrom notices rather than whenever the agent next
-	// draws something. A quiet agent could hold that goroutine for hours.
+	// On the context as well as the screen, so a browser that has gone is let go
+	// of when takeFrom notices. A quiet agent could hold the goroutine for hours.
 	for {
 		select {
 		case <-ctx.Done():
@@ -415,10 +402,8 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // catchUp is what a joining viewer is missing. The repaint gives it the screen,
-// but what may be done with that screen was announced by the host when it last
-// changed — which was before this browser arrived. Somebody opening an agent
-// that is mid-question would otherwise see the question and be offered no way to
-// answer it until the next one.
+// but what may be done with that screen was announced before this browser
+// arrived — so an agent opened mid-question would offer no way to answer it.
 func catchUp(live *session.Session) session.Message {
 	b, _ := json.Marshal(struct {
 		Type    string          `json:"type"`
@@ -428,21 +413,19 @@ func catchUp(live *session.Session) session.Message {
 	return session.Message{Control: true, Data: b}
 }
 
-// takeFrom carries what a member sends to the machine running the agent. It also
-// notices the browser going away, which is what ends the connection.
+// takeFrom carries what a member sends to the machine running the agent, and
+// notices the browser going away.
 //
-// Who the message is from is decided here, from the credentials the connection
-// was opened with. Nothing the browser says about that is read, so a name on a
-// message cannot be somebody else's.
+// Who a message is from is decided here, from the credentials the connection was
+// opened with, so a name on a message cannot be somebody else's.
 func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Member, name string) {
 	for {
 		msg, err := read[viewerMessage](ctx, conn, 0)
 		if err != nil {
 			return
 		}
-		// The few things a member may do, and the hub reads none of them beyond
-		// their name. What an answer means, and whether the agent is in a state
-		// to take it, is known on the machine holding the screen.
+		// The hub reads none of these beyond their name: what an answer means, and
+		// whether the agent can take it, is known on the machine with the screen.
 		switch msg.Type {
 		case "message", "answer", "interrupt", "restart", "fresh":
 		default:
@@ -459,9 +442,8 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 	}
 }
 
-// forward sends one message to a viewer. Terminal output goes as binary and
-// everything kolo says about it goes as text, so a browser can tell them apart
-// without looking inside.
+// forward sends one message to a viewer: terminal output as binary, everything
+// kolo says about it as text, so a browser tells them apart without looking in.
 func forward(ctx context.Context, conn *websocket.Conn, m session.Message) error {
 	kind := websocket.MessageBinary
 	if m.Control {
@@ -492,14 +474,12 @@ type hostHello struct {
 	Version string   `json:"version"`
 }
 
-// viewerMessage is what a browser may send: words, an answer to the question on
-// screen, a stop, a restart, or a start-fresh. Keystrokes are not among them and
-// never will be — kolo submits with Enter, and Enter means something else
-// entirely when the agent has a question up.
+// viewerMessage is what a browser may send. Keystrokes are not among them and
+// never will be — kolo submits with Enter, and Enter means something else when
+// the agent has a question up.
 //
-// An answer is a choice, not a key: the number of an option and the label the
-// member was shown next to it. The label travels so the machine running the
-// agent can refuse an answer to a question that has since been replaced.
+// An answer is a choice, not a key: an option's number and the label the member
+// was shown, so the host can refuse an answer to a question since replaced.
 type viewerMessage struct {
 	Type   string `json:"type"`
 	Text   string `json:"text"`
@@ -566,9 +546,9 @@ type listResponse struct {
 // read takes one JSON text frame. A timeout of zero waits as long as the context
 // allows, which is what a connection idling between commands does.
 //
-// Only a transport failure is an error. A frame that cannot be understood comes
-// back as the zero value, whose type matches nothing and is therefore ignored by
-// every caller — which is what lets a newer host talk to an older hub.
+// Only a transport failure is an error. An unreadable frame comes back as the
+// zero value, whose type matches nothing and is ignored by every caller — which
+// is what lets a newer host talk to an older hub.
 func read[T any](ctx context.Context, conn *websocket.Conn, timeout time.Duration) (T, error) {
 	var v T
 	if timeout > 0 {

@@ -14,10 +14,8 @@ import (
 	"github.com/whosgotch/kolo/internal/host"
 )
 
-// hostCmd lends this machine to the org.
-//
-// Whoever runs it is not a participant. Nothing about an agent should need them
-// at the keyboard, and this command takes no input and draws nothing.
+// hostCmd lends this machine to the org. Whoever runs it is not a participant:
+// it takes no input and draws nothing.
 func hostCmd(args []string) error {
 	fs := flag.NewFlagSet("host", flag.ExitOnError)
 	var dirs, allow list
@@ -46,8 +44,8 @@ func hostCmd(args []string) error {
 		return fmt.Errorf("-allow is needed: say which agent commands the org may run, such as -allow claude")
 	}
 
-	// Resolved and checked here, so a typo is a refusal at startup rather than
-	// every create failing later for a reason nobody can see.
+	// Checked here, so a typo is a refusal at startup rather than every create
+	// failing later for a reason nobody can see.
 	for i, d := range dirs {
 		abs, err := filepath.Abs(d)
 		if err != nil {
@@ -112,9 +110,8 @@ func (l *list) Set(v string) error {
 	return nil
 }
 
-// defaultState is where a host records what it is running. It goes under the
-// user's config directory rather than the working directory, because a host is
-// started from wherever and has to find the same file next time.
+// defaultState is where a host records what it is running: the user's config
+// directory, because a host is started from wherever and must find it again.
 func defaultState() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {

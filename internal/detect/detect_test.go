@@ -8,15 +8,9 @@ import (
 	"github.com/whosgotch/kolo/internal/term"
 )
 
-// The screens below are reconstructions of the three states, written out rather
-// than recorded.
-//
-// Recordings were tried first and removed: a recording of a real session is a
-// picture of somebody's screen, carrying their email, their paths and whatever
-// else was on it, and that is not a thing to commit to a repository. What the
-// detector actually reads is the arrangement — a dialog takes the whole screen
-// and the input box is not drawn at all — and that is reproduced here without
-// anybody's session in it.
+// Reconstructions of the three states, written out rather than recorded: a real
+// recording carries somebody's email and paths, which is not a thing to commit.
+// What the detector reads is the arrangement, and that is reproduced here.
 //
 // A real recording can still be replayed locally; see TestOfARecording.
 const (
@@ -103,10 +97,9 @@ func TestOf(t *testing.T) {
 	}
 }
 
-// TestTheDialogsHideTheInputBox pins the arrangement the detector depends on.
-// If a future agent drew its input box underneath a dialog, the idle marker
-// would be on screen at the same time as the dialog's, and these cases would be
-// the ones to revisit.
+// TestTheDialogsHideTheInputBox pins the arrangement the detector depends on. An
+// agent that drew its input box under a dialog would put both markers on screen
+// at once, and these are the cases to revisit.
 func TestTheDialogsHideTheInputBox(t *testing.T) {
 	for name, screen := range map[string]string{
 		"permission": permissionScreen,
@@ -148,10 +141,9 @@ func TestDialogWinsOverIdle(t *testing.T) {
 	}
 }
 
-// TestBusyKeepsItsInputBox is why this state needed a marker of its own rather
-// than being left to fall through as Unknown. It draws the input box, so the
-// absence of the idle footer is the only thing standing between a message and a
-// child process's stdin.
+// TestBusyKeepsItsInputBox is why this state needed a marker of its own. It draws
+// the input box, so the absence of the idle footer is the only thing between a
+// message and a child process's stdin.
 func TestBusyKeepsItsInputBox(t *testing.T) {
 	if strings.Contains(busyScreen, idleFooter) {
 		t.Error("the busy screen carries the idle footer, so it reads as safe to send")
@@ -198,10 +190,8 @@ func TestOptions(t *testing.T) {
 	}
 }
 
-// TestOptionsIgnoresNumbersThatAreNotChoices is the sharp case for the parser.
-// The permission dialog shows a numbered diff of the file it is asking about, so
-// the screen carries numbers that mean nothing and must not be offered as
-// answers.
+// TestOptionsIgnoresNumbersThatAreNotChoices is the sharp case: the permission
+// dialog shows a numbered diff, so the screen carries numbers that mean nothing.
 func TestOptionsIgnoresNumbersThatAreNotChoices(t *testing.T) {
 	for name, screen := range map[string]string{
 		"a numbered diff above the question": permissionScreen,
@@ -233,10 +223,9 @@ func TestOnlyIdleCanSend(t *testing.T) {
 	}
 }
 
-// TestOfARecording replays a real capture, which exercises the arrangements no
-// handwritten screen will think of. Recordings are not committed, because one
-// is a picture of somebody's session; make your own with cmd/kolorec and point
-// this at it:
+// TestOfARecording replays a real capture, exercising arrangements no handwritten
+// screen will think of. Recordings are not committed; make your own with
+// cmd/kolorec and point this at it:
 //
 //	KOLO_RECORDING=/tmp/rec/idle.raw KOLO_STATE=idle go test ./internal/detect
 func TestOfARecording(t *testing.T) {

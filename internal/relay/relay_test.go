@@ -23,9 +23,8 @@ func (r *recorder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// screens carry the marker of each state and nothing else. The relay is given a
-// screen rather than a verdict, so these go through the real detector — a test
-// that stubbed the verdict would pass with a relay that reads the screen wrongly.
+// The relay is given a screen rather than a verdict, so these go through the real
+// detector: stubbing the verdict would pass with a relay that reads screens wrong.
 var screens = map[detect.State]string{
 	detect.Idle:    "❯\n  ? for shortcuts\n",
 	detect.Busy:    "✳ Levitating…\n❯\n  esc to interrupt\n",
@@ -66,9 +65,8 @@ func TestHeldWhileADialogIsUp(t *testing.T) {
 	}
 }
 
-// TestHeldWhenTheScreenIsUnrecognised is the same guarantee for the case that
-// actually protects the host: not a dialog we spotted, but a screen we did not
-// understand at all.
+// TestHeldWhenTheScreenIsUnrecognised is the case that actually protects the
+// host: not a dialog we spotted, but a screen we did not understand at all.
 func TestHeldWhenTheScreenIsUnrecognised(t *testing.T) {
 	r, rec, _ := fixture(detect.Unknown)
 	r.Submit("ada", "hello")
@@ -172,7 +170,7 @@ func TestFailedWriteKeepsTheMessage(t *testing.T) {
 }
 
 // TestCleanStripsEverythingButText is the boundary a guest cannot cross. Each
-// case is a keystroke rather than a character: text is all a guest may send.
+// case is a keystroke rather than a character.
 func TestCleanStripsEverythingButText(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -231,10 +229,9 @@ func TestAnswerPressesTheNumber(t *testing.T) {
 	}
 }
 
-// TestAnswerNeedsTheQuestionItWasGiven is the guarantee that makes answering
-// from a browser safe. Between reading the screen and clicking, the dialog may
-// have been answered by somebody else and replaced by the next one — which has
-// the same numbers on it and means something else entirely.
+// TestAnswerNeedsTheQuestionItWasGiven is what makes answering from a browser
+// safe. Between reading the screen and clicking, the dialog may have been
+// replaced by the next one — same numbers, different meaning.
 func TestAnswerNeedsTheQuestionItWasGiven(t *testing.T) {
 	tests := []struct {
 		name   string

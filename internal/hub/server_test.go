@@ -176,8 +176,8 @@ func TestHostJoins(t *testing.T) {
 	}
 }
 
-// TestCreateReachesTheHost is the whole of this milestone: a member on one
-// machine asks for an agent and the machine lending itself is told to run it.
+// TestCreateReachesTheHost: a member on one machine asks for an agent and the
+// machine lending itself is told to run it.
 func TestCreateReachesTheHost(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)
@@ -350,9 +350,8 @@ func TestAHostLeavingTakesItsAgents(t *testing.T) {
 	}
 }
 
-// TestReconnectingRestoresTheList is the gap this milestone closes: a dropped
-// connection never stopped the processes, and the host says what it has when it
-// comes back.
+// TestReconnectingRestoresTheList: a dropped connection never stopped the
+// processes, and the host says what it has when it comes back.
 func TestReconnectingRestoresTheList(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)
@@ -459,8 +458,8 @@ func readUntilBytes(t *testing.T, ctx context.Context, conn *websocket.Conn) []b
 	}
 }
 
-// TestTheScreenReachesAWatcher is what the milestone is for: what the agent
-// draws on one machine is what somebody sees on another.
+// TestTheScreenReachesAWatcher: what the agent draws on one machine is what
+// somebody sees on another.
 func TestTheScreenReachesAWatcher(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, _, screen := withAgent(t, ctx)
@@ -519,8 +518,7 @@ func TestARestartedScreenReplacesTheOld(t *testing.T) {
 	})
 
 	// Read on rather than once: what a viewer was already told stays readable
-	// after the screen behind it has gone, so the end of the connection is the
-	// thing to wait for.
+	// after the screen has gone, so the end of the connection is what to wait for.
 	read, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var err error
@@ -711,10 +709,9 @@ func TestAMessageReachesTheHost(t *testing.T) {
 	}
 }
 
-// TestAJoinerIsToldWhatItMayDo: somebody opening an agent that is already
-// mid-question sees the question repainted, and must be given the way to answer
-// it. The host announced that when it changed, which was before this browser
-// existed.
+// TestAJoinerIsToldWhatItMayDo: somebody opening an agent mid-question sees the
+// question repainted, and must be given the way to answer it — which the host
+// announced before this browser existed.
 func TestAJoinerIsToldWhatItMayDo(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, _, screen := withAgent(t, ctx)
@@ -756,8 +753,7 @@ func TestAJoinerIsToldWhatItMayDo(t *testing.T) {
 }
 
 // TestAnAnswerAndAnInterruptReachTheHost: the two things a member does that are
-// not words. The hub passes both on without reading them — whether the agent is
-// in a state to take either is known where the screen is.
+// not words. The hub passes both on unread; the screen's machine decides.
 func TestAnAnswerAndAnInterruptReachTheHost(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)
