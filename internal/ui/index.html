@@ -121,6 +121,8 @@
       <input name="text" placeholder="send the agent a message" maxlength="2000" required>
       <button type="submit">send</button>
       <button type="button" class="interrupt" disabled>interrupt</button>
+      <button type="button" class="restart">restart</button>
+      <button type="button" class="fresh">start fresh</button>
     </form>
   </section>
 </main>
@@ -128,8 +130,8 @@
 <script src="/assets/xterm.js"></script>
 <script src="/assets/addon-canvas.js"></script>
 <script>
-// One page, two views. Which one is showing comes from the URL, so opening an
-// agent and reloading lands back on that agent rather than at the top.
+// One page, two views. Which is showing comes from the URL, so opening an agent
+// and reloading lands back on that agent.
 const el = (sel) => document.querySelector(sel);
 const header = el('header');
 const views = { signin: el('.signin'), list: el('.list'), watch: el('.watch') };
@@ -145,7 +147,6 @@ function agentInURL() {
   return m && m[1];
 }
 
-// ---- the list ----------------------------------------------------------
 
 let hosts = [];
 let signedIn = false;
@@ -181,8 +182,8 @@ function drawAgents(agents) {
       <td class="dir"></td>
       <td></td>
       <td><button class="quiet stop">stop</button></td>`;
-    // Set as text rather than interpolated: a name is checked by the hub, but a
-    // directory is a path off somebody's disk and goes on the page as-is.
+    // Text rather than interpolated: a directory is a path off somebody's disk
+    // and goes on the page as-is.
     row.querySelector('.name button').textContent = a.name;
     const status = row.querySelector('.status');
     status.textContent = a.error ? `${a.status} — ${a.error}` : a.status;
@@ -255,7 +256,6 @@ function say(view, message, problem) {
   note.classList.toggle('problem', !!problem);
 }
 
-// ---- watching one agent ------------------------------------------------
 
 const term = new Terminal({
   // Nothing typed here reaches the agent, ever. What a member sends is a
@@ -271,9 +271,8 @@ const term = new Terminal({
 term.open(el('#term'));
 
 // The DOM renderer sets block glyphs in whatever font the browser picks, which
-// leaves seams between the quadrants an agent's pixel art is built from. The
-// canvas renderer draws them itself, the way a real terminal does. An
-// enhancement, not a requirement.
+// leaves seams between quadrants. The canvas renderer draws them itself, the way
+// a real terminal does. An enhancement, not a requirement.
 try {
   term.loadAddon(new CanvasAddon.CanvasAddon());
 } catch (e) {
@@ -301,9 +300,8 @@ function connect(name) {
   ws.binaryType = 'arraybuffer';
   socket = ws;
 
-  // Every handler checks it is still the current socket. A superseded one goes
-  // on to report its own close, which would otherwise land after the
-  // replacement opened and leave the page saying it is reconnecting.
+  // Every handler checks it is still the current socket: a superseded one still
+  // reports its own close, which would land after the replacement opened.
   ws.onopen = () => { if (ws === socket) say('.watch', `watching ${name}`); };
 
   ws.onmessage = (ev) => {
@@ -317,8 +315,8 @@ function connect(name) {
       case 'size':
         term.resize(msg.cols, msg.rows);
         break;
-      // A held message is the normal case rather than a failure: the agent may
-      // be working, or asking a question that Enter would answer.
+      // Held is the normal case, not a failure: the agent may be working, or
+      // asking a question that Enter would answer.
       case 'queued':
         say('.watch', `${msg.from}: ${waiting(msg.state, msg.pending)}`);
         break;
@@ -334,19 +332,25 @@ function connect(name) {
       case 'interrupted':
         say('.watch', `${msg.from} stopped the agent`);
         break;
+      // Both arrive just before the screen goes, so they are the last thing
+      // anyone watching is told about the process they were watching.
+      case 'restarted':
+        say('.watch', `${msg.from} restarted the agent`);
+        break;
+      case 'fresh':
+        say('.watch', `${msg.from} started the agent fresh — its conversation is gone`);
+        break;
       case 'refused':
         say('.watch', msg.text, true);
         break;
     }
-    // What can be done to the agent comes from the same events as what it is
-    // doing, so the buttons are never offering something the screen has left
-    // behind. An event with no options is a screen with no question on it.
+    // What can be done comes from the same events as what the agent is doing, so
+    // the buttons never offer something the screen has left behind.
     if (msg.state) offer(msg.state, msg.options || []);
   };
 
-  // Falling behind, an agent restarting, and an agent that has not started yet
-  // all end the same way: reconnect, and the next repaint resyncs. So this is a
-  // normal event rather than a failure to report.
+  // Falling behind, an agent restarting, and one not started yet all end the
+  // same way: reconnect, and the next repaint resyncs.
   ws.onclose = () => {
     if (ws !== socket) return;
     // Nothing may be offered about a screen this page is no longer being told
@@ -359,7 +363,7 @@ function connect(name) {
 }
 
 // The states come from the agent's own screen, so this says what is true rather
-// than what kolo intends.
+// than what kolo intended.
 function describe(state) {
   switch (state) {
     case 'idle': return 'ready';
@@ -375,12 +379,9 @@ function waiting(state, pending) {
   return `waiting — the agent is ${describe(state)}${ahead}`;
 }
 
-// offer draws what a member may do to the agent as it stands: the choices of the
-// question on screen, and a stop while it is working.
-//
-// The buttons are built from the agent's own screen every time rather than left
-// up and reasoned about, because the question they belong to can be answered by
-// somebody else at any moment.
+// offer draws what a member may do to the agent as it stands. The buttons are
+// rebuilt from the screen every time rather than left up and reasoned about,
+// because the question they belong to can be answered by somebody else.
 function offer(state, options) {
   const ask = el('.ask');
   ask.replaceChildren();
@@ -397,6 +398,19 @@ function offer(state, options) {
 }
 
 el('.interrupt').onclick = () => tell({ type: 'interrupt' });
+
+// Restart and start fresh are permitted on any screen — killing a process is
+// safe whatever the agent is showing — so what stands between them and a
+// misclick is the same thing that stands in front of a stop: being asked.
+el('.restart').onclick = () => {
+  if (!confirm(`Restart ${watching}? It comes back with its conversation, but whatever it is doing now is lost.`)) return;
+  tell({ type: 'restart' });
+};
+
+el('.fresh').onclick = () => {
+  if (!confirm(`Start ${watching} fresh? Everything the org has told it is forgotten.`)) return;
+  tell({ type: 'fresh' });
+};
 
 // tell sends one thing to the agent. Who it is from is the hub's word, taken
 // from the connection, so there is nothing to send about that.

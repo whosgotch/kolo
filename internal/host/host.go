@@ -1,9 +1,8 @@
 // Package host is the machine half of kolo: it lends a machine to the org and
 // runs the agents the org asks for on it.
 //
-// The connection is outbound. The machine is never listened to, which is what
-// removes the inbound port, the firewall rule and the NAT problem, and what makes
-// a hosted hub the same thing as one on a VPS.
+// The connection is outbound and the machine is never listened to, which removes
+// the inbound port, the firewall rule and the NAT problem.
 package host
 
 import (
@@ -19,9 +18,8 @@ import (
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
-// Backoff bounds. A dropped wifi connection comes back in seconds, so the first
-// retry is quick; a hub that is down stays down for a while, so the wait grows
-// rather than hammering it.
+// Dropped wifi comes back in seconds, so the first retry is quick; a hub that is
+// down stays down, so the wait grows rather than hammering it.
 const (
 	minBackoff = 500 * time.Millisecond
 	maxBackoff = 30 * time.Second
@@ -54,9 +52,8 @@ type Event struct {
 // Run keeps the machine connected until ctx is cancelled.
 //
 // A lost connection is not a failure — machines sleep and wifi drops — so it is
-// reported and retried rather than returned. Agents already running keep running
-// while the hub is away; the connection is how the org reaches them, not what
-// holds them up.
+// reported and retried. Agents keep running while the hub is away: the connection
+// is how the org reaches them, not what holds them up.
 func Run(ctx context.Context, agents *Agents, onEvent func(Event)) {
 	if onEvent == nil {
 		onEvent = func(Event) {}
@@ -90,9 +87,8 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 	}
 	defer conn.CloseNow()
 
-	// The hello carries what is already running. A host whose connection dropped
-	// kept its agents; the hub lost them, because an agent it cannot reach is one
-	// it should not be listing. This is what puts them back.
+	// The hello carries what is already running. A host that dropped kept its
+	// agents while the hub let them go, and this is what puts them back.
 	hello, _ := json.Marshal(map[string]any{
 		"type": "hello", "dirs": cfg.Dirs, "allow": cfg.Allow,
 		"agents": agents.Specs(), "version": cfg.Version,
@@ -137,18 +133,17 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 		}
 		switch c.Type {
 		case "spawn":
-			// Checked here as well as at the hub. This is the machine that will
-			// run the process, so this is the only refusal that is worth
-			// anything: the hub's copy of the rules exists to give a person a
-			// reason, not to be relied on.
+			// Checked here as well as at the hub. This is the machine that runs
+			// the process, so this is the only refusal worth anything; the hub's
+			// copy exists to give a person a reason, not to be relied on.
 			if err := agents.Start(c.Agent); err != nil {
 				agents.report(c.Agent.Name, hub.StatusFailed, err.Error())
 			}
 		case "stop":
 			agents.Stop(c.Name)
 		case "message":
-			// A refusal is reported to whoever is watching that agent rather
-			// than logged here, where nobody is.
+			// Reported to whoever is watching that agent rather than logged
+			// here, where nobody is.
 			if err := agents.Send(c.Name, c.From, c.Text); err != nil {
 				agents.refuse(c.Name, err.Error())
 			}
@@ -158,6 +153,14 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			}
 		case "interrupt":
 			if err := agents.Interrupt(c.Name, c.From); err != nil {
+				agents.refuse(c.Name, err.Error())
+			}
+		case "restart":
+			if err := agents.Restart(c.Name, c.From); err != nil {
+				agents.refuse(c.Name, err.Error())
+			}
+		case "fresh":
+			if err := agents.Fresh(c.Name, c.From); err != nil {
 				agents.refuse(c.Name, err.Error())
 			}
 		}
@@ -204,8 +207,8 @@ type command struct {
 	Agent  hub.Agent `json:"agent"`
 }
 
-// wsURL turns a hub's base URL into a websocket one, so that a hub reached over
-// HTTPS is not silently connected to in the clear.
+// wsURL turns a hub's base URL into a websocket one, so a hub reached over HTTPS
+// is not silently connected to in the clear.
 func wsURL(base string) string {
 	base = strings.TrimSuffix(base, "/")
 	switch {
@@ -217,8 +220,8 @@ func wsURL(base string) string {
 	return base
 }
 
-// jitter spreads retries out, so that every host that dropped does not come back
-// at the same instant when the hub returns.
+// jitter spreads retries out, so hosts that dropped together do not all come back
+// at the same instant.
 func jitter(d time.Duration) time.Duration {
 	return d/2 + time.Duration(rand.Int64N(int64(d/2)+1))
 }

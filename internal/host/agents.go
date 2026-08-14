@@ -20,48 +20,42 @@ import (
 	"github.com/whosgotch/kolo/internal/session"
 )
 
-// The screen the agents run on. Nobody is at this machine's keyboard, so there
-// is no terminal to take a size from and every viewer gets the same one.
+// Nobody is at this machine's keyboard, so there is no terminal to take a size
+// from and every viewer gets the same one.
 const (
 	cols = 120
 	rows = 40
 )
 
-// Restarting. An agent is meant to outlive the things that interrupt it, so one
-// that exits is started again — but an agent that cannot start at all would
-// otherwise be restarted forever, so a run too short to count as a run is
-// counted as a failure instead, and three of those stop the attempt.
+// A run too short to count as a run is counted as a failure instead, so an agent
+// that cannot start at all is not restarted forever.
 const (
 	restartLimit = 3
 	shortRun     = 10 * time.Second
 )
 
-// restartDelay is a variable so the tests do not have to wait it out.
+// A variable so the tests do not have to wait it out.
 var restartDelay = time.Second
 
-// tick is how often the queue asks the screen whether it may send. Fast enough
-// that a message does not sit visibly waiting after the agent is free, slow
-// enough to be nothing next to reading a PTY.
+// How often the queue asks the screen whether it may send.
 const tick = 200 * time.Millisecond
 
 // Agents is every agent running on this machine.
 type Agents struct {
 	cfg Config
-	// state is where the running set is written, so that restarting the host
-	// brings back what the org asked for rather than an empty machine. An empty
-	// path keeps it in memory.
+	// Where the running set is written, so a host restart brings back what the
+	// org asked for. An empty path keeps it in memory.
 	state string
 
 	mu      sync.Mutex
 	running map[string]*process
-	// closing is the difference between an agent the org stopped and one the
-	// machine is taking down with it. The first is forgotten; the second stays
-	// in the state file, to be started again when the machine comes back.
+	// The difference between an agent the org stopped and one the machine is
+	// taking down with it: the first is forgotten, the second stays in the state
+	// file to be started again.
 	closing bool
 
-	// reports go to the connection, which may be down. A full buffer drops news
-	// rather than blocking a process trying to exit; a reconnecting host says
-	// what it has in its hello anyway.
+	// A full buffer drops news rather than blocking a process trying to exit; a
+	// reconnecting host says what it has in its hello anyway.
 	reports chan any
 }
 
@@ -73,6 +67,28 @@ type process struct {
 	started  time.Time
 	stopping bool
 	fails    int
+	// The next launch must not resume: the agent is new, or the org asked for a
+	// clean start. Every other launch resumes.
+	fresh bool
+	// Whether this run was launched with the resume command, so a run that dies
+	// at once can be read as the resume failing.
+	resumed bool
+	// An exit the org asked for, which must not count towards giving up.
+	bounced bool
+}
+
+// What to append to a command to bring back its last conversation. An agent kind
+// not listed here cannot be resumed, so every restart of one starts fresh.
+var resumeExtra = map[string][]string{
+	"claude": {"--continue"},
+}
+
+func resumeArgv(command string) []string {
+	extra, ok := resumeExtra[filepath.Base(command)]
+	if !ok {
+		return nil
+	}
+	return append([]string{command}, extra...)
 }
 
 func NewAgents(cfg Config, state string) *Agents {
@@ -84,8 +100,11 @@ func NewAgents(cfg Config, state string) *Agents {
 	}
 }
 
-// Start runs an agent, after checking it is one this machine agreed to run.
-func (a *Agents) Start(spec hub.Agent) error {
+// Start runs an agent, after checking it is one this machine agreed to run. A
+// new agent starts fresh: a conversation left in its directory is not its own.
+func (a *Agents) Start(spec hub.Agent) error { return a.start(spec, true) }
+
+func (a *Agents) start(spec hub.Agent, fresh bool) error {
 	spec.Dir = filepath.Clean(spec.Dir)
 	if !slices.Contains(a.cfg.Dirs, spec.Dir) {
 		return fmt.Errorf("this machine does not lend %s", spec.Dir)
@@ -107,7 +126,7 @@ func (a *Agents) Start(spec hub.Agent) error {
 	}
 	// Reserved before the process exists, so two spawns arriving together cannot
 	// both find the name free.
-	a.running[spec.Name] = &process{spec: spec}
+	a.running[spec.Name] = &process{spec: spec, fresh: fresh}
 	a.mu.Unlock()
 
 	if err := a.launch(spec.Name); err != nil {
@@ -128,9 +147,13 @@ func (a *Agents) launch(name string) error {
 		return fmt.Errorf("%s is no longer wanted", name)
 	}
 	spec := p.spec
+	argv, resumed := []string{spec.Command}, false
+	if r := resumeArgv(spec.Command); r != nil && !p.fresh {
+		argv, resumed = r, true
+	}
 	a.mu.Unlock()
 
-	started, err := agent.Start([]string{spec.Command}, spec.Dir, cols, rows)
+	started, err := agent.Start(argv, spec.Dir, cols, rows)
 	if err != nil {
 		return err
 	}
@@ -146,15 +169,15 @@ func (a *Agents) launch(name string) error {
 	}
 	live := session.New(cols, rows)
 	// The queue reads the same screen the hub is shown, so what decides when a
-	// line may be typed is looking at what everybody else is looking at.
+	// line may be typed is what everybody else is looking at.
 	queue := relay.New(started, live.Text)
 	screen, closeScreen := context.WithCancel(context.Background())
 	p.agent, p.started, p.live, p.queue = started, time.Now(), live, queue
+	p.resumed, p.fresh, p.bounced = resumed, false, false
 	a.mu.Unlock()
 
 	// The PTY has to be read or the agent blocks once its buffer fills. Reading
-	// it into the session is also what keeps the screen current, which is what
-	// the hub is sent and what the queue reads before typing anything.
+	// it into the session is also what keeps the screen current.
 	go io.Copy(live, started)
 	go a.stream(screen, name, live)
 	go a.release(screen, queue, live)
@@ -163,79 +186,114 @@ func (a *Agents) launch(name string) error {
 }
 
 // Send puts a member's line in an agent's queue. It is not typed here, however
-// idle the agent looks: everything goes through the queue, so there is one path
-// to the agent and one place that decides when it opens.
+// idle the agent looks: everything goes through the queue.
 func (a *Agents) Send(name, from, text string) error {
-	p, err := a.reach(name)
+	v, err := a.reach(name)
 	if err != nil {
 		return err
 	}
 
-	m, err := p.queue.Submit(from, text)
+	m, err := v.queue.Submit(from, text)
 	if err != nil {
 		return err
 	}
-	p.announce(event{Type: "queued", From: m.Nickname, Text: m.Text})
+	v.announce(event{Type: "queued", From: m.Nickname, Text: m.Text})
 	return nil
 }
 
 // Answer gives the agent a member's choice from the question on its screen.
-//
-// Unlike a message it is never queued. The relay checks the choice against the
-// screen as it stands and refuses it otherwise, so an answer either lands on the
-// question the member was looking at or does not land at all.
+// Never queued: the relay checks the choice against the screen as it stands, so
+// an answer either lands on the question the member saw or does not land at all.
 func (a *Agents) Answer(name, from string, choice int, label string) error {
-	p, err := a.reach(name)
+	v, err := a.reach(name)
 	if err != nil {
 		return err
 	}
-	if err := p.queue.Answer(choice, label); err != nil {
+	if err := v.queue.Answer(choice, label); err != nil {
 		return err
 	}
-	p.announce(event{Type: "answered", From: from, Text: label})
+	v.announce(event{Type: "answered", From: from, Text: label})
 	return nil
 }
 
-// Interrupt stops the agent working, on behalf of the member who asked. It is
-// what the org has instead of walking to the host's keyboard when an agent is
-// going down a wrong path.
+// Interrupt stops the agent working, on behalf of the member who asked.
 func (a *Agents) Interrupt(name, from string) error {
-	p, err := a.reach(name)
+	v, err := a.reach(name)
 	if err != nil {
 		return err
 	}
-	if err := p.queue.Interrupt(); err != nil {
+	if err := v.queue.Interrupt(); err != nil {
 		return err
 	}
-	p.announce(event{Type: "interrupted", From: from})
+	v.announce(event{Type: "interrupted", From: from})
 	return nil
 }
 
-// reach finds an agent that is running and has a screen to act on.
-func (a *Agents) reach(name string) (*process, error) {
+// Restart ends the agent's process and lets the supervision start it again,
+// resuming its conversation. Unlike an interrupt it needs no particular screen:
+// killing a process is safe on every screen there is.
+func (a *Agents) Restart(name, from string) error { return a.bounce(name, from, false) }
+
+// Fresh restarts the agent without its conversation.
+func (a *Agents) Fresh(name, from string) error { return a.bounce(name, from, true) }
+
+func (a *Agents) bounce(name, from string, fresh bool) error {
+	a.mu.Lock()
+	p, ok := a.running[name]
+	if !ok || p.agent == nil || p.stopping {
+		a.mu.Unlock()
+		return fmt.Errorf("%s is not running here", name)
+	}
+	p.bounced = true
+	if fresh {
+		p.fresh = true
+	}
+	running, v := p.agent, p.view()
+	a.mu.Unlock()
+
+	// Said on the screen that is about to go, so everyone watching learns who did
+	// it before they are repainted from the new process.
+	kind := "restarted"
+	if fresh {
+		kind = "fresh"
+	}
+	v.announce(event{Type: kind, From: from})
+	running.Close()
+	return nil
+}
+
+// view is one agent's screen and queue as they stood when they were looked up.
+// Taken together under the lock, because a restart replaces both: reading them
+// off the process struct means one from before the restart and one from after.
+type view struct {
+	live  *session.Session
+	queue *relay.Relay
+}
+
+func (p *process) view() view { return view{live: p.live, queue: p.queue} }
+
+func (a *Agents) reach(name string) (view, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	p, ok := a.running[name]
 	if !ok || p.queue == nil {
-		return nil, fmt.Errorf("%s is not running here", name)
+		return view{}, fmt.Errorf("%s is not running here", name)
 	}
-	return p, nil
+	return p.view(), nil
 }
 
-// announce fills in what everyone watching needs alongside the news itself: what
-// the agent looks like now, and how much is still waiting.
-func (p *process) announce(e event) {
-	e.Pending = len(p.queue.Pending())
-	e.State = p.live.State().String()
-	e.Options = p.queue.Options()
-	p.live.Announce(e)
+// announce fills in what the agent looks like now, and how much is still
+// waiting, alongside the news itself.
+func (v view) announce(e event) {
+	e.Pending = len(v.queue.Pending())
+	e.State = v.live.State().String()
+	e.Options = v.queue.Options()
+	v.live.Announce(e)
 }
 
 // release gives the agent one queued line whenever its screen says it may take
-// one, and tells everyone watching what happened.
-//
-// Polling rather than waking on a change: what it is waiting for is a screen
-// arriving at a particular arrangement, which has no event to subscribe to.
+// one. Polling, because a screen arriving at a particular arrangement has no
+// event to subscribe to.
 func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.Session) {
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
@@ -249,11 +307,10 @@ func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.
 		case <-ticker.C:
 		}
 
-		// Announced on change rather than every tick, so that a page can show
-		// why a message is waiting without being told sixty times a second. The
-		// choices count as a change of their own: one question answered and
-		// replaced by the next never leaves the dialog state, and a page left
-		// showing the old one would offer an answer to a question that has gone.
+		// On change rather than every tick. The choices count as a change of
+		// their own: one question answered and replaced by the next never leaves
+		// the dialog state, and a page showing the old one would offer an answer
+		// to a question that has gone.
 		now, options := live.State(), queue.Options()
 		if now != was || !slices.Equal(options, asked) {
 			was, asked = now, options
@@ -288,9 +345,8 @@ type event struct {
 // wait watches one agent and starts it again when it goes.
 func (a *Agents) wait(name string, started *agent.Agent, closeScreen context.CancelFunc) {
 	err := started.Wait()
-	// This process\'s screen ends with it. A restart makes a new one, and
-	// whoever is watching is repainted from that rather than from the last
-	// picture of something that has gone.
+	// This process's screen ends with it, so watchers are repainted from the new
+	// one rather than from the last picture of something that has gone.
 	closeScreen()
 
 	a.mu.Lock()
@@ -305,9 +361,19 @@ func (a *Agents) wait(name string, started *agent.Agent, closeScreen context.Can
 		a.save()
 		return
 	}
-	if time.Since(p.started) > shortRun {
+	reason := reasonFor(err, "the agent exited")
+	switch {
+	case p.bounced:
+		// An exit the org asked for is not a failure, however short the run.
+		p.bounced = false
+	case time.Since(p.started) > shortRun:
 		p.fails = 0
-	} else {
+	case p.resumed:
+		// A resumed run dying at once reads as the resume being refused. Starting
+		// clean and saying so beats losing the context silently.
+		p.fresh = true
+		reason = "could not resume the conversation; starting fresh"
+	default:
 		p.fails++
 	}
 	if p.fails >= restartLimit {
@@ -319,7 +385,7 @@ func (a *Agents) wait(name string, started *agent.Agent, closeScreen context.Can
 	}
 	a.mu.Unlock()
 
-	a.report(name, hub.StatusStarting, reasonFor(err, "the agent exited"))
+	a.report(name, hub.StatusStarting, reason)
 	time.Sleep(restartDelay)
 	if err := a.launch(name); err != nil {
 		return
@@ -332,17 +398,19 @@ func (a *Agents) wait(name string, started *agent.Agent, closeScreen context.Can
 func (a *Agents) Stop(name string) {
 	a.mu.Lock()
 	p, ok := a.running[name]
+	var running *agent.Agent
 	if ok {
 		// Set before the kill, so the restart in wait sees it and does not race
 		// the stop it is about to observe.
 		p.stopping = true
+		running = p.agent
 	}
 	a.mu.Unlock()
 
-	if ok && p.agent != nil {
-		p.agent.Close()
-	}
-	if ok && p.agent == nil {
+	switch {
+	case running != nil:
+		running.Close()
+	case ok:
 		// Killed between being recorded and being started; nothing will call
 		// wait, so it is forgotten here.
 		a.forget(name)
@@ -351,8 +419,7 @@ func (a *Agents) Stop(name string) {
 }
 
 // StopAll ends every agent, for when the host itself is going away. What was
-// running stays in the state file: the org asked for these, and the machine
-// coming back should bring them with it.
+// running stays in the state file, to come back with the machine.
 func (a *Agents) StopAll() {
 	a.mu.Lock()
 	a.closing = true
@@ -363,8 +430,8 @@ func (a *Agents) StopAll() {
 	}
 }
 
-// Specs is what this machine is running, for telling a hub that has just met it
-// — or met it again after the connection dropped.
+// Specs is what this machine is running, for a hub that has just met it — or met
+// it again after the connection dropped.
 func (a *Agents) Specs() []hub.Agent {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -410,9 +477,9 @@ func (a *Agents) Restore() error {
 		return fmt.Errorf("host: parse %s: %w", a.state, err)
 	}
 	for _, spec := range specs {
-		// One failing to come back does not stop the others. It is reported the
-		// moment there is a hub to report it to.
-		if err := a.Start(spec); err != nil {
+		// One failing to come back does not stop the others. These agents were
+		// mid-life when the machine went, so they resume rather than start fresh.
+		if err := a.start(spec, false); err != nil {
 			a.report(spec.Name, hub.StatusFailed, err.Error())
 		}
 	}
@@ -465,12 +532,9 @@ func reasonFor(err error, fallback string) string {
 }
 
 // stream keeps this agent's screen going up to the hub for as long as the
-// process lives.
-//
-// It subscribes exactly as a browser does, which is what makes reconnecting
-// safe: a subscription opens with a repaint of the screen as it stands, so a hub
-// that missed an outage is brought back to the truth rather than left with a
-// hole in the middle of an escape sequence.
+// process lives. It subscribes exactly as a browser does, which is what makes
+// reconnecting safe: a subscription opens with a repaint of the screen as it
+// stands, so a hub that missed an outage is not left mid-escape-sequence.
 func (a *Agents) stream(ctx context.Context, name string, live *session.Session) {
 	backoff := minBackoff
 	for ctx.Err() == nil {
@@ -545,9 +609,12 @@ func sendScreen(ctx context.Context, conn *websocket.Conn, m session.Message) er
 // refuse tells an agent's watchers why something they sent went nowhere.
 func (a *Agents) refuse(name, reason string) {
 	a.mu.Lock()
-	p, ok := a.running[name]
+	var live *session.Session
+	if p, ok := a.running[name]; ok {
+		live = p.live
+	}
 	a.mu.Unlock()
-	if ok && p.live != nil {
-		p.live.Announce(event{Type: "refused", Text: reason})
+	if live != nil {
+		live.Announce(event{Type: "refused", Text: reason})
 	}
 }

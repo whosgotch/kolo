@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -65,8 +66,8 @@ func TestStartAndStop(t *testing.T) {
 	}
 }
 
-// TestStartRefuses is the check that matters: the hub asks, but this is the
-// machine that would run the process, so this is where a refusal counts.
+// TestStartRefuses: the hub asks, but this is the machine that would run the
+// process, so this is where a refusal counts.
 func TestStartRefuses(t *testing.T) {
 	a, dir := agentsFixture(t)
 	if err := a.Start(spec("checkups", dir, "cat")); err != nil {
@@ -120,8 +121,8 @@ func waitFor(t *testing.T, cond func() bool) {
 	t.Fatal("timed out waiting")
 }
 
-// TestAnAgentThatDiesComesBack is what long-lived means here. Nobody is at this
-// machine, so an agent that goes has to be started again by something.
+// TestAnAgentThatDiesComesBack is what long-lived means here: nobody is at this
+// machine, so something else has to start it again.
 func TestAnAgentThatDiesComesBack(t *testing.T) {
 	defer quickRestarts()()
 	a, dir := agentsFixture(t)
@@ -145,8 +146,7 @@ func TestAnAgentThatDiesComesBack(t *testing.T) {
 	waitFor(t, func() bool { return processOf(t, a, "checkups") != first })
 }
 
-// TestGivingUp: an agent that cannot stay up would otherwise be restarted for
-// ever, so a few runs too short to count as runs stop the attempt.
+// TestGivingUp: an agent that cannot stay up would otherwise restart for ever.
 func TestGivingUp(t *testing.T) {
 	defer quickRestarts()()
 	a, dir := agentsFixture(t)
@@ -227,8 +227,14 @@ func quickRestarts() func() {
 // fakeAgent writes a script that shows the marker the detector reads as idle and
 // then waits on stdin, so the gate can be exercised without a real agent.
 func fakeAgent(t *testing.T, dir, body string) string {
+	return fakeAgentNamed(t, dir, "fake-agent", body)
+}
+
+// fakeAgentNamed is the same, under a name of the caller's choosing. The name
+// decides whether kolo knows how to resume it.
+func fakeAgentNamed(t *testing.T, dir, name, body string) string {
 	t.Helper()
-	path := filepath.Join(dir, "fake-agent")
+	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -258,13 +264,13 @@ func queueOf(t *testing.T, a *Agents, name string) *relay.Relay {
 	return p.queue
 }
 
-// TestAMessageWaitsForAnIdleScreen is the whole point of the queue. The line is
+// TestAMessageWaitsForAnIdleScreen is the whole point of the queue: the line is
 // released only once the agent's own screen says it may be.
 func TestAMessageWaitsForAnIdleScreen(t *testing.T) {
 	dir := t.TempDir()
-	// Busy first, then idle: the message has to sit through the first state.
-	// The clear matters: a real TUI redraws its footer in place, so only one
-	// marker is ever on screen. Appending would leave both.
+	// Busy first, then idle, so the message sits through the first state. The
+	// clear matters: a real TUI redraws its footer in place, so only one marker
+	// is ever on screen.
 	script := fakeAgent(t, dir, "printf 'esc to interrupt\\n'\nsleep 1\nprintf '\\033[2J\\033[H? for shortcuts\\n'\ncat\n")
 	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
 	t.Cleanup(a.StopAll)
@@ -318,6 +324,12 @@ func TestSendingToAnAgentThatIsNotHere(t *testing.T) {
 	if err := a.Interrupt("nothing", "Artem"); err == nil {
 		t.Error("accepted an interrupt for an agent that is not running")
 	}
+	if err := a.Restart("nothing", "Artem"); err == nil {
+		t.Error("accepted a restart for an agent that is not running")
+	}
+	if err := a.Fresh("nothing", "Artem"); err == nil {
+		t.Error("accepted a start-fresh for an agent that is not running")
+	}
 }
 
 // TestAnAnswerReachesTheDialog: a member's choice arrives as the keystroke that
@@ -341,8 +353,8 @@ sleep 30
 	nextReport(t, a)
 	waitFor(t, func() bool { return screenOf(t, a, "checkups").State() == detect.Dialog })
 
-	// The label the member was shown is part of the answer. One that does not
-	// match is an answer to a question that has been replaced.
+	// The label the member was shown is part of the answer: one that does not
+	// match belongs to a question that has been replaced.
 	if err := a.Answer("checkups", "Artem", 1, "Yes, allow all edits this session"); err == nil {
 		t.Error("answered a question the member was not looking at")
 	}
@@ -377,4 +389,119 @@ sleep 30
 
 	// The agent has stopped working, so there is nothing left to interrupt.
 	waitFor(t, func() bool { return a.Interrupt("checkups", "Artem") != nil })
+}
+
+// TestOnlyAKnownAgentKindResumes: resuming is per agent kind, and an agent kind
+// kolo has no resume command for starts clean rather than being guessed at.
+func TestOnlyAKnownAgentKindResumes(t *testing.T) {
+	got := resumeArgv("/usr/local/bin/claude")
+	if !slices.Equal(got, []string{"/usr/local/bin/claude", "--continue"}) {
+		t.Errorf("claude resumes with %v", got)
+	}
+	if got := resumeArgv("/usr/bin/something-else"); got != nil {
+		t.Errorf("an unknown agent kind was given %v to resume with", got)
+	}
+}
+
+// TestRestartResumesAndFreshDoesNot is the difference between the two actions.
+// Both replace the process; only one keeps what the org has told it.
+func TestRestartResumesAndFreshDoesNot(t *testing.T) {
+	defer quickRestarts()()
+	dir := t.TempDir()
+	// Named claude, because that is the agent kind kolo knows how to resume. The
+	// script writes what it was launched with onto its own screen.
+	script := fakeAgentNamed(t, dir, "claude", `printf 'args [%s]\r\n? for shortcuts\r\n' "$*"
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	// A new agent starts clean; see Agents.Start.
+	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "args []") })
+
+	bounce(t, a, "checkups", a.Restart, "args [--continue]")
+	bounce(t, a, "checkups", a.Fresh, "args []")
+}
+
+// bounce asks for a restart of one kind and waits for the process it brings
+// back, checking what that new run says it was launched with.
+func bounce(t *testing.T, a *Agents, name string, ask func(string, string) error, want string) {
+	t.Helper()
+	was := processOf(t, a, name)
+	if err := ask(name, "Artem"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		return processOf(t, a, name) != was && strings.Contains(screenOf(t, a, name).Text(), want)
+	})
+}
+
+// TestRestartingIsNotAFailure: somebody restarting an agent three times in a
+// minute is impatient, not proof the agent cannot run.
+func TestRestartingIsNotAFailure(t *testing.T) {
+	defer quickRestarts()()
+	dir := t.TempDir()
+	script := fakeAgentNamed(t, dir, "claude", "printf '? for shortcuts\\r\\n'\nsleep 30\n")
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+
+	for range restartLimit + 1 {
+		was := processOf(t, a, "checkups")
+		if err := a.Restart("checkups", "Artem"); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, func() bool { return len(a.Names()) == 0 || processOf(t, a, "checkups") != was })
+	}
+	if len(a.Names()) != 1 {
+		t.Fatal("impatience was read as an agent that will not stay running")
+	}
+}
+
+// TestAFailedResumeStartsFresh: the CLI upgraded, or the state is gone. Coming
+// back without the conversation and saying so beats losing it silently.
+func TestAFailedResumeStartsFresh(t *testing.T) {
+	defer quickRestarts()()
+	dir := t.TempDir()
+	script := fakeAgentNamed(t, dir, "claude", `case "$*" in *--continue*) exit 1 ;; esac
+printf '? for shortcuts\r\n'
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	if err := a.Restart("checkups", "Artem"); err != nil {
+		t.Fatal(err)
+	}
+
+	var told bool
+	for range 2*restartLimit + 1 {
+		r := nextReport(t, a)
+		if r.Status == hub.StatusFailed {
+			t.Fatalf("gave up instead of starting fresh: %+v", r)
+		}
+		if strings.Contains(r.Error, "could not resume") {
+			told = true
+			break
+		}
+	}
+	if !told {
+		t.Error("the resume was refused and nothing said so")
+	}
+	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "? for shortcuts") })
+	if len(a.Names()) != 1 {
+		t.Fatalf("did not come back: %v", a.Names())
+	}
 }
