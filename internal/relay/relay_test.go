@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
@@ -37,7 +38,7 @@ var screens = map[detect.State]string{
 func fixture(state detect.State) (*Relay, *recorder, func(detect.State)) {
 	rec := &recorder{}
 	current := screens[state]
-	r := New(rec, func() string { return current })
+	r := New(rec, func() string { return current }, adapter.For("claude"))
 	if got := r.state(); got != state {
 		panic("fixture screen for " + state.String() + " reads as " + got.String())
 	}
@@ -351,6 +352,24 @@ func TestACommandGoesUnattributed(t *testing.T) {
 				t.Errorf("wrote %q; want the line and the Enter apart", rec.writes)
 			}
 		})
+	}
+}
+
+// TestAKindWithNoSigilsHasNoCommands: the sigils belong to the agent's CLI, so
+// a kind kolo has no adapter for has none. Everything it is sent is a message,
+// attributed like any other — which is the safe way round, since an unattributed
+// line to a CLI kolo cannot read is a line nobody can be held to.
+func TestAKindWithNoSigilsHasNoCommands(t *testing.T) {
+	r := New(&recorder{}, func() string { return screens[detect.Idle] }, adapter.For("some-other-agent"))
+	m, err := r.Submit("ada", "/clear")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Command {
+		t.Error("read a command for a CLI kolo knows nothing about")
+	}
+	if m.Line() != "ada: /clear" {
+		t.Errorf("line = %q, want it attributed", m.Line())
 	}
 }
 

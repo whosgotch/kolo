@@ -3,6 +3,7 @@ package hub
 import (
 	"sync"
 
+	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/session"
 )
 
@@ -22,14 +23,14 @@ func newScreens() *screens { return &screens{m: map[string]*session.Session{}} }
 // open starts a screen for an agent, replacing whatever was there — which is what
 // a restarted agent looks like from here. Viewers of the old one are dropped and
 // reconnect, rather than being repainted with a process that no longer exists.
-func (s *screens) open(name string, cols, rows int) *session.Session {
+func (s *screens) open(name string, cols, rows int, markers detect.Markers) *session.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if was, ok := s.m[name]; ok {
 		was.Close()
 	}
-	live := session.New(cols, rows)
+	live := session.New(cols, rows, markers)
 	s.m[name] = live
 	return live
 }

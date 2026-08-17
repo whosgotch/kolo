@@ -1,9 +1,13 @@
 // Package detect reads the agent's screen to decide whether a guest's line may
 // be sent to it.
 //
-// Nothing is safe unless it is recognised as safe: an unrecognised screen reads
-// as Unknown, and Unknown holds the queue. The markers are Claude Code's, so an
-// agent kind kolo does not know never reads as idle and is never sent anything.
+// What the screen looks like in each state is a property of the agent kind, so
+// the markers are given rather than known here; internal/adapter holds them.
+//
+// Nothing is safe unless it is recognised as safe: a screen carrying none of the
+// markers reads as Unknown, and Unknown holds the queue. An empty marker never
+// matches, so the zero Markers — an agent kind kolo has no adapter for — reads
+// every screen as Unknown and is never sent anything.
 //
 // See docs/architecture.md "Input" and docs/probe-findings.md #4 and #5.
 package detect
@@ -41,15 +45,19 @@ func (s State) String() string {
 // CanSend reports whether a guest's line may be written to the agent now.
 func (s State) CanSend() bool { return s == Idle }
 
-// Markers, each taken from a recording under testdata rather than from the
-// agent's source. Matched case-sensitively: "esc to interrupt" and "Esc to
-// cancel" are different states.
-const (
-	dialogFooter = "Esc to cancel"
-	dialogOption = "❯ 1."
-	idleFooter   = "? for shortcuts"
-	busyFooter   = "esc to interrupt"
-)
+// Markers are the strings one agent kind puts on screen in each state, each
+// taken from a recording of it rather than from its source. Matched
+// case-sensitively: "esc to interrupt" and "Esc to cancel" are different states.
+type Markers struct {
+	Idle         string
+	Busy         string
+	DialogFooter string
+	// DialogSelected is the sigil in front of a dialog's highlighted choice. It
+	// is not a marker of the dialog on its own — the input box draws the same
+	// sigil in front of its placeholder — so what is looked for is the sigil in
+	// front of the first choice.
+	DialogSelected string
+}
 
 // Option is one numbered choice of the dialog on screen.
 type Option struct {
@@ -58,7 +66,7 @@ type Option struct {
 	Selected bool   `json:"selected"`
 }
 
-var optionLine = regexp.MustCompile(`^\s*(❯)?\s*(\d{1,2})\.\s+(\S.*?)\s*$`)
+var optionLine = regexp.MustCompile(`^(\d{1,2})\.\s+(\S.*)$`)
 
 // Options reads the choices out of the dialog on screen, so that a member can be
 // offered the question in words. A choice is only meaningful against the screen
@@ -67,19 +75,24 @@ var optionLine = regexp.MustCompile(`^\s*(❯)?\s*(\d{1,2})\.\s+(\S.*?)\s*$`)
 // Nothing is returned unless the numbering runs 1, 2, 3 down consecutive lines.
 // Prose and diffs contain numbers, and finding a list that is not there is how a
 // member ends up answering a question nobody asked.
-func Options(screen string) []Option {
-	if Of(screen) != Dialog {
+func (m Markers) Options(screen string) []Option {
+	if m.Of(screen) != Dialog {
 		return nil
 	}
 	var options []Option
 	prevLine := -2
 	for i, line := range strings.Split(screen, "\n") {
-		m := optionLine.FindStringSubmatch(line)
-		if m == nil {
+		text := strings.TrimSpace(line)
+		selected := m.DialogSelected != "" && strings.HasPrefix(text, m.DialogSelected)
+		if selected {
+			text = strings.TrimSpace(strings.TrimPrefix(text, m.DialogSelected))
+		}
+		match := optionLine.FindStringSubmatch(text)
+		if match == nil {
 			continue
 		}
-		number, _ := strconv.Atoi(m[2])
-		option := Option{Number: number, Label: m[3], Selected: m[1] != ""}
+		number, _ := strconv.Atoi(match[1])
+		option := Option{Number: number, Label: strings.TrimSpace(match[2]), Selected: selected}
 		switch {
 		case number == len(options)+1 && i == prevLine+1:
 			options = append(options, option)
@@ -101,14 +114,28 @@ func Options(screen string) []Option {
 
 // Of classifies the agent's screen. Dialog is tested first: if a screen somehow
 // carried two sets of markers, the answer that holds the queue is the one to give.
-func Of(screen string) State {
+func (m Markers) Of(screen string) State {
 	switch {
-	case strings.Contains(screen, dialogFooter), strings.Contains(screen, dialogOption):
+	case has(screen, m.DialogFooter), has(screen, m.firstChoice()):
 		return Dialog
-	case strings.Contains(screen, busyFooter):
+	case has(screen, m.Busy):
 		return Busy
-	case strings.Contains(screen, idleFooter):
+	case has(screen, m.Idle):
 		return Idle
 	}
 	return Unknown
+}
+
+// firstChoice is the dialog's highlighted first option, which is the arrangement
+// the sigil only appears in while a question is on screen.
+func (m Markers) firstChoice() string {
+	if m.DialogSelected == "" {
+		return ""
+	}
+	return m.DialogSelected + " 1."
+}
+
+// has is Contains, except that a marker a kind does not declare matches nothing.
+func has(screen, marker string) bool {
+	return marker != "" && strings.Contains(screen, marker)
 }

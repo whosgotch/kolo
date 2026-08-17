@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/term"
 )
 
 func TestSubscribeSendsSizeThenSnapshot(t *testing.T) {
-	s := New(80, 24)
+	s := New(80, 24, adapter.For("claude").Markers)
 	s.Write([]byte("hello viewer"))
 
 	backlog, _, cancel := s.Subscribe()
@@ -42,7 +43,7 @@ func TestSubscribeSendsSizeThenSnapshot(t *testing.T) {
 }
 
 func TestWriteReachesTheViewer(t *testing.T) {
-	s := New(80, 24)
+	s := New(80, 24, adapter.For("claude").Markers)
 	_, stream, cancel := s.Subscribe()
 	defer cancel()
 
@@ -64,7 +65,7 @@ func TestWriteReachesTheViewer(t *testing.T) {
 //
 // Run with -race for the other half of the guarantee.
 func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
-	s := New(80, 24)
+	s := New(80, 24, adapter.For("claude").Markers)
 
 	done := make(chan struct{})
 	go func() {
@@ -114,7 +115,7 @@ func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
 // earlier take-over rule got wrong — with pages that reconnect on their own, it
 // left two viewers knocking each other offline forever.
 func TestViewersWatchTogether(t *testing.T) {
-	s := New(80, 24)
+	s := New(80, 24, adapter.For("claude").Markers)
 	_, first, cancelFirst := s.Subscribe()
 	defer cancelFirst()
 
@@ -141,7 +142,7 @@ func TestViewersWatchTogether(t *testing.T) {
 // TestOneViewerLeavingLeavesTheRest covers the other half: a viewer dropped for
 // falling behind must not take the others with it.
 func TestOneViewerLeavingLeavesTheRest(t *testing.T) {
-	s := New(80, 24)
+	s := New(80, 24, adapter.For("claude").Markers)
 	_, slow, cancelSlow := s.Subscribe()
 	defer cancelSlow()
 	_, keen, cancelKeen := s.Subscribe()
@@ -195,7 +196,7 @@ func drain(ch <-chan Message) {
 // TestSlowViewerIsDropped pins the overflow policy: the viewer is disconnected,
 // not served a stream with a hole in it, and the agent is never held up.
 func TestSlowViewerIsDropped(t *testing.T) {
-	s := New(80, 24)
+	s := New(80, 24, adapter.For("claude").Markers)
 	_, stream, cancel := s.Subscribe()
 	defer cancel()
 
@@ -214,7 +215,7 @@ func TestSlowViewerIsDropped(t *testing.T) {
 }
 
 func TestResizeTellsTheViewer(t *testing.T) {
-	s := New(80, 24)
+	s := New(80, 24, adapter.For("claude").Markers)
 	_, stream, cancel := s.Subscribe()
 	defer cancel()
 

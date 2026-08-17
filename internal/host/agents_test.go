@@ -226,12 +226,15 @@ func quickRestarts() func() {
 
 // fakeAgent writes a script that shows the marker the detector reads as idle and
 // then waits on stdin, so the gate can be exercised without a real agent.
+// The screens these scripts draw are Claude Code's, so the script is that kind:
+// the markers a screen is read with come from the name of the command.
 func fakeAgent(t *testing.T, dir, body string) string {
-	return fakeAgentNamed(t, dir, "fake-agent", body)
+	return fakeAgentNamed(t, dir, "claude", body)
 }
 
 // fakeAgentNamed is the same, under a name of the caller's choosing. The name
-// decides whether kolo knows how to resume it.
+// decides what kolo knows about the kind — how to read its screen, and how to
+// resume it.
 func fakeAgentNamed(t *testing.T, dir, name, body string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -310,6 +313,30 @@ func TestAMessageIsHeldOnAnUnrecognisedScreen(t *testing.T) {
 	time.Sleep(10 * tick)
 	if len(queue.Pending()) != 1 {
 		t.Error("a message was sent to a screen nobody recognised")
+	}
+}
+
+// TestAnUnknownAgentKindIsHeld: the screen is another kind's idle screen, and
+// says nothing about this one. A kind kolo has no adapter for is watchable and
+// never written to, however familiar its screen looks.
+func TestAnUnknownAgentKindIsHeld(t *testing.T) {
+	dir := t.TempDir()
+	script := fakeAgentNamed(t, dir, "some-other-agent", "printf '? for shortcuts\\r\\n'\ncat\n")
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+
+	if err := a.Send("checkups", "Artem", "run the checkups"); err != nil {
+		t.Fatal(err)
+	}
+	queue := queueOf(t, a, "checkups")
+	time.Sleep(10 * tick)
+	if len(queue.Pending()) != 1 {
+		t.Error("a message was sent to an agent kind kolo cannot read")
 	}
 }
 

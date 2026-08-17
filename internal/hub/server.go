@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/session"
 	"github.com/whosgotch/kolo/internal/ui"
@@ -301,7 +302,8 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	// A host may only carry the screen of an agent the hub agrees is its own,
 	// so one machine cannot answer for another machine's agent.
-	if a, ok := s.registry.Agent(name); !ok || a.Host != h.ID {
+	a, ok := s.registry.Agent(name)
+	if !ok || a.Host != h.ID {
 		http.Error(w, "no agent called "+name+" here", http.StatusNotFound)
 		return
 	}
@@ -328,7 +330,9 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	live := s.screens.open(name, hello.Cols, hello.Rows)
+	// The hub reads this screen too — to catch a joiner up on what may be done
+	// with it — so it needs the markers of the kind drawing it.
+	live := s.screens.open(name, hello.Cols, hello.Rows, adapter.For(a.Command).Markers)
 	defer s.screens.close(name, live)
 
 	for {
@@ -409,7 +413,7 @@ func catchUp(live *session.Session) session.Message {
 		Type    string          `json:"type"`
 		State   string          `json:"state"`
 		Options []detect.Option `json:"options"`
-	}{"state", live.State().String(), detect.Options(live.Text())})
+	}{"state", live.State().String(), live.Options()})
 	return session.Message{Control: true, Data: b}
 }
 

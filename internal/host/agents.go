@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/agent"
 	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/hub"
@@ -77,18 +78,15 @@ type process struct {
 	bounced bool
 }
 
-// What to append to a command to bring back its last conversation. An agent kind
-// not listed here cannot be resumed, so every restart of one starts fresh.
-var resumeExtra = map[string][]string{
-	"claude": {"--continue"},
-}
-
+// resumeArgv is the command with whatever brings back its last conversation
+// appended. Nil for an agent kind that cannot be resumed, so every restart of
+// one starts fresh.
 func resumeArgv(command string) []string {
-	extra, ok := resumeExtra[filepath.Base(command)]
-	if !ok {
+	resume := adapter.For(command).Resume
+	if len(resume) == 0 {
 		return nil
 	}
-	return append([]string{command}, extra...)
+	return append([]string{command}, resume...)
 }
 
 func NewAgents(cfg Config, state string) *Agents {
@@ -167,10 +165,11 @@ func (a *Agents) launch(name string) error {
 		started.Close()
 		return fmt.Errorf("%s is no longer wanted", name)
 	}
-	live := session.New(cols, rows)
+	kind := adapter.For(spec.Command)
+	live := session.New(cols, rows, kind.Markers)
 	// The queue reads the same screen the hub is shown, so what decides when a
 	// line may be typed is what everybody else is looking at.
-	queue := relay.New(started, live.Text)
+	queue := relay.New(started, live.Text, kind)
 	screen, closeScreen := context.WithCancel(context.Background())
 	p.agent, p.started, p.live, p.queue = started, time.Now(), live, queue
 	p.resumed, p.fresh, p.bounced = resumed, false, false
@@ -253,11 +252,11 @@ func (a *Agents) bounce(name, from string, fresh bool) error {
 
 	// Said on the screen that is about to go, so everyone watching learns who did
 	// it before they are repainted from the new process.
-	kind := "restarted"
+	what := "restarted"
 	if fresh {
-		kind = "fresh"
+		what = "fresh"
 	}
-	v.announce(event{Type: kind, From: from})
+	v.announce(event{Type: what, From: from})
 	running.Close()
 	return nil
 }

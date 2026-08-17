@@ -30,6 +30,10 @@ type Message struct {
 // the old was wrong twice over: guests are meant to watch together, and a page
 // that reconnects on its own turns a takeover into a loop.
 type Session struct {
+	// How the agent's kind wears its state, so that what the session says about
+	// the screen is read with the markers of the agent drawing it.
+	markers detect.Markers
+
 	mu     sync.Mutex
 	screen *term.Screen
 	subs   map[*subscriber]struct{}
@@ -40,9 +44,14 @@ type subscriber struct {
 	closed bool
 }
 
-// NewHub returns a Hub whose terminal is cols x rows.
-func New(cols, rows int) *Session {
-	return &Session{screen: term.New(cols, rows), subs: map[*subscriber]struct{}{}}
+// New returns a Session whose terminal is cols x rows, showing an agent whose
+// screen reads by markers.
+func New(cols, rows int, markers detect.Markers) *Session {
+	return &Session{
+		markers: markers,
+		screen:  term.New(cols, rows),
+		subs:    map[*subscriber]struct{}{},
+	}
 }
 
 // Viewers is how many are currently watching.
@@ -66,7 +75,12 @@ func (s *Session) Write(p []byte) (int, error) {
 
 // State reads the agent's screen and reports whether it could take a line now —
 // the same screen the viewer sees, not a second one kept alongside.
-func (s *Session) State() detect.State { return detect.Of(s.Text()) }
+func (s *Session) State() detect.State { return s.markers.Of(s.Text()) }
+
+// Options are the choices of the question on screen, empty whenever there is no
+// question. Read here as well as by the relay, because the hub has a screen and
+// no queue: somebody joining mid-question is caught up from this.
+func (s *Session) Options() []detect.Option { return s.markers.Options(s.Text()) }
 
 // Text is the agent's screen as it stands. It is what the relay reads before
 // writing anything: the state it may send in, and the choices it may answer.

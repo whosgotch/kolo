@@ -19,6 +19,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
@@ -47,21 +48,14 @@ type Message struct {
 	Command bool
 }
 
-// commandSigils begin a line that belongs to the agent's CLI rather than to the
-// model behind it: a slash command, a shell line, a note for its memory.
-//
-// These are Claude Code's, as internal/detect's screen markers are, and they are
-// the third thing kolo knows about an agent kind. A kind kolo has none for is
-// still usable — its members simply cannot reach whatever it keeps behind a
-// sigil, which is where an unknown agent kind already stands.
-const commandSigils = "/!#"
-
 // isCommand reports whether text is for the CLI rather than the conversation.
 //
 // Only the first character decides. A line mentioning /tmp halfway through is
-// prose, and prose is attributed.
-func isCommand(text string) bool {
-	return text != "" && strings.IndexByte(commandSigils, text[0]) >= 0
+// prose, and prose is attributed. A kind that declares no sigils has no CLI kolo
+// can reach, so every line of its is a message.
+func (r *Relay) isCommand(text string) bool {
+	sigils := r.kind.Sigils
+	return text != "" && sigils != "" && strings.IndexByte(sigils, text[0]) >= 0
 }
 
 // Line is what actually reaches the agent: the member's words, attributed.
@@ -80,6 +74,9 @@ func (m Message) Line() string {
 // Relay is the queue between the guests and the agent.
 type Relay struct {
 	agent Sender
+	// What kolo knows about this agent's kind: how to read its screen, and which
+	// lines are for its CLI.
+	kind adapter.Adapter
 	// The screen as text, read fresh each time — the picture rather than a
 	// verdict about it, because releasing a line needs only the state while
 	// answering needs the choices, and both must come from the same screen.
@@ -91,13 +88,13 @@ type Relay struct {
 	sending bool
 }
 
-// New returns a Relay that writes to agent and reads screen to decide whether it
-// may.
-func New(agent Sender, screen func() string) *Relay {
-	return &Relay{agent: agent, screen: screen}
+// New returns a Relay that writes to agent and reads screen, by the markers of
+// kind, to decide whether it may.
+func New(agent Sender, screen func() string, kind adapter.Adapter) *Relay {
+	return &Relay{agent: agent, kind: kind, screen: screen}
 }
 
-func (r *Relay) state() detect.State { return detect.Of(r.screen()) }
+func (r *Relay) state() detect.State { return r.kind.Markers.Of(r.screen()) }
 
 // Submit queues a guest's line. It is never written to the agent here, however
 // idle the agent happens to be: everything goes through the queue.
@@ -113,7 +110,7 @@ func (r *Relay) Submit(nickname, text string) (Message, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nextID++
-	m := Message{ID: r.nextID, Nickname: nickname, Text: text, Command: isCommand(text)}
+	m := Message{ID: r.nextID, Nickname: nickname, Text: text, Command: r.isCommand(text)}
 	r.queue = append(r.queue, m)
 	return m, nil
 }
@@ -157,7 +154,7 @@ func (r *Relay) Tick() (*Message, error) {
 
 // Options are the choices the agent is offering, for showing a member what they
 // would be answering. Empty whenever there is no question on screen.
-func (r *Relay) Options() []detect.Option { return detect.Options(r.screen()) }
+func (r *Relay) Options() []detect.Option { return r.kind.Markers.Options(r.screen()) }
 
 // Answer chooses one of the options on screen, by pressing its number.
 //
@@ -176,10 +173,10 @@ func (r *Relay) Answer(number int, label string) error {
 	}
 	return r.exclusive(func() error {
 		screen := r.screen()
-		if detect.Of(screen) != detect.Dialog {
+		if r.kind.Markers.Of(screen) != detect.Dialog {
 			return fmt.Errorf("relay: there is no question on screen")
 		}
-		for _, o := range detect.Options(screen) {
+		for _, o := range r.kind.Markers.Options(screen) {
 			if o.Number == number && o.Label == label {
 				_, err := r.agent.Write([]byte(strconv.Itoa(number)))
 				return err
