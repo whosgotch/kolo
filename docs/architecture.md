@@ -100,9 +100,15 @@ Three things:
 - how to resume its last conversation
 - which lines are for its own CLI rather than for the model behind it
 
-Claude Code is the first. An agent kind kolo has none of these for is still
-watchable, because an unrecognised screen never reads as idle — so nothing is
-ever sent to it.
+They live together in `internal/adapter`, one value per kind, looked up by the
+name of the binary. The pieces that use them — the detector, the screen, the
+queue — are given a kind rather than knowing one.
+
+Claude Code is the first. An agent kind kolo has none of these for gets the empty
+adapter, and the empty adapter is harmless by construction: no marker matches, so
+its screen never reads as idle and nothing is ever sent to it; it cannot be
+resumed, so it restarts fresh; and no line of its is taken for a command. Such an
+agent is watchable, not drivable.
 
 ## Restart
 
