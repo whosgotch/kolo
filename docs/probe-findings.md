@@ -1,7 +1,10 @@
-# Milestone 0 — Probe findings
+# Probe findings
 
-Probed against `claude` (Claude Code v2.1.226) in a PTY at 120x40 on macOS,
-`TERM=xterm-256color`, child confined to a scratch directory.
+Findings 1–5 are Milestone 0, probed against `claude` (Claude Code v2.1.226) in a
+PTY at 120x40 on macOS, `TERM=xterm-256color`, child confined to a scratch
+directory. Finding 6 is roadmap step 6 and probes a second kind against the same
+questions; it is here rather than in its own file because it is an answer to
+finding 4.
 
 The probe itself lives on `probe/milestone-0` and is not merged. Reproduce with:
 
@@ -167,8 +170,69 @@ Recommendation: (2) for v1, plus documenting in `docs/security.md` that guest
 messages are held while the agent is asking the host something. (1) and (2) share
 the same detector; (2) just fails safe.
 
+## 6. A second kind does not wear its state for the whole turn
+
+Probed against `codex` (codex-cli 0.147.0), same PTY at 120x40, driven by
+`scripts/codex-idle.txt` and `scripts/codex-busy.txt`. This is roadmap step 6,
+and the point of it was to find out whether the marker seam is real or whether it
+is a shape Claude Code happens to fit. It is the second.
+
+Two of the three markers carry over, one of them exactly:
+
+| | Claude Code | codex |
+|---|---|---|
+| working | `esc to interrupt` | `Working (2s • esc to interrupt)` |
+| dialog selection | `❯ 1.` | `› 1.` |
+| dialog footer | `Esc to cancel` | `Press enter to continue` |
+| idle | `? for shortcuts` | **nothing** |
+
+The idle row is the finding. Claude Code keeps a hint under its input box in
+every state, so idle is a thing the screen says. codex's box carries a rotating
+placeholder suggestion (`› Summarize recent commits`) and under it a status line
+of model and directory — both present while it works and while it waits, neither
+saying which.
+
+Worse, the working line is not up for the whole turn. Sampled once a second
+across one turn, `esc to interrupt` was on screen for the first three seconds and
+gone for the next eight, while the reply was still streaming a line at a time:
+
+```
+t01  esc to interrupt    ◦ Working (0s • esc to interrupt)
+t02  esc to interrupt    ◦ Working (1s • esc to interrupt)
+t03  esc to interrupt    • Working (2s • esc to interrupt)
+t04  —                   • 1. One, starting steadily.
+...                                 (still growing)
+t11  —
+t12  —                   (finished; t12, t15 and a dump 10s later are identical)
+```
+
+Diffed against the settled screen, a mid-stream screen differs only in how much
+of the transcript is on it. So for eight seconds of a twelve-second turn, codex
+working and codex waiting are the same picture, and the only thing telling them
+apart is that one of them is *changing*.
+
+That breaks the assumption underneath `internal/detect`, which is that a state is
+a property of one screen. It is not, for this kind. Nothing unsafe follows today
+— an unrecognised screen is Unknown and Unknown holds the queue, so a codex agent
+is simply never sendable — but a second kind that can never be sent anything is
+not a second kind.
+
+What the seam has to become: a kind declares its markers *and* whether idle is
+allowed to be inferred from the screen having stopped moving. Claude Code says no
+and keeps a pure per-screen answer. codex says yes, and its idle is "no working
+line, and nothing has changed for a settle period". The settle period is the cost
+of a TUI that does not announce itself, and it is paid per kind rather than by
+everybody.
+
 ## Incidental
 
+- codex asks the same trust question on a fresh directory, with the same shape
+  and the same danger as finding 5: two numbered options, the safe-sounding one
+  first, and Enter answers it.
+- Model prose is a rich source of false dialogs. `count from one to twenty`
+  renders as `1.`, `2.`, `3.` down consecutive lines — exactly what
+  `detect.Options` looks for. It is only safe because `Options` refuses to read
+  anything unless `Of` already said Dialog.
 - The dimmed text that appears in the input box (`ESC[2m`) is Claude Code's own
   suggested-prompt placeholder, not an emulator artifact. It is not real input.
 - The child inherits `CLAUDE_CODE_CHILD_SESSION`, which disables transcript

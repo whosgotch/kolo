@@ -1,0 +1,44 @@
+# Working, with the input box still on screen — the state that made a hint under
+# the box necessary for Claude Code (findings #4). Recorded for a second kind so
+# the same question can be asked of it.
+#
+# Sampled once a second across a whole turn rather than dumped once. The hint
+# under the box is not on screen for the whole turn here, and a single dump
+# either catches it or misses it without saying which.
+#
+# Nothing is approved and nothing is written: the prompt only asks for prose.
+# Record in a directory the agent already trusts, so no dialog is in the way.
+wait 8s
+send count slowly from one to sixty, one number per line, with a short remark about each
+wait 1s
+dump t01
+wait 1s
+dump t02
+wait 1s
+dump t03
+wait 1s
+dump t04
+wait 1s
+dump t05
+wait 1s
+dump t06
+wait 1s
+dump t07
+wait 1s
+dump t08
+wait 1s
+dump t09
+wait 1s
+dump t10
+wait 1s
+dump t11
+wait 1s
+dump t12
+wait 1s
+dump t13
+wait 1s
+dump t14
+wait 1s
+dump t15
+wait 10s
+dump after

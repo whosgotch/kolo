@@ -1,0 +1,12 @@
+# The safe state for a second agent kind, so detect has something real to match.
+#
+# The trust dialog is answered here rather than avoided: a directory the org
+# lends is one somebody already worked in, and the recording wants what comes
+# after it — the input box and whatever hint sits under it, which is what tells
+# idle from busy for Claude Code (findings #4).
+waitfor 60s Do you trust
+wait 2s
+dump trust
+key enter
+wait 8s
+dump idle
