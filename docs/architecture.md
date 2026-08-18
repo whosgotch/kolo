@@ -66,73 +66,54 @@ scanners, and travel in the `Authorization` header rather than a URL.
 
 ## Input
 
-There are two ways in, and the difference between them is who chose the moment.
+Members type at the agent themselves. One holds its keyboard at a time; anybody
+may take it from anybody, and everybody watching is told who has it — the same
+thing that stops two people typing at one keyboard in a room. Nothing is gated,
+because the member can see the screen their keys land on: an Enter at a question
+is a decision rather than an accident.
 
-**Keystrokes.** One member holds the agent's keyboard and types at it live, as if
-sitting in front of it. Anybody may take the keyboard from anybody — there are no
-roles here either — and everybody watching is told who has it, which is the same
-thing that stops two people typing at one keyboard in a room. Nothing is gated:
-the member can see the screen their keys land on, so an Enter at a question is a
-decision rather than an accident.
+That is what makes the agent's own interface reachable — a panel with keys of its
+own (`d to day · w to week`), a filter box, a mode the footer offers. None of it
+has a name kolo could learn, and all of it used to strand an agent.
 
-This is what makes the agent's own interface reachable. A slash command opens a
-panel with keys of its own (`d to day · w to week`), a filter box takes text, a
-footer offers a mode — none of which kolo can name, and all of which it used to
-strand an agent on.
+Kolo held a queue of members' messages once, and released them only while the
+screen said the agent was idle, because nobody could type for themselves. That is
+gone. What is left of it is in `docs/probe-findings.md` #3–#5, which is worth
+reading anyway: it is the evidence that typing at somebody else's TUI from a
+program is harder than it looks.
 
-**Messages.** A line sent without holding the keyboard is nobody's keystroke, so
-kolo picks the moment it lands: it joins a queue and is released only while the
-screen says the agent is idle at its input box. Released at the wrong moment it
-is swallowed without trace, or its Enter answers a question the agent was asking.
-See `docs/probe-findings.md` #3–#5. The message carries the member's words and
-nothing else — attribution goes to the watchers as an event rather than into the
-agent's context as "Dana: ".
-
-Three things are neither. They go directly, each permitted only where it is
+Two things kolo still does on a member's behalf, each permitted only where it is
 safe:
 
 | action | permitted when |
 |---|---|
-| answer a dialog | a dialog is on screen |
-| close a panel | a dialog is on screen with nothing to answer |
-| interrupt | always |
+| answer a question | a dialog with choices is on screen |
+| interrupt | the agent is working |
 | restart, start fresh, stop | always |
 
-Closing a panel is the exception that had to be made. A slash command can open a
-view (`/status`, `/config`) that carries a dialog's footer and no choices: the
-queue is held, there is nothing to offer as buttons, and an agent the whole org
-is using is stuck until somebody restarts it. So Esc — the key that screen's own
-footer offers — may be sent there, and only there: where there are choices, Esc
-is not "close this" but an answer nobody chose.
-
-Answering a dialog is the inverse of the danger above: the keystroke that must
-never arrive by accident is fine when it is deliberate, attributed, and gated on
-the same detection.
-
-A message beginning with `/`, `!` or `#` is the agent's CLI being addressed
-rather than its model, and it goes through the queue and the gate like any other
-line — but unattributed, because a name in front of it puts the sigil out of the
-first column and the CLI reads the whole thing as prose. So attribution moves to
-the event every watcher is sent: the page says who ran what. This is the only
-input kolo does not sign, and it is the reason it is worth naming here.
+Answering exists for the board, where a member is not watching the screen at all:
+the choices are read off it, and an answer carries the label the member was shown
+so it either lands on the question they were offered or is refused. Interrupting
+exists so that stopping a runaway agent does not require taking the keyboard
+first.
 
 ## What kolo knows about each agent kind
 
-Three things:
+Two things:
 
-- how its screen looks when idle, and when it is asking a question
+- how its screen looks when idle, working, and asking a question
 - how to resume its last conversation
-- which lines are for its own CLI rather than for the model behind it
 
 They live together in `internal/adapter`, one value per kind, looked up by the
-name of the binary. The pieces that use them — the detector, the screen, the
-queue — are given a kind rather than knowing one.
+name of the binary. It was three until members could type for themselves: which
+lines address the agent's own CLI mattered while kolo was typing them.
 
-Claude Code is the first. An agent kind kolo has none of these for gets the empty
-adapter, and the empty adapter is harmless by construction: no marker matches, so
-its screen never reads as idle and nothing is ever sent to it; it cannot be
-resumed, so it restarts fresh; and no line of its is taken for a command. Such an
-agent is watchable, not drivable.
+Claude Code is the first. An agent kind kolo has neither for gets the empty
+adapter: no marker matches, so nothing is claimed about its screen and no
+question is answered on it, and it cannot be resumed, so it restarts fresh. It is
+still watchable, and still typeable by whoever holds its keyboard — which is the
+difference this change made. An unknown kind used to be watchable and nothing
+else.
 
 ## Restart
 
@@ -159,13 +140,14 @@ cut off. Each window then draws that grid as large as it will go.
 | | host | hub |
 |---|---|---|
 | agent processes, their files and permissions | ✓ | |
-| terminal emulation, the screen, the input gate | ✓ | |
+| terminal emulation, the screen, reading what it says | ✓ | |
 | members, tokens, attribution | | ✓ |
 | the agent list and the browser UI | | ✓ |
 | the log | | ✓ |
 
-The gate that decides when a line may be typed stays next to the screen it reads.
-No part of that boundary moves onto the network.
+Whatever is decided from the screen is decided next to the screen. The hub
+carries keystrokes and answers; it never reads a screen to judge whether they may
+be sent.
 
 ## Security
 

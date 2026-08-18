@@ -61,16 +61,19 @@ Anyone can take the agent's keyboard and type at it directly — the whole of it
 interface, panels and modes and all — while everybody else watches and sees whose
 hands are on it. Taking it needs no permission and cannot be refused.
 
-The part worth reading is the queue that holds a message until the agent's own
-screen says it may be sent, for the lines nobody typed live. A moment earlier and the message is either swallowed
+An earlier version had members send messages into a queue kolo released when it
+judged the agent idle. It is gone: it was a chat pretending a terminal was an
+API, and the judgement was a guess about somebody else's screen that broke every
+time they shipped. A moment earlier and the message is either swallowed
 without trace or its Enter answers a question the agent was asking. See
 [docs/probe-findings.md](docs/probe-findings.md); every part of it was found by
 experiment, not guessed at.
 
-Answering works the same way round. The choices are read off the agent's screen
-and offered as buttons, and the answer carries the label the member was shown —
-so an answer either lands on the question they were looking at or is refused. No
-keystroke a member makes ever reaches the terminal.
+Answering works the other way round, and is the one thing kolo still does for
+somebody. The choices are read off the agent's screen and offered as buttons, and
+the answer carries the label the member was shown — so it either lands on the
+question they were offered or is refused. That is what lets a question be
+answered by whoever is free, without them taking the keyboard to do it.
 
 A restart resumes the conversation, and one whose resume is refused — the CLI
 upgraded, the state gone — comes back clean and says so on the page. Silent
