@@ -50,7 +50,16 @@ func (s State) CanSend() bool { return s == Idle }
 // taken from a recording of it rather than from its source. Matched
 // case-sensitively: "esc to interrupt" and "Esc to cancel" are different states.
 type Markers struct {
-	Idle         string
+	// Idle is the hints an input box that can take a line carries, any one of
+	// which means idle. More than one string because the hint changes between
+	// versions and permission modes while meaning the same thing: v2.1.226 put
+	// "? for shortcuts" under the box where v2.1.234 puts nothing of the sort,
+	// and a kolo that knows only the version it was written against stops
+	// sending anything the day the agent upgrades (probe-findings #7).
+	//
+	// Idle is read last and only as an absence: a screen carrying a dialog or a
+	// working line is answered before this is looked at.
+	Idle         []string
 	Busy         string
 	DialogFooter string
 	// DialogSelected is the sigil in front of a dialog's highlighted choice. It
@@ -150,7 +159,7 @@ func (m Markers) Of(screen string) State {
 		return Dialog
 	case has(screen, m.Busy):
 		return Busy
-	case has(screen, m.Idle):
+	case hasAny(screen, m.Idle):
 		return Idle
 	}
 	return Unknown
@@ -168,4 +177,14 @@ func (m Markers) firstChoice() string {
 // has is Contains, except that a marker a kind does not declare matches nothing.
 func has(screen, marker string) bool {
 	return marker != "" && strings.Contains(screen, marker)
+}
+
+// hasAny is has over the strings that mean the same state.
+func hasAny(screen string, markers []string) bool {
+	for _, marker := range markers {
+		if has(screen, marker) {
+			return true
+		}
+	}
+	return false
 }

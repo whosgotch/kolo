@@ -68,6 +68,60 @@ const (
   ⏸ manual mode on · esc to interrupt · ← for agents
 `
 
+	// v2.1.234, where the hint the detector was written against is gone: the
+	// footer carries the permission mode and the agents hint, and idle differs
+	// from working only by what is missing (probe-findings #7).
+	idleScreenNow = `
+                                                                     ● high · /effort
+────────────────────────────────────────────────────────────────
+❯ Try "fix typecheck errors"
+────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
+`
+
+	busyScreenNow = `
+⏺ Bash(for i in 1 2 3; do echo $i; sleep 2; done)
+
+────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
+`
+
+	// The same version again, with something in the input box: every segment of
+	// the footer but the permission mode is gone. A line waiting in the box is
+	// what a failed submit leaves behind, and it must not read as unknown — the
+	// agent is idle, and it is the state a member is looking at when they wonder
+	// why nothing happened.
+	idleScreenTyped = `
+────────────────────────────────────────────────────────────────
+❯ Dana: count slowly from one to sixty
+────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+`
+
+	// The same version's auto-mode question, which is drawn above the input box
+	// rather than in place of it — so the idle footer is on screen underneath a
+	// question nobody has answered.
+	autoModeScreen = `
+  9. Nine — one shy of double digits.
+
+────────────────────────────────────────────────────────────────
+  Set up auto mode for your environment?
+
+  Auto mode lets Claude act without asking first.
+
+  ❯ 1. Set it up
+    2. Not now
+    3. Don't show again
+
+  Enter to confirm · Esc to cancel
+────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
+`
+
 	trustScreen = `
 ────────────────────────────────────────────────────────────────
  Accessing workspace:
@@ -95,6 +149,10 @@ func TestOf(t *testing.T) {
 		{"tool permission dialog", permissionScreen, detect.Dialog},
 		{"workspace trust dialog", trustScreen, detect.Dialog},
 		{"running a shell command", busyScreen, detect.Busy},
+		{"idle, current version", idleScreenNow, detect.Idle},
+		{"running a shell command, current version", busyScreenNow, detect.Busy},
+		{"a question drawn above the input box", autoModeScreen, detect.Dialog},
+		{"idle with a line waiting in the box", idleScreenTyped, detect.Idle},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -105,20 +163,32 @@ func TestOf(t *testing.T) {
 	}
 }
 
-// TestTheDialogsHideTheInputBox pins the arrangement the detector depends on. An
-// agent that drew its input box under a dialog would put both markers on screen
-// at once, and these are the cases to revisit.
-func TestTheDialogsHideTheInputBox(t *testing.T) {
-	for name, screen := range map[string]string{
-		"permission": permissionScreen,
-		"trust":      trustScreen,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if strings.Contains(screen, claude.Idle) {
-				t.Errorf("the %s dialog shows the input box footer, which the detector treats as idle", name)
-			}
-		})
+// TestAQuestionOverTheInputBoxIsStillAQuestion is the arrangement that used to
+// be impossible. Dialogs once replaced the input box; the auto-mode question
+// draws above it and leaves the idle footer on screen, so a screen now carries
+// both sets of markers at once and the order they are tested in is the only
+// thing keeping a queued line off a question.
+func TestAQuestionOverTheInputBoxIsStillAQuestion(t *testing.T) {
+	if !hasAnyOf(autoModeScreen, claude.Idle) {
+		t.Fatal("fixture no longer carries the idle footer; it is the point of this test")
 	}
+	if got := claude.Of(autoModeScreen); got != detect.Dialog {
+		t.Errorf("Of(a question over the input box) = %s, want %s", got, detect.Dialog)
+	}
+	if got := claude.Options(autoModeScreen); len(got) != 3 {
+		t.Errorf("read %v off the question, want its three choices", got)
+	}
+}
+
+// hasAnyOf is the any-of match the detector does, for tests that assert about a
+// screen rather than about a verdict.
+func hasAnyOf(screen string, markers []string) bool {
+	for _, m := range markers {
+		if strings.Contains(screen, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestUnrecognisedScreensHold is the property the whole package is for. A
@@ -153,7 +223,12 @@ func TestDialogWinsOverIdle(t *testing.T) {
 // the input box, so the absence of the idle footer is the only thing between a
 // message and a child process's stdin.
 func TestBusyKeepsItsInputBox(t *testing.T) {
-	if strings.Contains(busyScreen, claude.Idle) {
+	// The current version's footer carries the idle hint while it works, so this
+	// says what it can: the busy screen must not read as idle, whatever it shows.
+	if got := claude.Of(busyScreenNow); got != detect.Busy {
+		t.Errorf("the current version's busy screen reads as %s", got)
+	}
+	if strings.Contains(busyScreen, "? for shortcuts") {
 		t.Error("the busy screen carries the idle footer, so it reads as safe to send")
 	}
 	// Two footers, two states. A case-insensitive match would fold them

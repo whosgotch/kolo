@@ -31,7 +31,12 @@ type Adapter struct {
 var kinds = map[string]Adapter{
 	"claude": {
 		Markers: detect.Markers{
-			Idle:           "? for shortcuts",
+			// Two versions' worth of the same fact — the input box is drawn
+			// and nothing is running in front of it. v2.1.226 hung "? for
+			// shortcuts" under the box; v2.1.234 hangs the permission mode
+			// there, and drops every other segment of the footer as soon as
+			// the box has anything in it (probe-findings #7).
+			Idle:           []string{"(shift+tab to cycle)", "? for shortcuts"},
 			Busy:           "esc to interrupt",
 			DialogFooter:   "Esc to cancel",
 			DialogSelected: "❯",
