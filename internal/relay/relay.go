@@ -27,6 +27,18 @@ import (
 // The key the agent's own footer tells the person at the keyboard to press.
 const esc = 0x1b
 
+// How long to wait between the line and the Enter that submits it.
+//
+// Two separate writes are not enough on their own (probe-findings #3, #8): an
+// Enter that arrives hard behind the text is still inside the agent's
+// paste-detection window, where it is read as a newline in the pasted content
+// and the line sits in the box unsent. The recorder that proved the two-write
+// rule had this pause in it all along; the product did not, and a message going
+// nowhere was the intermittent result.
+//
+// A variable so the tests do not have to wait it out.
+var enterDelay = 150 * time.Millisecond
+
 const (
 	maxText     = 2000
 	maxNickname = 32
@@ -224,12 +236,14 @@ func (r *Relay) exclusive(write func() error) error {
 	return err
 }
 
-// send writes the line and then the Enter, as two separate writes. See the
-// package comment: bundled, they are read as a paste and nothing is submitted.
+// send writes the line, waits, and then writes the Enter. See the package
+// comment and enterDelay: bundled or hard behind each other, they are read as a
+// paste and nothing is submitted.
 func (r *Relay) send(m Message) error {
 	if _, err := r.agent.Write([]byte(m.Line())); err != nil {
 		return fmt.Errorf("relay: write line: %w", err)
 	}
+	time.Sleep(enterDelay)
 	if _, err := r.agent.Write([]byte("\r")); err != nil {
 		return fmt.Errorf("relay: write enter: %w", err)
 	}

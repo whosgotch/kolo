@@ -102,6 +102,8 @@ func TestReleasedWhenIdle(t *testing.T) {
 
 // TestEnterIsASeparateWrite pins findings #3. Bundled with the text, the Enter
 // is read as part of a paste and the line is never submitted.
+//
+// See TestEnterWaitsForTheAgentToCatchUp for the other half of it.
 func TestEnterIsASeparateWrite(t *testing.T) {
 	r, rec, _ := fixture(detect.Idle)
 	r.Submit("ada", "hello")
@@ -117,6 +119,32 @@ func TestEnterIsASeparateWrite(t *testing.T) {
 	}
 	if rec.writes[1] != "\r" {
 		t.Errorf("second write = %q, want the Enter alone", rec.writes[1])
+	}
+}
+
+// TestEnterWaitsForTheAgentToCatchUp pins findings #8, which the two-write rule
+// on its own did not cover: an Enter hard behind the text is still inside the
+// agent's paste window and lands as a newline, leaving the line in the box.
+//
+// The recorder that proved the two-write rule paused between them; the relay did
+// not, and the message that did not submit was the difference.
+func TestEnterWaitsForTheAgentToCatchUp(t *testing.T) {
+	was := enterDelay
+	enterDelay = 40 * time.Millisecond
+	defer func() { enterDelay = was }()
+
+	r, rec, _ := fixture(detect.Idle)
+	r.Submit("ada", "hello")
+
+	start := time.Now()
+	if _, err := r.Tick(); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took < enterDelay {
+		t.Errorf("line and Enter went %s apart, want at least %s", took, enterDelay)
+	}
+	if len(rec.writes) != 2 || rec.writes[1] != "\r" {
+		t.Errorf("writes = %q, want the line then the Enter", rec.writes)
 	}
 }
 
