@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -77,10 +78,12 @@ type Relay struct {
 	// What kolo knows about this agent's kind: how to read its screen, and which
 	// lines are for its CLI.
 	kind adapter.Adapter
-	// The screen as text, read fresh each time — the picture rather than a
-	// verdict about it, because releasing a line needs only the state while
-	// answering needs the choices, and both must come from the same screen.
-	screen func() string
+	// The screen as text, and how long it has been that same picture, read fresh
+	// each time — the picture rather than a verdict about it, because releasing a
+	// line needs only the state while answering needs the choices, and both must
+	// come from the same screen. The stillness comes with it because for some
+	// kinds it is half the state.
+	screen func() (string, time.Duration)
 
 	mu      sync.Mutex
 	queue   []Message
@@ -90,11 +93,11 @@ type Relay struct {
 
 // New returns a Relay that writes to agent and reads screen, by the markers of
 // kind, to decide whether it may.
-func New(agent Sender, screen func() string, kind adapter.Adapter) *Relay {
+func New(agent Sender, screen func() (string, time.Duration), kind adapter.Adapter) *Relay {
 	return &Relay{agent: agent, kind: kind, screen: screen}
 }
 
-func (r *Relay) state() detect.State { return r.kind.Markers.Of(r.screen()) }
+func (r *Relay) state() detect.State { return r.kind.Markers.OfSettled(r.screen()) }
 
 // Submit queues a guest's line. It is never written to the agent here, however
 // idle the agent happens to be: everything goes through the queue.
@@ -154,7 +157,10 @@ func (r *Relay) Tick() (*Message, error) {
 
 // Options are the choices the agent is offering, for showing a member what they
 // would be answering. Empty whenever there is no question on screen.
-func (r *Relay) Options() []detect.Option { return r.kind.Markers.Options(r.screen()) }
+func (r *Relay) Options() []detect.Option {
+	screen, _ := r.screen()
+	return r.kind.Markers.Options(screen)
+}
 
 // Answer chooses one of the options on screen, by pressing its number.
 //
@@ -172,7 +178,7 @@ func (r *Relay) Answer(number int, label string) error {
 		return fmt.Errorf("relay: %d is not a choice", number)
 	}
 	return r.exclusive(func() error {
-		screen := r.screen()
+		screen, _ := r.screen()
 		if r.kind.Markers.Of(screen) != detect.Dialog {
 			return fmt.Errorf("relay: there is no question on screen")
 		}

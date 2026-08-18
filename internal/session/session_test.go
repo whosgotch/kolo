@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/whosgotch/kolo/internal/adapter"
+	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/term"
 )
 
@@ -230,5 +231,55 @@ func TestResizeTellsTheViewer(t *testing.T) {
 	}
 	if cols, rows := s.screen.Size(); cols != 100 || rows != 30 {
 		t.Errorf("screen is %dx%d, want 100x30", cols, rows)
+	}
+}
+
+// A kind whose idle is silence, with a settle period short enough to wait out in
+// a test. See docs/probe-findings.md #6.
+var settling = detect.Markers{Busy: "esc to interrupt", Settle: 50 * time.Millisecond}
+
+// TestSilenceBecomesIdleForAKindThatSettles: the session is the only thing that
+// knows when the screen last changed, so this is where "it has stopped moving"
+// is answered.
+func TestSilenceBecomesIdleForAKindThatSettles(t *testing.T) {
+	s := New(80, 24, settling)
+	s.Write([]byte("2. Two, and so on."))
+
+	if got := s.State(); got != detect.Unknown {
+		t.Errorf("state right after a change = %s, want it held", got)
+	}
+	time.Sleep(2 * settling.Settle)
+	if got := s.State(); got != detect.Idle {
+		t.Errorf("state after the screen settled = %s, want idle", got)
+	}
+
+	// And a change starts the wait again: a reply arriving a line at a time is
+	// the case this has to keep holding through.
+	s.Write([]byte("\r\n3. Three."))
+	if got := s.State(); got != detect.Unknown {
+		t.Errorf("state after the screen moved again = %s, want it held", got)
+	}
+}
+
+// TestARepaintIsNotAChange: an agent that redraws the same picture is not doing
+// anything, and a kind whose idle is silence would never settle if it were.
+func TestARepaintIsNotAChange(t *testing.T) {
+	s := New(80, 24, settling)
+	s.Write([]byte("waiting"))
+	time.Sleep(2 * settling.Settle)
+
+	s.Write([]byte("\x1b[H\x1b[2Kwaiting"))
+	if got := s.State(); got != detect.Idle {
+		t.Errorf("state after a repaint of the same screen = %s, want idle", got)
+	}
+}
+
+// TestAnAgentThatHasDrawnNothingIsNotIdle: a session is still by definition
+// before the process has said anything, and that stillness means nothing.
+func TestAnAgentThatHasDrawnNothingIsNotIdle(t *testing.T) {
+	s := New(80, 24, settling)
+	time.Sleep(2 * settling.Settle)
+	if got := s.State(); got != detect.Unknown {
+		t.Errorf("state of a screen nothing has been drawn on = %s, want it held", got)
 	}
 }

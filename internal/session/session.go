@@ -8,6 +8,7 @@ package session
 import (
 	"encoding/json"
 	"sync"
+	"time"
 
 	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/term"
@@ -37,6 +38,11 @@ type Session struct {
 	mu     sync.Mutex
 	screen *term.Screen
 	subs   map[*subscriber]struct{}
+	// The screen as it last looked, and when it started looking that way. Kept
+	// only for a kind whose idle is silence, because keeping it costs a copy of
+	// the screen per write and the kinds that announce themselves do not need it.
+	settled   string
+	settledAt time.Time
 }
 
 type subscriber struct {
@@ -51,6 +57,9 @@ func New(cols, rows int, markers detect.Markers) *Session {
 		markers: markers,
 		screen:  term.New(cols, rows),
 		subs:    map[*subscriber]struct{}{},
+		// From now rather than the zero time, so an agent that has not drawn
+		// anything yet has not been still since the beginning of time.
+		settledAt: time.Now(),
 	}
 }
 
@@ -69,13 +78,38 @@ func (s *Session) Write(p []byte) (int, error) {
 	defer s.mu.Unlock()
 
 	s.screen.Write(p)
+	s.noteChange()
 	s.send(Message{Data: append([]byte(nil), p...)})
 	return len(p), nil
 }
 
 // State reads the agent's screen and reports whether it could take a line now —
 // the same screen the viewer sees, not a second one kept alongside.
-func (s *Session) State() detect.State { return s.markers.Of(s.Text()) }
+func (s *Session) State() detect.State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.markers.OfSettled(s.screen.Text(), time.Since(s.settledAt))
+}
+
+// Screen is the agent's screen and how long it has been that same picture, read
+// together because a kind whose idle is silence needs both to be true at once.
+func (s *Session) Screen() (text string, still time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.screen.Text(), time.Since(s.settledAt)
+}
+
+// noteChange records when the screen last became what it is now. Bytes arriving
+// are not a change: a repaint that redraws the same picture, or output that
+// scrolls off, leaves the screen where it was. Callers must hold s.mu.
+func (s *Session) noteChange() {
+	if s.markers.Settle == 0 {
+		return
+	}
+	if text := s.screen.Text(); text != s.settled {
+		s.settled, s.settledAt = text, time.Now()
+	}
+}
 
 // Options are the choices of the question on screen, empty whenever there is no
 // question. Read here as well as by the relay, because the hub has a screen and

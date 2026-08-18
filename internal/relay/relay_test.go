@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/detect"
@@ -38,7 +39,10 @@ var screens = map[detect.State]string{
 func fixture(state detect.State) (*Relay, *recorder, func(detect.State)) {
 	rec := &recorder{}
 	current := screens[state]
-	r := New(rec, func() string { return current }, adapter.For("claude"))
+	// Claude Code's idle is a thing its screen says, so the stillness the relay is
+	// given never decides anything here; a kind whose idle is silence is exercised
+	// in TestSilenceIsIdleOnlyForAKindThatSaysSo.
+	r := New(rec, func() (string, time.Duration) { return current, 0 }, adapter.For("claude"))
 	if got := r.state(); got != state {
 		panic("fixture screen for " + state.String() + " reads as " + got.String())
 	}
@@ -360,7 +364,7 @@ func TestACommandGoesUnattributed(t *testing.T) {
 // attributed like any other — which is the safe way round, since an unattributed
 // line to a CLI kolo cannot read is a line nobody can be held to.
 func TestAKindWithNoSigilsHasNoCommands(t *testing.T) {
-	r := New(&recorder{}, func() string { return screens[detect.Idle] }, adapter.For("some-other-agent"))
+	r := New(&recorder{}, func() (string, time.Duration) { return screens[detect.Idle], 0 }, adapter.For("some-other-agent"))
 	m, err := r.Submit("ada", "/clear")
 	if err != nil {
 		t.Fatal(err)
@@ -433,5 +437,39 @@ func TestPaddingDoesNotHideACommand(t *testing.T) {
 	}
 	if !m.Command || m.Line() != "/clear" {
 		t.Errorf("line = %q, command = %v", m.Line(), m.Command)
+	}
+}
+
+// TestSilenceIsIdleOnlyForAKindThatSaysSo: the queue asks its kind, and a kind
+// whose idle is silence is released by the screen having stopped moving rather
+// than by anything the screen says (docs/probe-findings.md #6).
+func TestSilenceIsIdleOnlyForAKindThatSaysSo(t *testing.T) {
+	settling := adapter.Adapter{Markers: detect.Markers{
+		Busy:   "esc to interrupt",
+		Settle: 2 * time.Second,
+	}}
+	quiet := "1. One, starting steadily.\n› \n"
+
+	for _, tc := range []struct {
+		name  string
+		still time.Duration
+		want  bool
+	}{
+		{"still moving", time.Second, false},
+		{"settled", 3 * time.Second, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &recorder{}
+			r := New(rec, func() (string, time.Duration) { return quiet, tc.still }, settling)
+			r.Submit("ada", "hello")
+
+			sent, err := r.Tick()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (sent != nil) != tc.want {
+				t.Errorf("sent = %v after %s of quiet, want %v", sent != nil, tc.still, tc.want)
+			}
+		})
 	}
 }

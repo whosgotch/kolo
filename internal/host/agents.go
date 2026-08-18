@@ -169,7 +169,7 @@ func (a *Agents) launch(name string) error {
 	live := session.New(cols, rows, kind.Markers)
 	// The queue reads the same screen the hub is shown, so what decides when a
 	// line may be typed is what everybody else is looking at.
-	queue := relay.New(started, live.Text, kind)
+	queue := relay.New(started, live.Screen, kind)
 	screen, closeScreen := context.WithCancel(context.Background())
 	p.agent, p.started, p.live, p.queue = started, time.Now(), live, queue
 	p.resumed, p.fresh, p.bounced = resumed, false, false

@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // State is what the agent's screen says about sending it a line.
@@ -57,6 +58,15 @@ type Markers struct {
 	// sigil in front of its placeholder — so what is looked for is the sigil in
 	// front of the first choice.
 	DialogSelected string
+	// Settle is how long the screen must go unchanged before it reads as idle,
+	// for a kind that has no idle marker because it says nothing while it waits.
+	// Zero means idle is a thing the screen says and silence means nothing,
+	// which is the safer arrangement and the one to prefer.
+	//
+	// See docs/probe-findings.md #6: a kind whose working line comes and goes
+	// mid-turn leaves working and waiting looking the same, and the only thing
+	// telling them apart is that one of them is still changing.
+	Settle time.Duration
 }
 
 // Option is one numbered choice of the dialog on screen.
@@ -110,6 +120,26 @@ func (m Markers) Options(screen string) []Option {
 		return nil
 	}
 	return options
+}
+
+// OfSettled classifies the screen for a kind whose state is not a property of
+// one screen. It is Of, plus the one answer a single screen cannot give: a kind
+// that declares a settle period reads as idle once nothing has changed for that
+// long — but only from a screen Of made nothing of, so a working line or a
+// question still wins however long it has been up.
+//
+// still is how long the screen has been the same picture. A blank screen is
+// never idle however long it has been blank: an agent that has drawn nothing has
+// not started, and silence is only meaningful once there is something to be
+// silent under.
+func (m Markers) OfSettled(screen string, still time.Duration) State {
+	if s := m.Of(screen); s != Unknown {
+		return s
+	}
+	if m.Settle > 0 && still >= m.Settle && strings.TrimSpace(screen) != "" {
+		return Idle
+	}
+	return Unknown
 }
 
 // Of classifies the agent's screen. Dialog is tested first: if a screen somehow

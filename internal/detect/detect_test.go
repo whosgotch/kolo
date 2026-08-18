@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/detect"
@@ -241,6 +242,55 @@ func TestAKindWithNoMarkersRecognisesNothing(t *testing.T) {
 				t.Errorf("offered %v to answer on a screen it cannot read", got)
 			}
 		})
+	}
+}
+
+// A kind that says nothing while it waits, so the only thing telling working
+// from waiting is that one of them is still changing (probe-findings #6). Its
+// working line carries Claude Code's string exactly, as the second kind probed
+// does.
+var settling = detect.Markers{
+	Busy:           "esc to interrupt",
+	DialogFooter:   "Press enter to continue",
+	DialogSelected: "›",
+	Settle:         2 * time.Second,
+}
+
+func TestSilenceIsIdleOnceItHasLasted(t *testing.T) {
+	reply := "1. One, starting steadily.\n2. Two, and so on.\n› \n  gpt-5 · /tmp/scratch\n"
+	tests := []struct {
+		name   string
+		screen string
+		still  time.Duration
+		want   detect.State
+	}{
+		{"still streaming", reply, time.Second, detect.Unknown},
+		{"nothing has moved for long enough", reply, 3 * time.Second, detect.Idle},
+		// The screen an agent has before it has drawn anything. Waiting on that is
+		// not the same as waiting for a person.
+		{"blank, however long", "   \n\n", time.Hour, detect.Unknown},
+		// Stillness is only ever consulted about a screen that said nothing. A
+		// working line that has been up for a minute is a minute of working.
+		{"working and quiet", "◦ Working (60s • esc to interrupt)\n", time.Minute, detect.Busy},
+		{"a question nobody has answered", " › 1. Yes\n   2. No\n Press enter to continue\n", time.Hour, detect.Dialog},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := settling.OfSettled(tt.screen, tt.still); got != tt.want {
+				t.Errorf("OfSettled(%s, %s) = %s, want %s", tt.name, tt.still, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSilenceMeansNothingToAKindThatSpeaks: settling is opt-in, and a kind whose
+// screen says when it is idle must never be read by how long it has been quiet.
+// Claude Code may sit on an unrecognised screen for as long as it likes.
+func TestSilenceMeansNothingToAKindThatSpeaks(t *testing.T) {
+	for _, still := range []time.Duration{0, time.Second, time.Hour} {
+		if got := claude.OfSettled("some other tool\n> waiting for input\n", still); got != detect.Unknown {
+			t.Errorf("still for %s read as %s", still, got)
+		}
 	}
 }
 
