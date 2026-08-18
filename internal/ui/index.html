@@ -120,6 +120,7 @@
     <form class="compose" autocomplete="off">
       <input name="text" placeholder="send the agent a message" maxlength="2000" required>
       <button type="submit">send</button>
+      <button type="button" class="dismiss" hidden>close this</button>
       <button type="button" class="interrupt" disabled>interrupt</button>
       <button type="button" class="restart">restart</button>
       <button type="button" class="fresh">start fresh</button>
@@ -329,13 +330,16 @@ function connect(name) {
         break;
       }
       case 'state':
-        say('.watch', msg.pending > 0 ? waiting(msg.state, msg.pending) : describe(msg.state));
+        say('.watch', msg.pending > 0 ? waiting(msg.state, msg.pending) : describe(shown(msg)));
         break;
       case 'answered':
         say('.watch', `${msg.from} answered: ${msg.text}`);
         break;
       case 'interrupted':
         say('.watch', `${msg.from} stopped the agent`);
+        break;
+      case 'dismissed':
+        say('.watch', `${msg.from} closed what the agent was showing`);
         break;
       // Both arrive just before the screen goes, so they are the last thing
       // anyone watching is told about the process they were watching.
@@ -367,6 +371,13 @@ function connect(name) {
   ws.onerror = () => ws.close();
 }
 
+// shown separates the two kinds of dialog the page has to talk about: one with
+// choices to press, and one with nothing on it a member can answer.
+function shown(msg) {
+  if (msg.state === 'dialog' && !(msg.options || []).length) return 'panel';
+  return msg.state;
+}
+
 // The states come from the agent's own screen, so this says what is true rather
 // than what kolo intended.
 function describe(state) {
@@ -374,6 +385,10 @@ function describe(state) {
     case 'idle': return 'ready';
     case 'busy': return 'working';
     case 'dialog': return 'asking the org a question — answer it below';
+    // A dialog kolo could read no choices off: a panel a slash command opened,
+    // or a question drawn in a way it does not understand. Either way there is
+    // nothing to press but the Esc the agent's own footer offers.
+    case 'panel': return 'showing something with nothing to answer — close it to get the agent back';
     default: return 'kolo does not recognise this screen, so nothing will be sent';
   }
 }
@@ -400,8 +415,12 @@ function offer(state, options) {
     ask.append(button);
   }
   el('.interrupt').disabled = state !== 'busy';
+  // Only where there is nothing to answer. Where there are choices, Esc is not
+  // "close this" but an answer nobody chose, and the buttons above are the way.
+  el('.dismiss').hidden = !(state === 'dialog' && options.length === 0);
 }
 
+el('.dismiss').onclick = () => tell({ type: 'dismiss' });
 el('.interrupt').onclick = () => tell({ type: 'interrupt' });
 
 // Restart and start fresh are permitted on any screen — killing a process is

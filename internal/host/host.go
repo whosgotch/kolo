@@ -151,6 +151,10 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			if err := agents.Answer(c.Name, c.From, c.Choice, c.Label); err != nil {
 				agents.refuse(c.Name, err.Error())
 			}
+		case "dismiss":
+			if err := agents.Dismiss(c.Name, c.From); err != nil {
+				agents.refuse(c.Name, err.Error())
+			}
 		case "interrupt":
 			if err := agents.Interrupt(c.Name, c.From); err != nil {
 				agents.refuse(c.Name, err.Error())

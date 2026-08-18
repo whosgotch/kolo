@@ -431,7 +431,7 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 		// The hub reads none of these beyond their name: what an answer means, and
 		// whether the agent can take it, is known on the machine with the screen.
 		switch msg.Type {
-		case "message", "answer", "interrupt", "restart", "fresh":
+		case "message", "answer", "dismiss", "interrupt", "restart", "fresh":
 		default:
 			continue
 		}

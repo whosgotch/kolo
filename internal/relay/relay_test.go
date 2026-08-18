@@ -501,3 +501,39 @@ func TestSilenceIsIdleOnlyForAKindThatSaysSo(t *testing.T) {
 		})
 	}
 }
+
+// TestDismissClosesAPanelAndNothingElse: a slash command that opens a panel
+// leaves a dialog with no choices on it, and Esc — the key the panel's own
+// footer offers — is the only way back to the input box. Where there are
+// choices it is not a close but an answer, so it is refused there.
+func TestDismissClosesAPanelAndNothingElse(t *testing.T) {
+	// /status: the dialog footer, and not a numbered choice anywhere on it.
+	panelScreen := " Settings  Status  Config\n\n Version: 2.1.234\n cwd: /tmp/scratch\n\n Esc to cancel\n"
+
+	t.Run("a panel closes", func(t *testing.T) {
+		rec := &recorder{}
+		r := New(rec, func() (string, time.Duration) { return panelScreen, 0 }, adapter.For("claude"))
+		if err := r.Dismiss(); err != nil {
+			t.Fatal(err)
+		}
+		if len(rec.writes) != 1 || rec.writes[0] != string(rune(esc)) {
+			t.Errorf("writes = %q, want one Esc", rec.writes)
+		}
+	})
+
+	for name, state := range map[string]detect.State{
+		"a question with choices": detect.Dialog,
+		"idle":                    detect.Idle,
+		"working":                 detect.Busy,
+	} {
+		t.Run(name+" does not", func(t *testing.T) {
+			r, rec, _ := fixture(state)
+			if err := r.Dismiss(); err == nil {
+				t.Error("closed something that was not a panel")
+			}
+			if len(rec.writes) != 0 {
+				t.Errorf("wrote %q", rec.writes)
+			}
+		})
+	}
+}

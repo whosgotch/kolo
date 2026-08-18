@@ -204,6 +204,30 @@ func (r *Relay) Answer(number int, label string) error {
 	})
 }
 
+// Dismiss closes what the agent is showing, by pressing the Esc its own footer
+// offers — and only on a question kolo could not read choices off.
+//
+// A slash command that opens a panel (/status, /config) leaves a screen carrying
+// the dialog footer and no numbered options: nothing to offer as buttons, a
+// queue held because a line would be swallowed, and no way back to the input box
+// short of restarting an agent the whole org is using.
+//
+// Refused where there are choices, because there Esc is not "close this" but an
+// answer — the one nobody chose. Those screens are answered by their buttons.
+func (r *Relay) Dismiss() error {
+	return r.exclusive(func() error {
+		screen, _ := r.screen()
+		if r.kind.Markers.Of(screen) != detect.Dialog {
+			return fmt.Errorf("relay: there is nothing to close")
+		}
+		if len(r.kind.Markers.Options(screen)) > 0 {
+			return fmt.Errorf("relay: that is a question — answer it")
+		}
+		_, err := r.agent.Write([]byte{esc})
+		return err
+	})
+}
+
 // Interrupt stops the agent working, and only then: Esc at an input box clears
 // what is in it, and Esc at a dialog answers by cancelling.
 func (r *Relay) Interrupt() error {

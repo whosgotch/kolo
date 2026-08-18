@@ -78,8 +78,16 @@ safe:
 | action | permitted when |
 |---|---|
 | answer a dialog | a dialog is on screen |
+| close a panel | a dialog is on screen with nothing to answer |
 | interrupt | always |
 | restart, start fresh, stop | always |
+
+Closing a panel is the exception that had to be made. A slash command can open a
+view (`/status`, `/config`) that carries a dialog's footer and no choices: the
+queue is held, there is nothing to offer as buttons, and an agent the whole org
+is using is stuck until somebody restarts it. So Esc — the key that screen's own
+footer offers — may be sent there, and only there: where there are choices, Esc
+is not "close this" but an answer nobody chose.
 
 Answering a dialog is the inverse of the danger above: the keystroke that must
 never arrive by accident is fine when it is deliberate, attributed, and gated on

@@ -215,6 +215,21 @@ func (a *Agents) Answer(name, from string, choice int, label string) error {
 	return nil
 }
 
+// Dismiss closes a panel the agent is showing, on behalf of the member who
+// asked. Never queued, for the same reason an answer is not: it means the screen
+// that is up now.
+func (a *Agents) Dismiss(name, from string) error {
+	v, err := a.reach(name)
+	if err != nil {
+		return err
+	}
+	if err := v.queue.Dismiss(); err != nil {
+		return err
+	}
+	v.announce(event{Type: "dismissed", From: from})
+	return nil
+}
+
 // Interrupt stops the agent working, on behalf of the member who asked.
 func (a *Agents) Interrupt(name, from string) error {
 	v, err := a.reach(name)
