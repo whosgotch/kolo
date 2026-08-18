@@ -56,7 +56,11 @@
   /* The section has to be a column that fills main, or the terminal grows to
      its content and pushes the compose box off the bottom of the page. */
   .watch { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  #term { flex: 1; min-height: 0; overflow: hidden; padding: 4px; }
+  /* The terminal is the page. It centres what it cannot fill, rather than
+     sitting in a corner of a window it was never told the size of. */
+  #term { flex: 1; min-height: 0; overflow: hidden; display: flex;
+          align-items: center; justify-content: center; }
+  #term .xterm { padding: 4px; }
   form.compose { display: flex; gap: 8px; padding: 0 12px 12px; }
   form.compose input { flex: 1; }
   /* The question the agent is asking, drawn as buttons rather than left for
@@ -65,6 +69,8 @@
   .ask button { text-align: left; }
   .ask button.selected { border-color: var(--dim); }
 
+  .typist { color: var(--dim); padding: 0 12px; }
+  button.holding { border-color: var(--ok); color: var(--ok); }
   .note { min-height: 1.4em; padding: 6px 12px; color: var(--dim); }
   .note.problem { color: var(--warn); }
   .empty { color: var(--dim); padding: 24px 0; }
@@ -117,9 +123,11 @@
     <div id="term"></div>
     <div class="ask" hidden></div>
     <p class="note"></p>
+    <span class="typist"></span>
     <form class="compose" autocomplete="off">
       <input name="text" placeholder="send the agent a message" maxlength="2000" required>
       <button type="submit">send</button>
+      <button type="button" class="keyboard">take the keyboard</button>
       <button type="button" class="dismiss" hidden>close this</button>
       <button type="button" class="interrupt" disabled>interrupt</button>
       <button type="button" class="restart">restart</button>
@@ -163,6 +171,7 @@ async function refresh() {
   const data = await resp.json();
   el('header .org').textContent = data.org;
   el('header .who').textContent = data.you.name;
+  me = data.you;
   hosts = data.hosts;
   drawAgents(data.agents || []);
   drawChoices();
@@ -259,11 +268,11 @@ function say(view, message, problem) {
 
 
 const term = new Terminal({
-  // Nothing typed here reaches the agent, ever. What a member sends is a
-  // message through a queue or a choice from the question on screen — never
-  // keystrokes into somebody else's terminal.
-  disableStdin: true,
-  cursorBlink: false,
+  // Keystrokes reach the agent, but only from whoever has taken the keyboard —
+  // see onData below. One typist at a time, because two people typing into one
+  // terminal interleave inside a word.
+  disableStdin: false,
+  cursorBlink: true,
   fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
   fontSize: 13,
   customGlyphs: true,
@@ -280,8 +289,65 @@ try {
   console.warn('canvas renderer unavailable, falling back to the DOM', e);
 }
 
+// Who is typing at the agent being watched, and whether it is us.
+let typist = null;
+let mine = false;
+
+// Keystrokes go up as they are pressed. Nothing is interpreted here: what the
+// agent does with an Escape or an arrow is the agent's business, and the browser
+// terminal has already encoded it the way a real one would.
+term.onData((keys) => {
+  if (!mine || !socket) return;
+  tell({ type: 'keys', keys });
+});
+
 let socket = null;
 let watching = null;
+// Who the hub says we are. The page never decides this; it only compares.
+let me = {};
+
+// What the agent's terminal is, in cells. The hub decides it from every browser
+// watching, so this follows rather than leads.
+let grid = { cols: 120, rows: 40 };
+
+// The font size this window would like to read at. What it can actually show at
+// that size is what gets proposed to the hub.
+const preferredFont = 13;
+
+// cell measures one character at a font size, which is what turns a window in
+// pixels into a terminal in columns and back.
+function cell(fontSize) {
+  const ctx = cell.ctx || (cell.ctx = document.createElement('canvas').getContext('2d'));
+  ctx.font = `${fontSize}px ui-monospace, Menlo, Consolas, monospace`;
+  return { w: ctx.measureText('M').width, h: Math.ceil(fontSize * 1.2) };
+}
+
+// propose tells the hub what this window can draw. Everyone watching sends this
+// and the smallest wins, so nobody is shown a screen the agent has drawn wider
+// than their window.
+function propose() {
+  const box = el('#term').getBoundingClientRect();
+  const c = cell(preferredFont);
+  const cols = Math.max(20, Math.floor((box.width - 8) / c.w));
+  const rows = Math.max(6, Math.floor((box.height - 8) / c.h));
+  tell({ type: 'size', cols, rows });
+}
+
+// fit fills the window with the grid the hub settled on, by choosing the largest
+// font that still fits. The agent's screen is one shape; this is the biggest it
+// can be drawn here without cutting anything off.
+function fit() {
+  const box = el('#term').getBoundingClientRect();
+  if (!box.width || !box.height) return;
+  const unit = cell(100);
+  const size = Math.floor(Math.min(
+    (box.width - 8) / (grid.cols * unit.w / 100),
+    (box.height - 8) / (grid.rows * unit.h / 100),
+  ));
+  term.options.fontSize = Math.max(6, Math.min(size, 28));
+}
+
+addEventListener('resize', () => { propose(); fit(); });
 
 function watch(name) {
   close();
@@ -303,7 +369,13 @@ function connect(name) {
 
   // Every handler checks it is still the current socket: a superseded one still
   // reports its own close, which would land after the replacement opened.
-  ws.onopen = () => { if (ws === socket) say('.watch', `watching ${name}`); };
+  ws.onopen = () => {
+    if (ws !== socket) return;
+    say('.watch', `watching ${name}`);
+    // Before anything else: the agent should be drawing a screen this window can
+    // show, and it cannot know the size until somebody tells it.
+    propose();
+  };
 
   ws.onmessage = (ev) => {
     if (ws !== socket) return;
@@ -314,7 +386,9 @@ function connect(name) {
     const msg = JSON.parse(ev.data);
     switch (msg.type) {
       case 'size':
+        grid = { cols: msg.cols, rows: msg.rows };
         term.resize(msg.cols, msg.rows);
+        fit();
         break;
       // Held is the normal case, not a failure: the agent may be working, or
       // asking a question that Enter would answer.
@@ -337,6 +411,13 @@ function connect(name) {
         break;
       case 'interrupted':
         say('.watch', `${msg.from} stopped the agent`);
+        break;
+      // Who has the keyboard, and who just lost it. Announced on the screen
+      // everybody is watching, so it arrives in step with what the agent does.
+      case 'keyboard':
+        typist = msg.who || null;
+        mine = !!msg.who && msg.id === me.id;
+        keyboardChanged(msg.was);
         break;
       case 'dismissed':
         say('.watch', `${msg.from} closed what the agent was showing`);
@@ -365,6 +446,7 @@ function connect(name) {
     // Nothing may be offered about a screen this page is no longer being told
     // about: the agent may be answering, restarting, or gone.
     offer('unknown', []);
+    typist = null; mine = false; keyboardChanged();
     say('.watch', `${name} is not showing a screen — waiting`);
     setTimeout(() => { if (watching === name) connect(name); }, 1000);
   };
@@ -418,6 +500,30 @@ function offer(state, options) {
   // Only where there is nothing to answer. Where there are choices, Esc is not
   // "close this" but an answer nobody chose, and the buttons above are the way.
   el('.dismiss').hidden = !(state === 'dialog' && options.length === 0);
+}
+
+// Taking it needs nobody's permission and cannot be refused: the agent belongs
+// to the org, and taking the keyboard in front of everybody is the whole of the
+// protocol. Handing it back is the same button, so there is one thing to press.
+el('.keyboard').onclick = () => {
+  tell({ type: mine ? 'release' : 'take' });
+  if (!mine) term.focus();
+};
+
+// keyboardChanged redraws who is typing. Said out loud when it changes hands,
+// because a member watching the screen move under them should know whose hands
+// are on it.
+function keyboardChanged(was) {
+  const button = el('.keyboard');
+  button.textContent = mine ? 'hand back the keyboard' : 'take the keyboard';
+  button.classList.toggle('holding', mine);
+  el('.typist').textContent = typist ? (mine ? 'you are typing' : `${typist} is typing`) : '';
+  if (mine) {
+    term.focus();
+    say('.watch', was ? `you took the keyboard from ${was}` : 'you have the keyboard');
+  } else if (typist) {
+    say('.watch', `${typist} took the keyboard${was && was === me.name ? ' from you' : ''}`);
+  }
 }
 
 el('.dismiss').onclick = () => tell({ type: 'dismiss' });

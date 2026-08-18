@@ -151,6 +151,12 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			if err := agents.Answer(c.Name, c.From, c.Choice, c.Label); err != nil {
 				agents.refuse(c.Name, err.Error())
 			}
+		case "keys":
+			// Silently: a keystroke that arrives a moment after the agent stopped
+			// is not worth a line on everybody's screen.
+			agents.Type(c.Name, c.Keys)
+		case "resize":
+			agents.Resize(c.Name, c.Cols, c.Rows)
 		case "dismiss":
 			if err := agents.Dismiss(c.Name, c.From); err != nil {
 				agents.refuse(c.Name, err.Error())
@@ -208,6 +214,9 @@ type command struct {
 	Text   string    `json:"text"`
 	Choice int       `json:"choice"`
 	Label  string    `json:"label"`
+	Keys   string    `json:"keys"`
+	Cols   int       `json:"cols"`
+	Rows   int       `json:"rows"`
 	Agent  hub.Agent `json:"agent"`
 }
 

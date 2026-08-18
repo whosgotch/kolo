@@ -31,11 +31,12 @@ const (
 // Server is the hub: the org, the hosts lending themselves to it, and the agents
 // running on them.
 type Server struct {
-	org      *Org
-	registry *Registry
-	screens  *screens
-	ln       net.Listener
-	srv      *http.Server
+	org       *Org
+	registry  *Registry
+	screens   *screens
+	keyboards *keyboards
+	ln        net.Listener
+	srv       *http.Server
 
 	// Cancelled by Close, which is the only thing that reaches a host connection:
 	// net/http does not, a websocket having been hijacked out of its hands.
@@ -51,7 +52,10 @@ func Listen(org *Org, addr string) (*Server, error) {
 		return nil, fmt.Errorf("hub: listen: %w", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{org: org, registry: NewRegistry(), screens: newScreens(), ln: ln, ctx: ctx, cancel: cancel}
+	s := &Server{
+		org: org, registry: NewRegistry(), screens: newScreens(),
+		keyboards: newKeyboards(), ln: ln, ctx: ctx, cancel: cancel,
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/host", s.handleHost)
@@ -379,6 +383,10 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 
 	backlog, updates, unsubscribe := live.Subscribe()
 	defer unsubscribe()
+	// A browser that closes is a hand off the keyboard, or the agent stays stuck
+	// with a typist who has gone home.
+	defer s.dropKeyboard(name, member, conn)
+	defer s.resize(name, conn, 0, 0)
 
 	for _, m := range backlog {
 		if err := forward(ctx, conn, m); err != nil {
@@ -387,6 +395,15 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := forward(ctx, conn, catchUp(live)); err != nil {
 		return
+	}
+	// Who is typing is part of what a joiner is missing: without it a second
+	// browser shows a free keyboard and two people take it in the same second.
+	if who, held := s.keyboards.holder(name); held {
+		live.Announce(struct {
+			Type string `json:"type"`
+			Who  string `json:"who"`
+			ID   string `json:"id"`
+		}{"keyboard", who.Name, who.ID})
 	}
 	// On the context as well as the screen, so a browser that has gone is let go
 	// of when takeFrom notices. A quiet agent could hold the goroutine for hours.
@@ -430,7 +447,25 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 		}
 		// The hub reads none of these beyond their name: what an answer means, and
 		// whether the agent can take it, is known on the machine with the screen.
+		// Who may type is the exception, because who a member is is known here and
+		// nowhere else.
 		switch msg.Type {
+		case "take":
+			s.giveKeyboard(name, member, conn)
+			continue
+		case "release":
+			s.dropKeyboard(name, member, conn)
+			continue
+		case "size":
+			s.resize(name, conn, msg.Cols, msg.Rows)
+			continue
+		case "keys":
+			// Checked per keystroke rather than once: the keyboard changes hands
+			// while a member is mid-word, and the half typed after it is not theirs
+			// to send.
+			if !s.keyboards.holds(name, conn) || msg.Keys == "" {
+				continue
+			}
 		case "message", "answer", "dismiss", "interrupt", "restart", "fresh":
 		default:
 			continue
@@ -442,7 +477,55 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 		send(toAgent{
 			Type: msg.Type, Name: name, From: member.Name,
 			Text: msg.Text, Choice: msg.Choice, Label: msg.Label,
+			Keys: msg.Keys,
 		})
+	}
+}
+
+// giveKeyboard hands one agent's keyboard to a member and tells everybody
+// watching. Nobody is asked and nobody can refuse: the agent belongs to the org,
+// and taking the keyboard in front of everyone is the whole of the protocol.
+func (s *Server) giveKeyboard(name string, member Member, at any) {
+	was, taken := s.keyboards.take(name, member.Person(), at)
+	if !taken {
+		return
+	}
+	s.sayKeyboard(name, member.Person(), was)
+}
+
+// dropKeyboard gives it up, whether the member let go or their browser did.
+func (s *Server) dropKeyboard(name string, member Member, at any) {
+	if !s.keyboards.release(name, at) {
+		return
+	}
+	s.sayKeyboard(name, Person{}, member.Person())
+}
+
+// sayKeyboard announces who is typing, through the agent's own screen, so it
+// arrives interleaved with what the agent is doing rather than out of band.
+func (s *Server) sayKeyboard(name string, who, was Person) {
+	live, ok := s.screens.get(name)
+	if !ok {
+		return
+	}
+	live.Announce(struct {
+		Type string `json:"type"`
+		Who  string `json:"who,omitempty"`
+		ID   string `json:"id,omitempty"`
+		Was  string `json:"was,omitempty"`
+	}{"keyboard", who.Name, who.ID, was.Name})
+}
+
+// resize records what one browser can draw and asks the host for a size every
+// browser can. See smallest: the agent's terminal is one grid shown in several
+// windows, and the smallest is the only one that fits in all of them.
+func (s *Server) resize(name string, at any, cols, rows int) {
+	cols, rows, changed := s.screens.propose(name, at, cols, rows)
+	if !changed {
+		return
+	}
+	if send, ok := s.registry.Sender(name); ok {
+		send(toAgent{Type: "resize", Name: name, Cols: cols, Rows: rows})
 	}
 }
 
@@ -478,17 +561,29 @@ type hostHello struct {
 	Version string   `json:"version"`
 }
 
-// viewerMessage is what a browser may send. Keystrokes are not among them and
-// never will be — kolo submits with Enter, and Enter means something else when
-// the agent has a question up.
+// viewerMessage is what a browser may send.
 //
-// An answer is a choice, not a key: an option's number and the label the member
-// was shown, so the host can refuse an answer to a question since replaced.
+// Keystrokes were once excluded on principle — kolo submits with Enter, and
+// Enter means something else when the agent has a question up. That reasoning
+// held for a line kolo typed on somebody's behalf at a moment it picked. It does
+// not hold for a member typing at a screen they are watching: they can see the
+// question, and pressing Enter at it is a decision rather than an accident.
+//
+// What the exclusion cost was everything the agent's own interface can do and
+// kolo cannot name — a panel with its own keys (`d to day · w to week`), a
+// filter box, a mode the footer offers — which left agents stranded on screens
+// nobody could leave. So keys go through, from the one member holding the
+// keyboard.
 type viewerMessage struct {
 	Type   string `json:"type"`
 	Text   string `json:"text"`
 	Choice int    `json:"choice"`
 	Label  string `json:"label"`
+	// Keys are raw terminal input, already encoded by the browser's terminal.
+	Keys string `json:"keys"`
+	// The size the browser can draw, for agreeing one everybody can see.
+	Cols int `json:"cols"`
+	Rows int `json:"rows"`
 }
 
 type toAgent struct {
@@ -498,6 +593,9 @@ type toAgent struct {
 	Text   string `json:"text,omitempty"`
 	Choice int    `json:"choice,omitempty"`
 	Label  string `json:"label,omitempty"`
+	Keys   string `json:"keys,omitempty"`
+	Cols   int    `json:"cols,omitempty"`
+	Rows   int    `json:"rows,omitempty"`
 }
 
 type screenHello struct {

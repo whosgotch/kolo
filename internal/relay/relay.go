@@ -42,6 +42,10 @@ var enterDelay = 150 * time.Millisecond
 const (
 	maxText     = 2000
 	maxNickname = 32
+	// A keystroke, or a burst of them from one press. Big enough for an escape
+	// sequence and a fast typist's backlog, small enough that nobody streams a
+	// file into the agent one frame at a time.
+	maxKeys = 256
 )
 
 // Sender is the agent's input, an interface so the queue can be tested without
@@ -71,18 +75,18 @@ func (r *Relay) isCommand(text string) bool {
 	return text != "" && sigils != "" && strings.IndexByte(sigils, text[0]) >= 0
 }
 
-// Line is what actually reaches the agent: the member's words, attributed.
+// Line is what actually reaches the agent: the member's words, and nothing kolo
+// added to them.
 //
-// A command is the exception, and has to be. The attribution would put the sigil
-// out of the first column, where the CLI stops reading it as a command at all
-// and runs the whole line into the model as prose — which is what a member
-// typing /clear finds happening instead.
-func (m Message) Line() string {
-	if m.Command {
-		return m.Text
-	}
-	return m.Nickname + ": " + m.Text
-}
+// They used to arrive as "Dana: do the thing". It read as kolo talking through a
+// member rather than a member talking, it put a convention the agent knows
+// nothing about into its context, and it never held anyway — a command had to be
+// exempt, because a name in front of the sigil puts it out of the first column
+// and the CLI reads the whole line as prose.
+//
+// Who sent what is kolo's to remember, not the agent's transcript's: it goes to
+// every watcher as an event, where it can be shown without being fed to a model.
+func (m Message) Line() string { return m.Text }
 
 // Relay is the queue between the guests and the agent.
 type Relay struct {
@@ -201,6 +205,28 @@ func (r *Relay) Answer(number int, label string) error {
 			}
 		}
 		return fmt.Errorf("relay: the screen has moved on from that question")
+	})
+}
+
+// Type sends a member's keystrokes to the agent as they press them.
+//
+// Ungated, and that is the point: the member is looking at the screen those keys
+// land on, so a key at a question is a decision they made rather than a line
+// kolo chose to type at a moment it guessed. What the gate protects — a queued
+// line going out under a dialog — is a different thing and still protected.
+//
+// Through the same lock as everything else, so keystrokes cannot land inside a
+// queued line that is halfway written.
+func (r *Relay) Type(keys string) error {
+	if keys == "" {
+		return nil
+	}
+	if len(keys) > maxKeys {
+		return fmt.Errorf("relay: %d bytes is not a keystroke", len(keys))
+	}
+	return r.exclusive(func() error {
+		_, err := r.agent.Write([]byte(keys))
+		return err
 	})
 }
 
