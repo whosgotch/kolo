@@ -66,13 +66,29 @@ scanners, and travel in the `Authorization` header rather than a URL.
 
 ## Input
 
-A message is never typed straight into the agent. It joins a queue and is
-released only while the screen says the agent is idle at its input box. Released
-at the wrong moment it is swallowed without trace, or its Enter answers a
-question the agent was asking. See `docs/probe-findings.md` #3–#5 — this is the
-sharpest thing kolo knows.
+There are two ways in, and the difference between them is who chose the moment.
 
-Three things are not messages. They go directly, each permitted only where it is
+**Keystrokes.** One member holds the agent's keyboard and types at it live, as if
+sitting in front of it. Anybody may take the keyboard from anybody — there are no
+roles here either — and everybody watching is told who has it, which is the same
+thing that stops two people typing at one keyboard in a room. Nothing is gated:
+the member can see the screen their keys land on, so an Enter at a question is a
+decision rather than an accident.
+
+This is what makes the agent's own interface reachable. A slash command opens a
+panel with keys of its own (`d to day · w to week`), a filter box takes text, a
+footer offers a mode — none of which kolo can name, and all of which it used to
+strand an agent on.
+
+**Messages.** A line sent without holding the keyboard is nobody's keystroke, so
+kolo picks the moment it lands: it joins a queue and is released only while the
+screen says the agent is idle at its input box. Released at the wrong moment it
+is swallowed without trace, or its Enter answers a question the agent was asking.
+See `docs/probe-findings.md` #3–#5. The message carries the member's words and
+nothing else — attribution goes to the watchers as an event rather than into the
+agent's context as "Dana: ".
+
+Three things are neither. They go directly, each permitted only where it is
 safe:
 
 | action | permitted when |
@@ -130,6 +146,13 @@ longer exists.
 
 Context accumulates across everyone who has used the agent, and nobody owns the
 decision to clear it. Hence **start fresh** as an ordinary, logged action.
+
+## The size of the screen
+
+One grid is shown in several windows at once. Each browser says what it can draw
+and the smallest wins, as it does in tmux and for the same reason: anything wider
+than the smallest window is drawn by an agent that cannot see where it is being
+cut off. Each window then draws that grid as large as it will go.
 
 ## What runs where
 

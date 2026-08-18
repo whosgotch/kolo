@@ -57,8 +57,12 @@ together and are useless apart.
 
 Everyone else opens the hub, pastes their token once, and picks an agent.
 
+Anyone can take the agent's keyboard and type at it directly — the whole of its
+interface, panels and modes and all — while everybody else watches and sees whose
+hands are on it. Taking it needs no permission and cannot be refused.
+
 The part worth reading is the queue that holds a message until the agent's own
-screen says it may be sent. A moment earlier and the message is either swallowed
+screen says it may be sent, for the lines nobody typed live. A moment earlier and the message is either swallowed
 without trace or its Enter answers a question the agent was asking. See
 [docs/probe-findings.md](docs/probe-findings.md); every part of it was found by
 experiment, not guessed at.

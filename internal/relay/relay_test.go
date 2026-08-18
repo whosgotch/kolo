@@ -95,7 +95,7 @@ func TestReleasedWhenIdle(t *testing.T) {
 	if len(r.Pending()) != 0 {
 		t.Error("message still queued after being sent")
 	}
-	if want := "ada: what does this function do?"; sent.Line() != want {
+	if want := "what does this function do?"; sent.Line() != want {
 		t.Errorf("line = %q, want %q", sent.Line(), want)
 	}
 }
@@ -114,8 +114,8 @@ func TestEnterIsASeparateWrite(t *testing.T) {
 	if len(rec.writes) != 2 {
 		t.Fatalf("wrote %d times: %q; want the text and the Enter separately", len(rec.writes), rec.writes)
 	}
-	if rec.writes[0] != "ada: hello" {
-		t.Errorf("first write = %q, want the line alone", rec.writes[0])
+	if rec.writes[0] != "hello" {
+		t.Errorf("first write = %q, want the member's words and nothing else", rec.writes[0])
 	}
 	if rec.writes[1] != "\r" {
 		t.Errorf("second write = %q, want the Enter alone", rec.writes[1])
@@ -388,9 +388,8 @@ func TestACommandGoesUnattributed(t *testing.T) {
 }
 
 // TestAKindWithNoSigilsHasNoCommands: the sigils belong to the agent's CLI, so
-// a kind kolo has no adapter for has none. Everything it is sent is a message,
-// attributed like any other — which is the safe way round, since an unattributed
-// line to a CLI kolo cannot read is a line nobody can be held to.
+// a kind kolo has no adapter for has none, and everything it is sent is an
+// ordinary message.
 func TestAKindWithNoSigilsHasNoCommands(t *testing.T) {
 	r := New(&recorder{}, func() (string, time.Duration) { return screens[detect.Idle], 0 }, adapter.For("some-other-agent"))
 	m, err := r.Submit("ada", "/clear")
@@ -400,8 +399,8 @@ func TestAKindWithNoSigilsHasNoCommands(t *testing.T) {
 	if m.Command {
 		t.Error("read a command for a CLI kolo knows nothing about")
 	}
-	if m.Line() != "ada: /clear" {
-		t.Errorf("line = %q, want it attributed", m.Line())
+	if m.Line() != "/clear" {
+		t.Errorf("line = %q, want the member's words", m.Line())
 	}
 }
 
@@ -426,8 +425,8 @@ func TestOnlyTheFirstCharacterMakesACommand(t *testing.T) {
 			if _, err := r.Tick(); err != nil {
 				t.Fatal(err)
 			}
-			if want := "ada: " + text; rec.writes[0] != want {
-				t.Errorf("wrote %q, want %q", rec.writes[0], want)
+			if rec.writes[0] != text {
+				t.Errorf("wrote %q, want %q", rec.writes[0], text)
 			}
 		})
 	}
