@@ -54,15 +54,15 @@
   form.create input[name=name] { width: 18ch; }
 
   /* The section has to be a column that fills main, or the terminal grows to
-     its content and pushes the compose box off the bottom of the page. */
+     its content and pushes what can be done with it off the bottom of the page. */
   .watch { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   /* The terminal is the page. It centres what it cannot fill, rather than
      sitting in a corner of a window it was never told the size of. */
   #term { flex: 1; min-height: 0; overflow: hidden; display: flex;
           align-items: center; justify-content: center; }
   #term .xterm { padding: 4px; }
-  form.compose { display: flex; gap: 8px; padding: 0 12px 12px; }
-  form.compose input { flex: 1; }
+  .doing { display: flex; gap: 8px; padding: 0 12px 12px; align-items: center; }
+  .doing .spacer { flex: 1; }
   /* The question the agent is asking, drawn as buttons rather than left for
      somebody to steer through blind. */
   .ask { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px 0; }
@@ -124,15 +124,13 @@
     <div class="ask" hidden></div>
     <p class="note"></p>
     <span class="typist"></span>
-    <form class="compose" autocomplete="off">
-      <input name="text" placeholder="send the agent a message" maxlength="2000" required>
-      <button type="submit">send</button>
+    <div class="doing">
       <button type="button" class="keyboard">take the keyboard</button>
-      <button type="button" class="dismiss" hidden>close this</button>
+      <span class="spacer"></span>
       <button type="button" class="interrupt" disabled>interrupt</button>
       <button type="button" class="restart">restart</button>
       <button type="button" class="fresh">start fresh</button>
-    </form>
+    </div>
   </section>
 </main>
 
@@ -390,21 +388,8 @@ function connect(name) {
         term.resize(msg.cols, msg.rows);
         fit();
         break;
-      // Held is the normal case, not a failure: the agent may be working, or
-      // asking a question that Enter would answer.
-      case 'queued':
-        say('.watch', `${msg.from}: ${waiting(msg.state, msg.pending)}`);
-        break;
-      // A command reached the agent with nobody's name on it — it had to, or
-      // the agent's CLI would not have read it as one — so this line is the
-      // only place it is attributed.
-      case 'sent': {
-        const what = msg.command ? `${msg.from} ran ${msg.text}` : `sent ${msg.from}'s message`;
-        say('.watch', msg.pending > 0 ? `${what} · ${msg.pending} still waiting` : what);
-        break;
-      }
       case 'state':
-        say('.watch', msg.pending > 0 ? waiting(msg.state, msg.pending) : describe(shown(msg)));
+        say('.watch', describe(shown(msg)));
         break;
       case 'answered':
         say('.watch', `${msg.from} answered: ${msg.text}`);
@@ -418,9 +403,6 @@ function connect(name) {
         typist = msg.who || null;
         mine = !!msg.who && msg.id === me.id;
         keyboardChanged(msg.was);
-        break;
-      case 'dismissed':
-        say('.watch', `${msg.from} closed what the agent was showing`);
         break;
       // Both arrive just before the screen goes, so they are the last thing
       // anyone watching is told about the process they were watching.
@@ -468,18 +450,14 @@ function describe(state) {
     case 'busy': return 'working';
     case 'dialog': return 'asking the org a question — answer it below';
     // A dialog kolo could read no choices off: a panel a slash command opened,
-    // or a question drawn in a way it does not understand. Either way there is
-    // nothing to press but the Esc the agent's own footer offers.
-    case 'panel': return 'showing something with nothing to answer — close it to get the agent back';
+    // or a question drawn in a way it does not understand. There is nothing for
+    // kolo to offer, and nothing it needs to — whoever takes the keyboard can
+    // read the screen and press what it says.
+    case 'panel': return 'showing something only the keyboard can answer';
     default: return 'kolo does not recognise this screen, so nothing will be sent';
   }
 }
 
-function waiting(state, pending) {
-  const ahead = pending > 1 ? `, ${pending} waiting` : '';
-  if (state === 'idle') return `sending${ahead}`;
-  return `waiting — the agent is ${describe(state)}${ahead}`;
-}
 
 // offer draws what a member may do to the agent as it stands. The buttons are
 // rebuilt from the screen every time rather than left up and reasoned about,
@@ -497,9 +475,6 @@ function offer(state, options) {
     ask.append(button);
   }
   el('.interrupt').disabled = state !== 'busy';
-  // Only where there is nothing to answer. Where there are choices, Esc is not
-  // "close this" but an answer nobody chose, and the buttons above are the way.
-  el('.dismiss').hidden = !(state === 'dialog' && options.length === 0);
 }
 
 // Taking it needs nobody's permission and cannot be refused: the agent belongs
@@ -526,7 +501,6 @@ function keyboardChanged(was) {
   }
 }
 
-el('.dismiss').onclick = () => tell({ type: 'dismiss' });
 el('.interrupt').onclick = () => tell({ type: 'interrupt' });
 
 // Restart and start fresh are permitted on any screen — killing a process is
@@ -553,12 +527,6 @@ function tell(what) {
   return true;
 }
 
-el('.compose').onsubmit = (ev) => {
-  ev.preventDefault();
-  const input = ev.target.querySelector('[name=text]');
-  // Words only. A keystroke is never sent, whatever is on screen.
-  if (tell({ type: 'message', text: input.value })) input.value = '';
-};
 
 // ---- routing -----------------------------------------------------------
 

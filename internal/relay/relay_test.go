@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 )
 
 // recorder stands in for the agent's input and remembers each write separately,
-// which is the only way to tell a bundled write from two.
+// which is the only way to tell one write from two.
 type recorder struct {
 	writes []string
 	err    error
@@ -49,206 +48,48 @@ func fixture(state detect.State) (*Relay, *recorder, func(detect.State)) {
 	return r, rec, func(s detect.State) { current = screens[s] }
 }
 
-func TestHeldWhileADialogIsUp(t *testing.T) {
-	r, rec, _ := fixture(detect.Dialog)
-	if _, err := r.Submit("ada", "hi everyone, what are we working on?"); err != nil {
-		t.Fatal(err)
-	}
-
-	sent, err := r.Tick()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sent != nil {
-		t.Errorf("sent %q while a dialog was up", sent.Line())
-	}
-	if len(rec.writes) != 0 {
-		t.Errorf("wrote %q to the agent while a dialog was up", rec.writes)
-	}
-	if len(r.Pending()) != 1 {
-		t.Error("message was dropped rather than held")
-	}
-}
-
-// TestHeldWhenTheScreenIsUnrecognised is the case that actually protects the
-// host: not a dialog we spotted, but a screen we did not understand at all.
-func TestHeldWhenTheScreenIsUnrecognised(t *testing.T) {
-	r, rec, _ := fixture(detect.Unknown)
-	r.Submit("ada", "hello")
-
-	if sent, _ := r.Tick(); sent != nil || len(rec.writes) != 0 {
-		t.Errorf("sent %v / wrote %q on an unrecognised screen", sent, rec.writes)
-	}
-}
-
-func TestReleasedWhenIdle(t *testing.T) {
-	r, _, _ := fixture(detect.Idle)
-	r.Submit("ada", "what does this function do?")
-
-	sent, err := r.Tick()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sent == nil {
-		t.Fatal("nothing sent while idle")
-	}
-	if len(r.Pending()) != 0 {
-		t.Error("message still queued after being sent")
-	}
-	if want := "what does this function do?"; sent.Line() != want {
-		t.Errorf("line = %q, want %q", sent.Line(), want)
-	}
-}
-
-// TestEnterIsASeparateWrite pins findings #3. Bundled with the text, the Enter
-// is read as part of a paste and the line is never submitted.
-//
-// See TestEnterWaitsForTheAgentToCatchUp for the other half of it.
-func TestEnterIsASeparateWrite(t *testing.T) {
-	r, rec, _ := fixture(detect.Idle)
-	r.Submit("ada", "hello")
-	if _, err := r.Tick(); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(rec.writes) != 2 {
-		t.Fatalf("wrote %d times: %q; want the text and the Enter separately", len(rec.writes), rec.writes)
-	}
-	if rec.writes[0] != "hello" {
-		t.Errorf("first write = %q, want the member's words and nothing else", rec.writes[0])
-	}
-	if rec.writes[1] != "\r" {
-		t.Errorf("second write = %q, want the Enter alone", rec.writes[1])
-	}
-}
-
-// TestEnterWaitsForTheAgentToCatchUp pins findings #8, which the two-write rule
-// on its own did not cover: an Enter hard behind the text is still inside the
-// agent's paste window and lands as a newline, leaving the line in the box.
-//
-// The recorder that proved the two-write rule paused between them; the relay did
-// not, and the message that did not submit was the difference.
-func TestEnterWaitsForTheAgentToCatchUp(t *testing.T) {
-	was := enterDelay
-	enterDelay = 40 * time.Millisecond
-	defer func() { enterDelay = was }()
-
-	r, rec, _ := fixture(detect.Idle)
-	r.Submit("ada", "hello")
-
-	start := time.Now()
-	if _, err := r.Tick(); err != nil {
-		t.Fatal(err)
-	}
-	if took := time.Since(start); took < enterDelay {
-		t.Errorf("line and Enter went %s apart, want at least %s", took, enterDelay)
-	}
-	if len(rec.writes) != 2 || rec.writes[1] != "\r" {
-		t.Errorf("writes = %q, want the line then the Enter", rec.writes)
-	}
-}
-
-// TestOneMessagePerTick keeps the queue from emptying itself on a single
-// reading of the screen: sending the first line stops the agent being idle.
-func TestOneMessagePerTick(t *testing.T) {
-	r, rec, _ := fixture(detect.Idle)
-	r.Submit("ada", "first")
-	r.Submit("bob", "second")
-
-	if _, err := r.Tick(); err != nil {
-		t.Fatal(err)
-	}
-	if len(r.Pending()) != 1 {
-		t.Errorf("queue has %d left, want the second message still waiting", len(r.Pending()))
-	}
-	for _, w := range rec.writes {
-		if strings.Contains(w, "second") {
-			t.Error("second message was sent in the same tick as the first")
-		}
-	}
-}
-
-func TestQueueSurvivesUntilTheAgentIsReady(t *testing.T) {
-	r, _, becomes := fixture(detect.Dialog)
-	r.Submit("ada", "first")
-	r.Submit("bob", "second")
-
-	r.Tick()
-	if len(r.Pending()) != 2 {
-		t.Fatalf("queue lost messages while held: %v", r.Pending())
-	}
-
-	becomes(detect.Idle)
-	first, _ := r.Tick()
-	second, _ := r.Tick()
-	if first == nil || second == nil {
-		t.Fatal("messages were not released once the agent was idle")
-	}
-	if first.Nickname != "ada" || second.Nickname != "bob" {
-		t.Errorf("released out of order: %s then %s", first.Nickname, second.Nickname)
-	}
-}
-
-func TestFailedWriteKeepsTheMessage(t *testing.T) {
-	r, rec, _ := fixture(detect.Idle)
-	r.Submit("ada", "hello")
-	rec.err = errors.New("agent is gone")
-
-	if _, err := r.Tick(); err == nil {
-		t.Fatal("Tick reported success on a failed write")
-	}
-	if len(r.Pending()) != 1 {
-		t.Error("message was dropped after a failed write")
-	}
-}
-
-// TestCleanStripsEverythingButText is the boundary a guest cannot cross. Each
-// case is a keystroke rather than a character.
-func TestCleanStripsEverythingButText(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"plain", "what does this do?", "what does this do?"},
-		{"carriage return", "yes\rand more", "yes and more"},
-		{"newline", "one\ntwo", "one two"},
-		{"escape", "hi\x1bthere", "hithere"},
-		{"arrow key", "\x1b[Bpick the second option", "[Bpick the second option"},
-		{"bell", "wake up\x07", "wake up"},
-		{"backspace", "oops\x08", "oops"},
-		{"delete", "gone\x7f", "gone"},
-		{"c1 control", "hithere", "hithere"},
-		{"bidi override", "safe‮gnorw", "safegnorw"},
-		{"zero width", "a​b", "ab"},
-		{"collapses spacing", "  too   much\t space  ", "too much space"},
-		{"keeps unicode", "héllo ✳ 世界", "héllo ✳ 世界"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := clean(tt.input, maxText); got != tt.want {
-				t.Errorf("clean(%q) = %q, want %q", tt.input, got, tt.want)
+// TestKeystrokesGoThroughUntouched is the change of shape. What a member presses
+// is what the agent gets: no line assembled for them, no moment picked for them,
+// and nothing stripped out — an escape sequence is a keypress, not an attack.
+func TestKeystrokesGoThroughUntouched(t *testing.T) {
+	for _, keys := range []string{"a", "\x1b", "\x1b[B", "\r", "/clear"} {
+		t.Run(strings.ToValidUTF8(keys, "?"), func(t *testing.T) {
+			r, rec, _ := fixture(detect.Idle)
+			if err := r.Type(keys); err != nil {
+				t.Fatal(err)
+			}
+			if len(rec.writes) != 1 || rec.writes[0] != keys {
+				t.Errorf("writes = %q, want exactly %q", rec.writes, keys)
 			}
 		})
 	}
 }
 
-// TestEscapeSequencesCannotReachTheAgent checks the same thing where it counts:
-// nothing a guest submits can arrive as a control character.
-func TestEscapeSequencesCannotReachTheAgent(t *testing.T) {
-	r, rec, _ := fixture(detect.Idle)
-	r.Submit("ada\x1b[A", "approve it\r\x1b[B\r")
-	if _, err := r.Tick(); err != nil {
-		t.Fatal(err)
+// TestKeystrokesNeedNoParticularScreen: the member is looking at the screen, so
+// there is nothing for kolo to protect them from. Every state takes keys.
+func TestKeystrokesNeedNoParticularScreen(t *testing.T) {
+	for _, state := range []detect.State{detect.Idle, detect.Busy, detect.Dialog, detect.Unknown} {
+		t.Run(state.String(), func(t *testing.T) {
+			r, rec, _ := fixture(state)
+			if err := r.Type("x"); err != nil {
+				t.Fatalf("refused a keystroke while %s: %v", state, err)
+			}
+			if len(rec.writes) != 1 {
+				t.Errorf("writes = %q", rec.writes)
+			}
+		})
 	}
+}
 
-	if len(rec.writes) != 2 {
-		t.Fatalf("writes = %q", rec.writes)
+// TestAFloodIsNotAKeystroke keeps out the one thing a keystroke channel should
+// not carry: somebody piping a file into an agent one frame at a time.
+func TestAFloodIsNotAKeystroke(t *testing.T) {
+	r, rec, _ := fixture(detect.Idle)
+	if err := r.Type(strings.Repeat("x", maxKeys+1)); err == nil {
+		t.Error("a flood was accepted as a keystroke")
 	}
-	for _, r := range rec.writes[0] {
-		if r < 0x20 || r == 0x7f {
-			t.Errorf("control character %q reached the agent in %q", r, rec.writes[0])
-		}
+	if len(rec.writes) != 0 {
+		t.Errorf("wrote %q", rec.writes)
 	}
 }
 
@@ -262,9 +103,10 @@ func TestAnswerPressesTheNumber(t *testing.T) {
 	}
 }
 
-// TestAnswerNeedsTheQuestionItWasGiven is what makes answering from a browser
-// safe. Between reading the screen and clicking, the dialog may have been
-// replaced by the next one — same numbers, different meaning.
+// TestAnswerNeedsTheQuestionItWasGiven is what makes answering without watching
+// safe — from the board, where the member is not looking at the screen at all.
+// Between the choices being read and the click, the dialog may have been
+// replaced by the next one: same numbers, different meaning.
 func TestAnswerNeedsTheQuestionItWasGiven(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -327,149 +169,10 @@ func TestOptionsAreOnlyOfferedForAQuestion(t *testing.T) {
 	}
 }
 
-func TestSubmitRejectsEmptyMessages(t *testing.T) {
-	r, _, _ := fixture(detect.Idle)
-	for _, tt := range []struct{ nick, text string }{
-		{"", "hello"},
-		{"ada", ""},
-		{"ada", "\x1b\x07"},
-		{"\x1b", "hello"},
-	} {
-		if _, err := r.Submit(tt.nick, tt.text); err == nil {
-			t.Errorf("Submit(%q, %q) was accepted", tt.nick, tt.text)
-		}
-	}
-	if len(r.Pending()) != 0 {
-		t.Error("a rejected message was queued anyway")
-	}
-}
-
-func TestLongMessagesAreCut(t *testing.T) {
-	r, _, _ := fixture(detect.Idle)
-	m, err := r.Submit("ada", strings.Repeat("é", maxText))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(m.Text) > maxText {
-		t.Errorf("text is %d bytes, want at most %d", len(m.Text), maxText)
-	}
-	if !strings.HasPrefix(m.Text, "é") || strings.ContainsRune(m.Text, '�') {
-		t.Error("text was cut in the middle of a rune")
-	}
-}
-
-// TestACommandGoesUnattributed is why the exception exists. Attributed, the
-// sigil leaves the first column, the agent's CLI stops reading it as a command,
-// and a member who typed /clear has said "ada: /clear" to the model instead.
-func TestACommandGoesUnattributed(t *testing.T) {
-	for _, text := range []string{"/clear", "!ls -la", "#remember the release chore"} {
-		t.Run(text, func(t *testing.T) {
-			r, rec, _ := fixture(detect.Idle)
-			m, err := r.Submit("ada", text)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !m.Command {
-				t.Fatal("not read as a command")
-			}
-			if _, err := r.Tick(); err != nil {
-				t.Fatal(err)
-			}
-			if rec.writes[0] != text {
-				t.Errorf("wrote %q, want it exactly as typed", rec.writes[0])
-			}
-			// Still two writes: the Enter is separate for a command as well,
-			// because what makes it separate is the terminal, not the content.
-			if len(rec.writes) != 2 || rec.writes[1] != "\r" {
-				t.Errorf("wrote %q; want the line and the Enter apart", rec.writes)
-			}
-		})
-	}
-}
-
-// TestAKindWithNoSigilsHasNoCommands: the sigils belong to the agent's CLI, so
-// a kind kolo has no adapter for has none, and everything it is sent is an
-// ordinary message.
-func TestAKindWithNoSigilsHasNoCommands(t *testing.T) {
-	r := New(&recorder{}, func() (string, time.Duration) { return screens[detect.Idle], 0 }, adapter.For("some-other-agent"))
-	m, err := r.Submit("ada", "/clear")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if m.Command {
-		t.Error("read a command for a CLI kolo knows nothing about")
-	}
-	if m.Line() != "/clear" {
-		t.Errorf("line = %q, want the member's words", m.Line())
-	}
-}
-
-// TestOnlyTheFirstCharacterMakesACommand: prose is attributed, and prose is
-// most of what anyone sends. A path or a shell line quoted mid-sentence is not
-// an instruction to the CLI.
-func TestOnlyTheFirstCharacterMakesACommand(t *testing.T) {
-	for _, text := range []string{
-		"clear the /tmp directory",
-		"what does !important mean in css?",
-		"the tag is #release",
-	} {
-		t.Run(text, func(t *testing.T) {
-			r, rec, _ := fixture(detect.Idle)
-			m, err := r.Submit("ada", text)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if m.Command {
-				t.Fatal("read as a command")
-			}
-			if _, err := r.Tick(); err != nil {
-				t.Fatal(err)
-			}
-			if rec.writes[0] != text {
-				t.Errorf("wrote %q, want %q", rec.writes[0], text)
-			}
-		})
-	}
-}
-
-// TestACommandIsStillHeldByTheGate: nothing about being a command lets a line
-// past the screen. Sent while the agent is asking a question, its Enter answers
-// the question — which is the whole reason the queue exists.
-func TestACommandIsStillHeldByTheGate(t *testing.T) {
-	r, rec, idle := fixture(detect.Dialog)
-	if _, err := r.Submit("ada", "/clear"); err != nil {
-		t.Fatal(err)
-	}
-	if m, err := r.Tick(); err != nil || m != nil {
-		t.Fatalf("released at a dialog: %v, %v", m, err)
-	}
-	if len(rec.writes) != 0 {
-		t.Fatalf("wrote %q at a dialog", rec.writes)
-	}
-
-	idle(detect.Idle)
-	if m, err := r.Tick(); err != nil || m == nil {
-		t.Fatalf("not released once idle: %v, %v", m, err)
-	}
-}
-
-// TestPaddingDoesNotHideACommand: clean() collapses what surrounds a line, so a
-// pasted command with a space in front of it is still a command rather than
-// prose that happens to start with a slash.
-func TestPaddingDoesNotHideACommand(t *testing.T) {
-	r, _, _ := fixture(detect.Idle)
-	m, err := r.Submit("ada", "  /clear  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !m.Command || m.Line() != "/clear" {
-		t.Errorf("line = %q, command = %v", m.Line(), m.Command)
-	}
-}
-
-// TestSilenceIsIdleOnlyForAKindThatSaysSo: the queue asks its kind, and a kind
-// whose idle is silence is released by the screen having stopped moving rather
-// than by anything the screen says (docs/probe-findings.md #6).
+// TestSilenceIsIdleOnlyForAKindThatSaysSo: a kind whose idle is silence reads as
+// idle once the screen has stopped moving (docs/probe-findings.md #6). That
+// reading is now what the room is shown rather than permission to type, since
+// kolo types nothing on its own.
 func TestSilenceIsIdleOnlyForAKindThatSaysSo(t *testing.T) {
 	settling := adapter.Adapter{Markers: detect.Markers{
 		Busy:   "esc to interrupt",
@@ -480,59 +183,45 @@ func TestSilenceIsIdleOnlyForAKindThatSaysSo(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		still time.Duration
-		want  bool
+		want  detect.State
 	}{
-		{"still moving", time.Second, false},
-		{"settled", 3 * time.Second, true},
+		{"still moving", time.Second, detect.Unknown},
+		{"settled", 3 * time.Second, detect.Idle},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := &recorder{}
-			r := New(rec, func() (string, time.Duration) { return quiet, tc.still }, settling)
-			r.Submit("ada", "hello")
-
-			sent, err := r.Tick()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if (sent != nil) != tc.want {
-				t.Errorf("sent = %v after %s of quiet, want %v", sent != nil, tc.still, tc.want)
+			r := New(&recorder{}, func() (string, time.Duration) { return quiet, tc.still }, settling)
+			if got := r.state(); got != tc.want {
+				t.Errorf("state after %s of quiet = %s, want %s", tc.still, got, tc.want)
 			}
 		})
 	}
 }
 
-// TestDismissClosesAPanelAndNothingElse: a slash command that opens a panel
-// leaves a dialog with no choices on it, and Esc — the key the panel's own
-// footer offers — is the only way back to the input box. Where there are
-// choices it is not a close but an answer, so it is refused there.
-func TestDismissClosesAPanelAndNothingElse(t *testing.T) {
-	// /status: the dialog footer, and not a numbered choice anywhere on it.
-	panelScreen := " Settings  Status  Config\n\n Version: 2.1.234\n cwd: /tmp/scratch\n\n Esc to cancel\n"
+// TestOneWriteAtATime is the rule that outlived the queue: two writers to one
+// terminal interleave, and a keystroke landing inside an answer is a keypress
+// nobody made.
+func TestOneWriteAtATime(t *testing.T) {
+	r, _, _ := fixture(detect.Busy)
+	started := make(chan struct{})
+	done := make(chan error, 1)
 
-	t.Run("a panel closes", func(t *testing.T) {
-		rec := &recorder{}
-		r := New(rec, func() (string, time.Duration) { return panelScreen, 0 }, adapter.For("claude"))
-		if err := r.Dismiss(); err != nil {
-			t.Fatal(err)
-		}
-		if len(rec.writes) != 1 || rec.writes[0] != string(rune(esc)) {
-			t.Errorf("writes = %q, want one Esc", rec.writes)
-		}
-	})
-
-	for name, state := range map[string]detect.State{
-		"a question with choices": detect.Dialog,
-		"idle":                    detect.Idle,
-		"working":                 detect.Busy,
-	} {
-		t.Run(name+" does not", func(t *testing.T) {
-			r, rec, _ := fixture(state)
-			if err := r.Dismiss(); err == nil {
-				t.Error("closed something that was not a panel")
-			}
-			if len(rec.writes) != 0 {
-				t.Errorf("wrote %q", rec.writes)
-			}
+	go func() {
+		done <- r.exclusive(func() error {
+			close(started)
+			time.Sleep(50 * time.Millisecond)
+			return nil
 		})
+	}()
+	<-started
+
+	if err := r.Type("x"); err == nil {
+		t.Error("a keystroke landed while something else was being written")
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	// And once it is over, the keyboard works again.
+	if err := r.Type("x"); err != nil {
+		t.Fatal(err)
 	}
 }

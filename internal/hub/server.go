@@ -466,7 +466,7 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 			if !s.keyboards.holds(name, conn) || msg.Keys == "" {
 				continue
 			}
-		case "message", "answer", "dismiss", "interrupt", "restart", "fresh":
+		case "answer", "interrupt", "restart", "fresh":
 		default:
 			continue
 		}
@@ -476,8 +476,7 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 		}
 		send(toAgent{
 			Type: msg.Type, Name: name, From: member.Name,
-			Text: msg.Text, Choice: msg.Choice, Label: msg.Label,
-			Keys: msg.Keys,
+			Choice: msg.Choice, Label: msg.Label, Keys: msg.Keys,
 		})
 	}
 }
@@ -576,7 +575,6 @@ type hostHello struct {
 // keyboard.
 type viewerMessage struct {
 	Type   string `json:"type"`
-	Text   string `json:"text"`
 	Choice int    `json:"choice"`
 	Label  string `json:"label"`
 	// Keys are raw terminal input, already encoded by the browser's terminal.
@@ -590,7 +588,6 @@ type toAgent struct {
 	Type   string `json:"type"`
 	Name   string `json:"name"`
 	From   string `json:"from"`
-	Text   string `json:"text,omitempty"`
 	Choice int    `json:"choice,omitempty"`
 	Label  string `json:"label,omitempty"`
 	Keys   string `json:"keys,omitempty"`

@@ -256,7 +256,7 @@ func screenOf(t *testing.T, a *Agents, name string) *session.Session {
 	return p.live
 }
 
-func queueOf(t *testing.T, a *Agents, name string) *relay.Relay {
+func inputOf(t *testing.T, a *Agents, name string) *relay.Relay {
 	t.Helper()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -264,86 +264,13 @@ func queueOf(t *testing.T, a *Agents, name string) *relay.Relay {
 	if !ok {
 		t.Fatalf("%s is not running", name)
 	}
-	return p.queue
-}
-
-// TestAMessageWaitsForAnIdleScreen is the whole point of the queue: the line is
-// released only once the agent's own screen says it may be.
-func TestAMessageWaitsForAnIdleScreen(t *testing.T) {
-	dir := t.TempDir()
-	// Busy first, then idle, so the message sits through the first state. The
-	// clear matters: a real TUI redraws its footer in place, so only one marker
-	// is ever on screen.
-	script := fakeAgent(t, dir, "printf 'esc to interrupt\\n'\nsleep 1\nprintf '\\033[2J\\033[H? for shortcuts\\n'\ncat\n")
-	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
-	t.Cleanup(a.StopAll)
-
-	if err := a.Start(spec("checkups", dir, script)); err != nil {
-		t.Fatal(err)
-	}
-	nextReport(t, a)
-
-	if err := a.Send("checkups", "Artem", "run the checkups"); err != nil {
-		t.Fatal(err)
-	}
-	queue := queueOf(t, a, "checkups")
-	if len(queue.Pending()) != 1 {
-		t.Fatal("the message was not queued")
-	}
-	waitFor(t, func() bool { return len(queue.Pending()) == 0 })
-}
-
-// TestAMessageIsHeldOnAnUnrecognisedScreen: a screen the detector does not
-// understand holds the queue rather than being guessed at.
-func TestAMessageIsHeldOnAnUnrecognisedScreen(t *testing.T) {
-	dir := t.TempDir()
-	script := fakeAgent(t, dir, "cat\n")
-	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
-	t.Cleanup(a.StopAll)
-
-	if err := a.Start(spec("checkups", dir, script)); err != nil {
-		t.Fatal(err)
-	}
-	nextReport(t, a)
-
-	if err := a.Send("checkups", "Artem", "run the checkups"); err != nil {
-		t.Fatal(err)
-	}
-	queue := queueOf(t, a, "checkups")
-	time.Sleep(10 * tick)
-	if len(queue.Pending()) != 1 {
-		t.Error("a message was sent to a screen nobody recognised")
-	}
-}
-
-// TestAnUnknownAgentKindIsHeld: the screen is another kind's idle screen, and
-// says nothing about this one. A kind kolo has no adapter for is watchable and
-// never written to, however familiar its screen looks.
-func TestAnUnknownAgentKindIsHeld(t *testing.T) {
-	dir := t.TempDir()
-	script := fakeAgentNamed(t, dir, "some-other-agent", "printf '? for shortcuts\\r\\n'\ncat\n")
-	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
-	t.Cleanup(a.StopAll)
-
-	if err := a.Start(spec("checkups", dir, script)); err != nil {
-		t.Fatal(err)
-	}
-	nextReport(t, a)
-
-	if err := a.Send("checkups", "Artem", "run the checkups"); err != nil {
-		t.Fatal(err)
-	}
-	queue := queueOf(t, a, "checkups")
-	time.Sleep(10 * tick)
-	if len(queue.Pending()) != 1 {
-		t.Error("a message was sent to an agent kind kolo cannot read")
-	}
+	return p.input
 }
 
 func TestSendingToAnAgentThatIsNotHere(t *testing.T) {
 	a, _ := agentsFixture(t)
-	if err := a.Send("nothing", "Artem", "hello"); err == nil {
-		t.Error("accepted a message for an agent that is not running")
+	if err := a.Type("nothing", "x"); err == nil {
+		t.Error("accepted keystrokes for an agent that is not running")
 	}
 	if err := a.Answer("nothing", "Artem", 1, "Yes"); err == nil {
 		t.Error("accepted an answer for an agent that is not running")

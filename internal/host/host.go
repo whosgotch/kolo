@@ -141,12 +141,6 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			}
 		case "stop":
 			agents.Stop(c.Name)
-		case "message":
-			// Reported to whoever is watching that agent rather than logged
-			// here, where nobody is.
-			if err := agents.Send(c.Name, c.From, c.Text); err != nil {
-				agents.refuse(c.Name, err.Error())
-			}
 		case "answer":
 			if err := agents.Answer(c.Name, c.From, c.Choice, c.Label); err != nil {
 				agents.refuse(c.Name, err.Error())
@@ -157,10 +151,6 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			agents.Type(c.Name, c.Keys)
 		case "resize":
 			agents.Resize(c.Name, c.Cols, c.Rows)
-		case "dismiss":
-			if err := agents.Dismiss(c.Name, c.From); err != nil {
-				agents.refuse(c.Name, err.Error())
-			}
 		case "interrupt":
 			if err := agents.Interrupt(c.Name, c.From); err != nil {
 				agents.refuse(c.Name, err.Error())
@@ -211,7 +201,6 @@ type command struct {
 	Type   string    `json:"type"`
 	Name   string    `json:"name"`
 	From   string    `json:"from"`
-	Text   string    `json:"text"`
 	Choice int       `json:"choice"`
 	Label  string    `json:"label"`
 	Keys   string    `json:"keys"`

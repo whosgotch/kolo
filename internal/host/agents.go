@@ -38,7 +38,7 @@ const (
 // A variable so the tests do not have to wait it out.
 var restartDelay = time.Second
 
-// How often the queue asks the screen whether it may send.
+// How often the screen is read, to tell the room what the agent is doing.
 const tick = 200 * time.Millisecond
 
 // Agents is every agent running on this machine.
@@ -64,7 +64,7 @@ type process struct {
 	spec     hub.Agent
 	agent    *agent.Agent
 	live     *session.Session
-	queue    *relay.Relay
+	input    *relay.Relay
 	started  time.Time
 	stopping bool
 	fails    int
@@ -167,11 +167,11 @@ func (a *Agents) launch(name string) error {
 	}
 	kind := adapter.For(spec.Command)
 	live := session.New(cols, rows, kind.Markers)
-	// The queue reads the same screen the hub is shown, so what decides when a
-	// line may be typed is what everybody else is looking at.
-	queue := relay.New(started, live.Screen, kind)
+	// Input reads the same screen the hub is shown, so a member answering a
+	// question is answering the one everybody else is looking at.
+	input := relay.New(started, live.Screen, kind)
 	screen, closeScreen := context.WithCancel(context.Background())
-	p.agent, p.started, p.live, p.queue = started, time.Now(), live, queue
+	p.agent, p.started, p.live, p.input = started, time.Now(), live, input
 	p.resumed, p.fresh, p.bounced = resumed, false, false
 	a.mu.Unlock()
 
@@ -179,36 +179,20 @@ func (a *Agents) launch(name string) error {
 	// it into the session is also what keeps the screen current.
 	go io.Copy(live, started)
 	go a.stream(screen, name, live)
-	go a.release(screen, queue, live)
+	go a.watch(screen, input, live)
 	go a.wait(name, started, closeScreen)
 	return nil
 }
 
-// Send puts a member's line in an agent's queue. It is not typed here, however
-// idle the agent looks: everything goes through the queue.
-func (a *Agents) Send(name, from, text string) error {
-	v, err := a.reach(name)
-	if err != nil {
-		return err
-	}
-
-	m, err := v.queue.Submit(from, text)
-	if err != nil {
-		return err
-	}
-	v.announce(event{Type: "queued", From: m.Nickname, Text: m.Text})
-	return nil
-}
-
-// Answer gives the agent a member's choice from the question on its screen.
-// Never queued: the relay checks the choice against the screen as it stands, so
-// an answer either lands on the question the member saw or does not land at all.
+// Answer gives the agent a member's choice from the question on its screen. The
+// relay checks the choice against the screen as it stands, so an answer either
+// lands on the question the member saw or does not land at all.
 func (a *Agents) Answer(name, from string, choice int, label string) error {
 	v, err := a.reach(name)
 	if err != nil {
 		return err
 	}
-	if err := v.queue.Answer(choice, label); err != nil {
+	if err := v.input.Answer(choice, label); err != nil {
 		return err
 	}
 	v.announce(event{Type: "answered", From: from, Text: label})
@@ -224,7 +208,7 @@ func (a *Agents) Type(name, keys string) error {
 	if err != nil {
 		return err
 	}
-	return v.queue.Type(keys)
+	return v.input.Type(keys)
 }
 
 // Resize follows the size the org's browsers agreed on, so the agent draws a
@@ -245,28 +229,13 @@ func (a *Agents) Resize(name string, cols, rows int) error {
 	return running.Resize(cols, rows)
 }
 
-// Dismiss closes a panel the agent is showing, on behalf of the member who
-// asked. Never queued, for the same reason an answer is not: it means the screen
-// that is up now.
-func (a *Agents) Dismiss(name, from string) error {
-	v, err := a.reach(name)
-	if err != nil {
-		return err
-	}
-	if err := v.queue.Dismiss(); err != nil {
-		return err
-	}
-	v.announce(event{Type: "dismissed", From: from})
-	return nil
-}
-
 // Interrupt stops the agent working, on behalf of the member who asked.
 func (a *Agents) Interrupt(name, from string) error {
 	v, err := a.reach(name)
 	if err != nil {
 		return err
 	}
-	if err := v.queue.Interrupt(); err != nil {
+	if err := v.input.Interrupt(); err != nil {
 		return err
 	}
 	v.announce(event{Type: "interrupted", From: from})
@@ -306,39 +275,41 @@ func (a *Agents) bounce(name, from string, fresh bool) error {
 	return nil
 }
 
-// view is one agent's screen and queue as they stood when they were looked up.
+// view is one agent's screen and input as they stood when they were looked up.
 // Taken together under the lock, because a restart replaces both: reading them
 // off the process struct means one from before the restart and one from after.
 type view struct {
 	live  *session.Session
-	queue *relay.Relay
+	input *relay.Relay
 }
 
-func (p *process) view() view { return view{live: p.live, queue: p.queue} }
+func (p *process) view() view { return view{live: p.live, input: p.input} }
 
 func (a *Agents) reach(name string) (view, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	p, ok := a.running[name]
-	if !ok || p.queue == nil {
+	if !ok || p.input == nil {
 		return view{}, fmt.Errorf("%s is not running here", name)
 	}
 	return p.view(), nil
 }
 
-// announce fills in what the agent looks like now, and how much is still
-// waiting, alongside the news itself.
+// announce fills in what the agent looks like now, alongside the news itself.
 func (v view) announce(e event) {
-	e.Pending = len(v.queue.Pending())
 	e.State = v.live.State().String()
-	e.Options = v.queue.Options()
+	e.Options = v.input.Options()
 	v.live.Announce(e)
 }
 
-// release gives the agent one queued line whenever its screen says it may take
-// one. Polling, because a screen arriving at a particular arrangement has no
-// event to subscribe to.
-func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.Session) {
+// watch tells everybody what the agent's screen has become. Polling, because a
+// screen arriving at a particular arrangement has no event to subscribe to.
+//
+// This is all that is left of what was once the queue's release loop: the state
+// is no longer permission to type, since members type for themselves. It is what
+// the room is told — the badge on the board, and the question that needs one of
+// them.
+func (a *Agents) watch(ctx context.Context, input *relay.Relay, live *session.Session) {
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
@@ -355,37 +326,20 @@ func (a *Agents) release(ctx context.Context, queue *relay.Relay, live *session.
 		// their own: one question answered and replaced by the next never leaves
 		// the dialog state, and a page showing the old one would offer an answer
 		// to a question that has gone.
-		now, options := live.State(), queue.Options()
+		now, options := live.State(), input.Options()
 		if now != was || !slices.Equal(options, asked) {
 			was, asked = now, options
-			live.Announce(event{
-				Type: "state", State: now.String(),
-				Options: options, Pending: len(queue.Pending()),
-			})
+			live.Announce(event{Type: "state", State: now.String(), Options: options})
 		}
-
-		m, err := queue.Tick()
-		if err != nil || m == nil {
-			continue
-		}
-		live.Announce(event{
-			Type: "sent", From: m.Nickname, Text: m.Text, Command: m.Command,
-			Pending: len(queue.Pending()), State: live.State().String(),
-		})
 	}
 }
 
-// event is what a page is told about the queue. The screen shows what the agent
-// is doing; this is what kolo is doing with what people said to it.
+// event is what a page is told about an agent. The screen shows what the agent
+// is doing; this is what kolo did to it, and who did it.
 type event struct {
-	Type string `json:"type"`
-	From string `json:"from,omitempty"`
-	Text string `json:"text,omitempty"`
-	// Command says the line went to the agent unattributed, because it was for
-	// the agent's CLI. The page is then the only place its sender is named, so
-	// it says so louder than it does for a message.
-	Command bool            `json:"command,omitempty"`
-	Pending int             `json:"pending"`
+	Type    string          `json:"type"`
+	From    string          `json:"from,omitempty"`
+	Text    string          `json:"text,omitempty"`
 	State   string          `json:"state,omitempty"`
 	Options []detect.Option `json:"options,omitempty"`
 }
