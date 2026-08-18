@@ -224,6 +224,59 @@ line, and nothing has changed for a settle period". The settle period is the cos
 of a TUI that does not announce itself, and it is paid per kind rather than by
 everybody.
 
+## 7. The screen kolo was written against has changed
+
+Probed against `claude` (Claude Code v2.1.234) in the same PTY at 120x40, driven
+by `scripts/claude-turn.txt`. This was not a scheduled probe: kolo was run for
+real against a real agent, and the page said *"kolo does not recognise this
+screen"* while the agent sat plainly idle at its input box.
+
+The hint finding #4 turns on is gone. Three footers, one version apart:
+
+| | v2.1.226 | v2.1.234 |
+|---|---|---|
+| idle | `⏸ manual mode on · ? for shortcuts · ← for agents` | `⏵⏵ auto mode on (shift+tab to cycle) · ← for agents` |
+| working | `… · esc to interrupt · …` | `⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents` |
+| idle, something in the box | — | `⏵⏵ auto mode on (shift+tab to cycle)` |
+
+Three things follow, in order of how much they cost:
+
+1. **Idle has no hint of its own any more.** It is the footer *minus* the working
+   segment, which makes idle an absence rather than a presence — the thing the
+   detector was written to avoid. What is left to key on is the permission mode,
+   which is on screen in every state, so the order the states are tested in is
+   now what does the work rather than a last line of defence.
+2. **The footer sheds segments as soon as the box has anything in it.** `← for
+   agents` is there on an empty box and gone on a full one, so a marker that
+   looked stable across two versions is not stable across two seconds.
+3. **A dialog no longer replaces the input box.** The auto-mode question is drawn
+   *above* it, so one screen now carries a question and the idle footer at once.
+   Finding #4's arrangement — dialogs hide the box — is no longer true, and
+   testing Dialog first is the only reason a queued line does not go out under a
+   question nobody has answered.
+
+An agent kind's markers are not a fact about the kind. They are a fact about the
+version of it that was recorded, and the day it upgrades is the day the org's
+agents stop taking messages, silently. Hence a list per state rather than a
+string, holding both versions at once.
+
+## 8. Two writes are not enough — the Enter has to arrive late
+
+Found the same way: a message typed from the browser landed in the agent's input
+box and stayed there, with the cursor on a second line. The Enter had been read
+as a newline in pasted content — finding #3 all over again, except that kolo was
+already writing the text and the Enter separately, as #3 says to.
+
+What #3 missed is that the recorder which proved it slept 150ms between the two
+writes (`cmd/kolorec`), and the relay did not. Separate writes are necessary and
+not sufficient: an Enter hard behind the text is still inside the agent's paste
+window. With the two writes back to back the line submits sometimes — which is
+worse than never, because it looks like it works.
+
+The relay now waits `enterDelay` (150ms, the value the recorder has always used)
+between them. It is a timing guess about somebody else's TUI, and it is the kind
+of thing to re-probe rather than trust: a slower machine may need more.
+
 ## Incidental
 
 - codex asks the same trust question on a fresh directory, with the same shape

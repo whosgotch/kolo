@@ -1,0 +1,24 @@
+# Claude Code through one turn: what the screen says when it is idle, and what
+# it says while it works. Re-run this against a new release before trusting the
+# markers in internal/adapter — findings #7 is what happens when nobody does.
+#
+# Record in a fresh directory: the trust question comes first and is answered
+# here, because what the recording wants is what comes after it.
+waitfor 60s trust this folder
+wait 2s
+key enter
+wait 8s
+dump idle
+send count slowly from one to twenty, one number per line, with a short remark about each
+wait 2s
+dump t02
+wait 2s
+dump t04
+wait 3s
+dump t07
+wait 4s
+dump t11
+wait 6s
+dump t17
+wait 20s
+dump after
