@@ -5,6 +5,7 @@ package adapter
 
 import (
 	"path/filepath"
+	"sort"
 
 	"github.com/whosgotch/kolo/internal/detect"
 )
@@ -35,3 +36,15 @@ var kinds = map[string]Adapter{
 
 // For is keyed by the name of the binary rather than the path it was found at.
 func For(command string) Adapter { return kinds[filepath.Base(command)] }
+
+// Kinds is every agent command kolo knows how to run, sorted. What a host may
+// be told to start is still only what it was started with; this is for asking
+// which of them are installed.
+func Kinds() []string {
+	names := make([]string, 0, len(kinds))
+	for name := range kinds {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}

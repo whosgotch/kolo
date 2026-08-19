@@ -10,7 +10,9 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 )
 
@@ -79,6 +81,41 @@ func AddMember(path string, m Member) (*Org, error) {
 // AddHost records a new machine in the org file at path.
 func AddHost(path string, h Host) (*Org, error) {
 	return update(path, func(o *Org) { o.Hosts = append(o.Hosts, h) })
+}
+
+// SetHost records a machine, replacing any entry it already has. A host's token
+// is not recoverable from the file, so a machine that mints its own on every
+// start replaces the hash rather than accumulating one per start.
+func SetHost(path string, h Host) (*Org, error) {
+	return update(path, func(o *Org) {
+		for i, existing := range o.Hosts {
+			if existing.ID == h.ID {
+				o.Hosts[i] = h
+				return
+			}
+		}
+		o.Hosts = append(o.Hosts, h)
+	})
+}
+
+// Init creates an org file holding nothing but a name, and returns false if one
+// was already there. The name is the one thing kolo cannot pick, so a caller
+// that has no better idea passes something it can explain.
+func Init(path, name string) (created bool, err error) {
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return false, fmt.Errorf("hub: %s: %w", path, err)
+	}
+	org := &Org{Name: name}
+	if err := org.validate(); err != nil {
+		return false, fmt.Errorf("hub: %w", err)
+	}
+	b, _ := json.MarshalIndent(org, "", "  ")
+	if err := os.WriteFile(path, append(b, '\n'), 0o600); err != nil {
+		return false, fmt.Errorf("hub: write %s: %w", path, err)
+	}
+	return true, nil
 }
 
 // update applies a change to the org file.
