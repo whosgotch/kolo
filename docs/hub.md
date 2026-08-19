@@ -111,10 +111,11 @@ which machine ran something without pinning it on a person who was not involved.
 Ids are unique across both lists, and `kolo token` refuses one that is taken
 rather than writing an org the hub would then refuse to start.
 
-**The hub reads this file once, at startup.** Somebody minted with `kolo token`
-after it started cannot connect until it is restarted, which is the same thing
-that makes revoking work. Invites are the exception, and the reason they exist:
-one is checked when it is spent, and the member it makes can sign in at once.
+**A running hub reads this file again when it changes**, within a couple of
+seconds, so minting somebody with `kolo token` lets them in without a restart and
+removing their line shuts them out. An edit that will not parse is complained
+about and ignored — a typo made while adding one person is not a reason for
+nobody to be able to connect.
 
 Start it. It listens on localhost unless told otherwise:
 
@@ -177,6 +178,15 @@ it work, answer its questions, restart it, stop it.
 
 ## Revoking a member
 
-Remove their entry from the org file and restart the hub. Their token stops
-working; a hash cannot be turned back into one, so there is nothing else to clean
-up.
+Remove their entry from the org file. Within a couple of seconds their token
+stops working and anything they had open — a screen they were watching — is
+disconnected, because a browser being handed frames makes no further request for
+a check to fail. A hash cannot be turned back into a token, so there is nothing
+else to clean up.
+
+The same goes for a machine: delete a host's line and it is dropped rather than
+left connected and obeying. It will keep trying to reconnect, and keep being
+refused; stopping it is a separate act on that machine.
+
+Nothing here reaches an agent that is already running. Revoking says who may
+drive, not what is on the disk.

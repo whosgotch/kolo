@@ -56,7 +56,8 @@ the two halves separately — `kolo serve` and `kolo host`, with `kolo token` in
 between. See [docs/hub.md](docs/hub.md).
 
 Everyone else opens that link, says what to call them, and picks an agent.
-Joining adds them while the hub runs, so nobody waits for a restart.
+The org file is read again whenever it changes, so joining, adding somebody by
+hand and revoking them all take effect without a restart.
 
 Anyone can take the agent's keyboard and type at it directly — the whole of its
 interface, panels and modes and all — while everybody else watches and sees whose
