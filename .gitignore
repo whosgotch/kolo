@@ -12,4 +12,11 @@
 *.screen
 **/testdata/*.raw
 
+# a local org
+#
+# Running kolo in this repository writes one here. A real org file belongs in
+# version control — it holds hashes, never tokens — but this one is somebody's
+# scratch org, and its members are whoever they were testing with.
+/org.json
+
 .DS_Store
