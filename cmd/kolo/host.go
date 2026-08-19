@@ -58,21 +58,8 @@ func hostCmd(args []string) error {
 		return fmt.Errorf("-allow is needed: say which agent commands the org may run, such as -allow claude")
 	}
 
-	// Checked here, so a typo is a refusal at startup rather than every create
-	// failing later for a reason nobody can see.
-	for i, d := range dirs {
-		abs, err := filepath.Abs(d)
-		if err != nil {
-			return fmt.Errorf("-dir %s: %w", d, err)
-		}
-		info, err := os.Stat(abs)
-		if err != nil {
-			return fmt.Errorf("-dir %s: %w", d, err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("-dir %s is not a directory", d)
-		}
-		dirs[i] = abs
+	if err := resolveDirs(dirs); err != nil {
+		return err
 	}
 
 	cfg := host.Config{
@@ -106,6 +93,27 @@ func hostCmd(args []string) error {
 			log.Printf("%v; retrying in %s", e.Err, e.Retry.Round(100_000_000))
 		}
 	})
+	return nil
+}
+
+// resolveDirs makes every lent directory absolute in place, and refuses one
+// that is not there. Checked at startup, so a typo is a refusal now rather than
+// every create failing later for a reason nobody can see.
+func resolveDirs(dirs list) error {
+	for i, d := range dirs {
+		abs, err := filepath.Abs(d)
+		if err != nil {
+			return fmt.Errorf("-dir %s: %w", d, err)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return fmt.Errorf("-dir %s: %w", d, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("-dir %s is not a directory", d)
+		}
+		dirs[i] = abs
+	}
 	return nil
 }
 

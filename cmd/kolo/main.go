@@ -1,5 +1,6 @@
 // Command kolo runs an org's shared agents.
 //
+//	kolo up        a hub and this machine lending itself to it
 //	kolo serve     the hub an org connects to
 //	kolo token     mint credentials
 //	kolo host      lend this machine to the org
@@ -23,6 +24,7 @@ var commands = map[string]struct {
 	run   func([]string) error
 	brief string
 }{
+	"up":    {upCmd, "start a hub and lend this machine to it"},
 	"serve": {serveCmd, "run the hub for an org"},
 	"token": {tokenCmd, "mint credentials"},
 	"host":  {hostCmd, "lend this machine to the org"},
