@@ -33,19 +33,22 @@ const (
 // Server is the hub: the org, the hosts lending themselves to it, and the agents
 // running on them.
 type Server struct {
-	// Replaced wholesale when somebody claims an invite, which is the only
-	// thing that changes an org while the hub is running. Read under the lock,
-	// never reached into directly.
+	// Replaced wholesale when somebody claims an invite or the file changes on
+	// disk. Read under the lock, never reached into directly.
 	orgMu     sync.RWMutex
 	org       *Org
 	registry  *Registry
 	screens   *screens
 	keyboards *keyboards
-	// Held across the read-modify-write of a claim, so two people opening the
-	// same invite together become two members rather than one.
-	claiming sync.Mutex
-	ln       net.Listener
-	srv      *http.Server
+	// Held across any read-modify-write of the org file: two people opening the
+	// same invite together would otherwise become one member, and a reload
+	// landing between a claim's read and its write would undo it.
+	orgFile sync.Mutex
+	// Every connection open right now, so revoking somebody reaches the ones
+	// they already have rather than only their next request.
+	conns *conns
+	ln    net.Listener
+	srv   *http.Server
 
 	// Cancelled by Close, which is the only thing that reaches a host connection:
 	// net/http does not, a websocket having been hijacked out of its hands.
@@ -63,7 +66,7 @@ func Listen(org *Org, addr string) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		org: org, registry: NewRegistry(), screens: newScreens(),
-		keyboards: newKeyboards(), ln: ln, ctx: ctx, cancel: cancel,
+		keyboards: newKeyboards(), conns: newConns(), ln: ln, ctx: ctx, cancel: cancel,
 	}
 
 	mux := http.NewServeMux()
@@ -114,6 +117,7 @@ func (s *Server) orgPath() string {
 }
 
 func (s *Server) Serve() error {
+	go s.watchOrg()
 	if err := s.srv.Serve(s.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -214,8 +218,8 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 
 	// One claim at a time: two people opening the same link together would
 	// otherwise read the same file, and the second write would drop the first.
-	s.claiming.Lock()
-	defer s.claiming.Unlock()
+	s.orgFile.Lock()
+	defer s.orgFile.Unlock()
 
 	org, member, token, err := Claim(path, invite, name)
 	if err != nil {
@@ -282,6 +286,10 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 		}
 	}()
+
+	// Recorded before the hello, so a machine removed from the org while it was
+	// connecting is dropped rather than waited on.
+	defer s.conns.add(held{id: h.ID, hash: h.TokenHash, isHost: true, cancel: cancel})()
 
 	hello, err := read[hostHello](ctx, conn, helloTimeout)
 	if err != nil || hello.Type != "hello" {
@@ -466,6 +474,9 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
+	// A member removed from the org while watching stops watching. Their next
+	// request would fail anyway; a stream of frames is not a next request.
+	defer s.conns.add(held{id: member.ID, hash: member.TokenHash, cancel: cancel})()
 	go func() {
 		defer cancel()
 		s.takeFrom(ctx, conn, member, name)
