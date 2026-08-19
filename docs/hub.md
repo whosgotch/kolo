@@ -31,12 +31,27 @@ It listens on every interface, so the org can reach it, which is also why the
 warning below about TLS applies to it. `-addr 127.0.0.1:7300` keeps it to this
 machine.
 
-Adding a second person is still `kolo token`, and still needs a restart to take
-effect:
+The link is the whole of joining. Whoever opens it says what to call them and
+is in — no token to paste, nothing to install, and no restart, because an invite
+is read when it is spent rather than at startup. Later ones come from
+`kolo invite`:
 
 ```
-$ kolo token -id dana -name "Dana" -hub http://192.168.1.24:7300
+$ kolo invite -hub http://192.168.1.24:7300
+Send this to everyone who should have an agent. It works for 7 days:
+
+    http://192.168.1.24:7300/join#kolo_4aGx1SI4Sgb…
 ```
+
+An invite can only be spent on becoming a member, and only until it expires,
+which is what makes it safe to paste in the channel a team already has. `-days`
+moves the window and `-uses` caps how many people may spend it. It is recorded
+in the org file as a hash like everything else, so withdrawing one early is
+deleting its line.
+
+A member's id comes from the name they gave — Dana Scully becomes `dana-scully`
+— and a name already spoken for gets a number after it. Two people called Dana
+is a thing that happens.
 
 The rest of this page is the other deployment: a hub somewhere the org can
 already reach, and one or more machines lending themselves to it from elsewhere.
@@ -96,9 +111,10 @@ which machine ran something without pinning it on a person who was not involved.
 Ids are unique across both lists, and `kolo token` refuses one that is taken
 rather than writing an org the hub would then refuse to start.
 
-**The hub reads this file once, at startup.** Somebody minted after it started
-cannot connect until it is restarted, which is the same thing that makes
-revoking work.
+**The hub reads this file once, at startup.** Somebody minted with `kolo token`
+after it started cannot connect until it is restarted, which is the same thing
+that makes revoking work. Invites are the exception, and the reason they exist:
+one is checked when it is spent, and the member it makes can sign in at once.
 
 Start it. It listens on localhost unless told otherwise:
 
@@ -153,8 +169,9 @@ nothing the org does with an agent should ever require them.
 
 ## Everyone else
 
-Open the hub in a browser and sign in with the token that was sent to you — the
-two lines `kolo token` printed are the whole of what a member needs. The agent
+Open the invite link and say what to call you. Failing that — an org that mints
+one token per person with `kolo token` — open the hub and paste the token that
+was sent to you. The agent
 list is the front door: create one, join one someone else is already using, send
 it work, answer its questions, restart it, stop it.
 

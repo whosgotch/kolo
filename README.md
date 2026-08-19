@@ -48,14 +48,15 @@ $ cd ~/work/api && kolo up
 
 That is the whole of it. `kolo up` runs the hub and lends this machine to it,
 and makes what it needs on the way: the org file, this machine's credential, and
-a token for whoever ran it. It lends the directory it was started in and runs
+an invite link to send the team. It lends the directory it was started in and runs
 whichever agents it finds installed, both of which `-dir` and `-allow` override.
 
 An org whose hub lives somewhere other than the machine running the agents runs
 the two halves separately — `kolo serve` and `kolo host`, with `kolo token` in
 between. See [docs/hub.md](docs/hub.md).
 
-Everyone else opens the hub, pastes their token once, and picks an agent.
+Everyone else opens that link, says what to call them, and picks an agent.
+Joining adds them while the hub runs, so nobody waits for a restart.
 
 Anyone can take the agent's keyboard and type at it directly — the whole of its
 interface, panels and modes and all — while everybody else watches and sees whose
