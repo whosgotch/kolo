@@ -1,13 +1,10 @@
-// Package detect reads the agent's screen to decide whether a guest's line may
-// be sent to it.
+// Package detect reads the agent's screen to tell what it is doing.
 //
 // What the screen looks like in each state is a property of the agent kind, so
 // the markers are given rather than known here; internal/adapter holds them.
 //
-// Nothing is safe unless it is recognised as safe: a screen carrying none of the
-// markers reads as Unknown, and Unknown holds the queue. An empty marker never
-// matches, so the zero Markers — an agent kind kolo has no adapter for — reads
-// every screen as Unknown and is never sent anything.
+// An empty marker matches nothing, so the zero Markers — a kind with no adapter
+// — reads every screen as Unknown.
 //
 // See docs/architecture.md "Input" and docs/probe-findings.md #4 and #5.
 package detect
@@ -19,11 +16,11 @@ import (
 	"time"
 )
 
-// State is what the agent's screen says about sending it a line.
+// State is what the agent's screen says it is doing.
 type State int
 
 const (
-	// Unknown is first so that the zero value holds the queue.
+	// Unknown is first, so an unrecognised screen is the zero value.
 	Unknown State = iota
 	Idle
 	Dialog
@@ -43,18 +40,14 @@ func (s State) String() string {
 	}
 }
 
-func (s State) CanSend() bool { return s == Idle }
-
 // Markers are the strings one agent kind puts on screen in each state, each
 // taken from a recording of it rather than from its source. Matched
 // case-sensitively: "esc to interrupt" and "Esc to cancel" are different states.
 type Markers struct {
 	// Idle is the hints an input box that can take a line carries, any one of
-	// which means idle. Several, because the hint changes between versions and
-	// permission modes while meaning the same thing (probe-findings #7).
-	//
-	// Read last and only as an absence: a dialog or a working line is answered
-	// first.
+	// which means idle: the hint changes between versions and permission modes
+	// while meaning the same thing (probe-findings #7). Read last and only as an
+	// absence.
 	Idle         []string
 	Busy         string
 	DialogFooter string
@@ -65,9 +58,7 @@ type Markers struct {
 	DialogSelected string
 	// Settle is how long the screen must go unchanged before it reads as idle,
 	// for a kind that says nothing while it waits. Zero means silence proves
-	// nothing, which is the safer arrangement and the one to prefer.
-	//
-	// See docs/probe-findings.md #6.
+	// nothing, which is the arrangement to prefer (probe-findings #6).
 	Settle time.Duration
 }
 
@@ -80,13 +71,12 @@ type Option struct {
 
 var optionLine = regexp.MustCompile(`^(\d{1,2})\.\s+(\S.*)$`)
 
-// Options reads the choices out of the dialog on screen, so that a member can be
-// offered the question in words. A choice is only meaningful against the screen
-// it was read from, and this is the screen an answer is later checked against.
+// Options reads the choices out of the dialog on screen, so a member can be
+// offered the question in words.
 //
-// Nothing is returned unless the numbering runs 1, 2, 3 down consecutive lines.
-// Prose and diffs contain numbers, and finding a list that is not there is how a
-// member ends up answering a question nobody asked.
+// Nothing is returned unless the numbering runs 1, 2, 3 down consecutive lines:
+// prose and diffs contain numbers, and a list that is not there is how somebody
+// answers a question nobody asked.
 func (m Markers) Options(screen string) []Option {
 	if m.Of(screen) != Dialog {
 		return nil
@@ -125,13 +115,11 @@ func (m Markers) Options(screen string) []Option {
 }
 
 // OfSettled is Of, plus the answer a single screen cannot give: a kind that
-// declares a settle period reads as idle once nothing has changed for that long.
-// Only from a screen Of made nothing of, so a working line or a question still
-// wins however long it has been up.
+// declares a settle period reads as idle once nothing has changed for that long,
+// and only from a screen Of made nothing of.
 //
 // still is how long the screen has been the same picture. A blank screen is never
-// idle: an agent that has drawn nothing has not started, and silence means
-// something only once there is something to be silent under.
+// idle: silence means something only once there is something to be silent under.
 func (m Markers) OfSettled(screen string, still time.Duration) State {
 	if s := m.Of(screen); s != Unknown {
 		return s
@@ -143,7 +131,7 @@ func (m Markers) OfSettled(screen string, still time.Duration) State {
 }
 
 // Of classifies the agent's screen. Dialog is tested first: if a screen somehow
-// carried two sets of markers, the answer that holds the queue is the one to give.
+// carried two sets of markers, the safest reading is the one to give.
 func (m Markers) Of(screen string) State {
 	switch {
 	case has(screen, m.DialogFooter), has(screen, m.firstChoice()):
@@ -170,7 +158,6 @@ func has(screen, marker string) bool {
 	return marker != "" && strings.Contains(screen, marker)
 }
 
-// hasAny is has over the strings that mean the same state.
 func hasAny(screen string, markers []string) bool {
 	for _, marker := range markers {
 		if has(screen, marker) {

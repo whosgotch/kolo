@@ -1,8 +1,5 @@
-// Package agent runs a CLI agent under a pseudo-terminal.
-//
-// The agent believes it owns a real terminal, which is what draws the TUI viewers
-// watch. Everything it writes comes out of Read; everything written to it arrives
-// as if typed.
+// Package agent runs a CLI agent under a pseudo-terminal, so it believes it owns
+// a real terminal and draws the TUI viewers watch.
 package agent
 
 import (
@@ -15,8 +12,6 @@ import (
 	"github.com/creack/pty"
 )
 
-// Scrubbed environment variables, and why.
-//
 // COLORTERM makes the agent emit 24-bit colour, which vt10x packs into the same
 // integer space as its palette indices — rgb(0,0,200) becomes indistinguishable
 // from palette 200. Without it the agent stays on 256 colours, where the snapshot
@@ -27,7 +22,6 @@ import (
 // incidental #2).
 var scrubbed = []string{"COLORTERM", "CLAUDE_CODE_CHILD_SESSION"}
 
-// Agent is a CLI agent running under a PTY.
 type Agent struct {
 	cmd *exec.Cmd
 	pty *os.File
@@ -37,8 +31,7 @@ type Agent struct {
 	mu sync.Mutex
 }
 
-// Start launches argv in dir, under a PTY of the given size. An empty dir means
-// the current one.
+// Start launches argv under a PTY. An empty dir means the current one.
 func Start(argv []string, dir string, cols, rows int) (*Agent, error) {
 	if len(argv) == 0 {
 		return nil, fmt.Errorf("agent: no command given")
@@ -54,11 +47,11 @@ func Start(argv []string, dir string, cols, rows int) (*Agent, error) {
 	return &Agent{cmd: cmd, pty: f}, nil
 }
 
-// Read returns output from the agent. It reports io.EOF once the agent exits.
+// Read reports io.EOF once the agent exits.
 func (a *Agent) Read(p []byte) (int, error) { return a.pty.Read(p) }
 
-// Write sends input to the agent as if it were typed. The write is indivisible;
-// callers still choose what belongs in one.
+// Write arrives as if typed, indivisibly; callers still choose what belongs in
+// one write.
 func (a *Agent) Write(p []byte) (int, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

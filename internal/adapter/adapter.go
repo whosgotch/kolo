@@ -1,9 +1,6 @@
-// Package adapter holds what kolo knows about each kind of agent.
-//
-// A kind with no adapter gets the zero Adapter, which is harmless by
-// construction: no marker matches, so nothing is ever answered on it, and it
-// cannot be resumed, so it restarts fresh. Watchable and typeable, but kolo can
-// say nothing about what is on its screen.
+// Package adapter holds what kolo knows about each kind of agent. A kind with no
+// adapter gets the zero Adapter, which is inert: no marker matches and it cannot
+// be resumed.
 package adapter
 
 import (
@@ -12,12 +9,8 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// Adapter is what kolo knows about an agent kind.
-//
 // See docs/architecture.md "What kolo knows about each agent kind".
 type Adapter struct {
-	// Markers are how this kind's screen looks when it is idle, working, or
-	// asking a question.
 	Markers detect.Markers
 	// Resume is appended to the command to bring back the last conversation.
 	// Empty means the kind cannot be resumed, so every restart of one is fresh.
@@ -27,11 +20,10 @@ type Adapter struct {
 var kinds = map[string]Adapter{
 	"claude": {
 		Markers: detect.Markers{
-			// Two versions' worth of the same fact — the input box is drawn
-			// and nothing is running in front of it. v2.1.226 hung "? for
-			// shortcuts" under the box; v2.1.234 hangs the permission mode
-			// there, and drops every other segment of the footer as soon as
-			// the box has anything in it (probe-findings #7).
+			// Both say the input box is drawn with nothing running in
+			// front of it. v2.1.226 hung "? for shortcuts" under the box;
+			// v2.1.234 hangs the permission mode there and drops the rest
+			// of the footer once the box has anything in it (#7).
 			Idle:           []string{"(shift+tab to cycle)", "? for shortcuts"},
 			Busy:           "esc to interrupt",
 			DialogFooter:   "Esc to cancel",
@@ -41,6 +33,5 @@ var kinds = map[string]Adapter{
 	},
 }
 
-// For returns the adapter for the kind of agent command runs, keyed by the name
-// of the binary rather than the path it was found at.
+// For is keyed by the name of the binary rather than the path it was found at.
 func For(command string) Adapter { return kinds[filepath.Base(command)] }

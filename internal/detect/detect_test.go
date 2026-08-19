@@ -163,11 +163,10 @@ func TestOf(t *testing.T) {
 	}
 }
 
-// TestAQuestionOverTheInputBoxIsStillAQuestion is the arrangement that used to
-// be impossible. Dialogs once replaced the input box; the auto-mode question
-// draws above it and leaves the idle footer on screen, so a screen now carries
-// both sets of markers at once and the order they are tested in is the only
-// thing keeping a queued line off a question.
+// TestAQuestionOverTheInputBoxIsStillAQuestion pins the arrangement where the
+// auto-mode question draws above the input box and leaves the idle footer on
+// screen, so both sets of markers are up at once and only the order they are
+// tested in reads it as a question.
 func TestAQuestionOverTheInputBoxIsStillAQuestion(t *testing.T) {
 	if !hasAnyOf(autoModeScreen, claude.Idle) {
 		t.Fatal("fixture no longer carries the idle footer; it is the point of this test")
@@ -192,7 +191,7 @@ func hasAnyOf(screen string, markers []string) bool {
 }
 
 // TestUnrecognisedScreensHold is the property the whole package is for. A
-// screen that means nothing to the detector must not read as safe.
+// screen that means nothing to the detector must say so.
 func TestUnrecognisedScreensHold(t *testing.T) {
 	screens := map[string]string{
 		"empty":             "",
@@ -203,15 +202,15 @@ func TestUnrecognisedScreensHold(t *testing.T) {
 	}
 	for name, screen := range screens {
 		t.Run(name, func(t *testing.T) {
-			if got := claude.Of(screen); got.CanSend() {
-				t.Errorf("Of(%s) = %s, which allows sending; want it held", name, got)
+			if got := claude.Of(screen); got != detect.Unknown {
+				t.Errorf("Of(%s) = %s, want it unrecognised", name, got)
 			}
 		})
 	}
 }
 
 // TestDialogWinsOverIdle pins the tie-break. If both sets of markers are on
-// screen at once, the answer must be the one that holds the queue.
+// screen at once, the question is the safer reading.
 func TestDialogWinsOverIdle(t *testing.T) {
 	both := "Do you want to create note.txt?\n ❯ 1. Yes\n Esc to cancel\n ? for shortcuts\n"
 	if got := claude.Of(both); got != detect.Dialog {
@@ -365,14 +364,6 @@ func TestSilenceMeansNothingToAKindThatSpeaks(t *testing.T) {
 	for _, still := range []time.Duration{0, time.Second, time.Hour} {
 		if got := claude.OfSettled("some other tool\n> waiting for input\n", still); got != detect.Unknown {
 			t.Errorf("still for %s read as %s", still, got)
-		}
-	}
-}
-
-func TestOnlyIdleCanSend(t *testing.T) {
-	for _, s := range []detect.State{detect.Unknown, detect.Idle, detect.Dialog, detect.Busy} {
-		if want := s == detect.Idle; s.CanSend() != want {
-			t.Errorf("%s.CanSend() = %v, want %v", s, s.CanSend(), want)
 		}
 	}
 }

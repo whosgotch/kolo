@@ -18,12 +18,10 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// The key the agent's own footer tells the person at the keyboard to press.
 const esc = 0x1b
 
-// A keystroke, or a burst of them from one press. Big enough for an escape
-// sequence and a fast typist's backlog, small enough that nobody streams a
-// file into the agent one frame at a time.
+// One press worth of keys: an escape sequence and a fast typist's backlog fit,
+// a file streamed in one frame at a time does not.
 const maxKeys = 256
 
 // Sender is the agent's input, an interface so writing can be tested without an
@@ -32,30 +30,25 @@ type Sender interface {
 	Write(p []byte) (int, error)
 }
 
-// Relay is one agent's input.
 type Relay struct {
 	agent Sender
-	// What kolo knows about this agent's kind: how to read its screen.
-	kind adapter.Adapter
-	// The screen as text, and how long it has been that same picture, read fresh
-	// each time. The picture rather than a verdict about it: answering needs the
-	// choices as well as the state, and both must come from the same screen.
+	kind  adapter.Adapter
+	// Read fresh each time, and the picture rather than a verdict about it:
+	// answering needs the choices as well as the state, and both must come from
+	// the same screen.
 	screen func() (string, time.Duration)
 
 	mu      sync.Mutex
 	sending bool
 }
 
-// New returns a Relay that writes to agent and reads screen, by the markers of
-// kind, to decide what it may write.
 func New(agent Sender, screen func() (string, time.Duration), kind adapter.Adapter) *Relay {
 	return &Relay{agent: agent, kind: kind, screen: screen}
 }
 
 func (r *Relay) state() detect.State { return r.kind.Markers.OfSettled(r.screen()) }
 
-// Options are the choices the agent is offering, for showing a member what they
-// would be answering. Empty whenever there is no question on screen.
+// Options are the choices the agent is offering. Empty when there is no question.
 func (r *Relay) Options() []detect.Option {
 	screen, _ := r.screen()
 	return r.kind.Markers.Options(screen)
@@ -90,14 +83,9 @@ func (r *Relay) Answer(number int, label string) error {
 	})
 }
 
-// Type sends a member's keystrokes to the agent as they press them.
-//
-// Ungated, and that is the point: the member is looking at the screen those keys
-// land on, so a key at a question is a decision they made rather than a line
-// kolo chose to type at a moment it guessed.
-//
-// Through the same lock as everything else, so keystrokes cannot land inside an
-// answer that is halfway written.
+// Type sends a member's keystrokes to the agent as they press them. Ungated:
+// the member is looking at the screen those keys land on. Through the same lock
+// as everything else, so they cannot land inside a half-written answer.
 func (r *Relay) Type(keys string) error {
 	if keys == "" {
 		return nil

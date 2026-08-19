@@ -1,9 +1,8 @@
 // Package term keeps an authoritative model of the agent's screen.
 //
-// The browser renders with xterm.js, fed the agent's raw output byte for byte,
-// so this emulator is not a renderer. Its only job is to answer "what is on
-// screen right now" so that a viewer joining mid-session can be repainted
-// before the live stream starts.
+// Not a renderer: the browser does that, with xterm.js, fed the agent's raw
+// output byte for byte. This answers "what is on screen right now", so a viewer
+// joining mid-session can be repainted before the live stream starts.
 //
 // The emulator is github.com/hinshun/vt10x. See docs/probe-findings.md #1 for
 // why not github.com/charmbracelet/x/vt.
@@ -29,7 +28,6 @@ const (
 	attrWrap
 )
 
-// Screen is a virtual terminal fed from the agent's PTY.
 type Screen struct {
 	term vt10x.Terminal
 
@@ -42,12 +40,11 @@ func New(cols, rows int) *Screen {
 	return &Screen{term: vt10x.New(vt10x.WithSize(cols, rows))}
 }
 
-// Write feeds agent output into the emulator. It never fails, and always reports
-// the whole slice consumed.
+// Write never fails and always reports the whole slice consumed. Both matter.
 //
-// Both matter. PTY reads split anywhere, so a multi-byte rune regularly straddles
-// two writes, and vt10x returns a short count with a nil error and drops what it
-// could not decode (vt_posix.go, "not enough bytes for a full rune"). That breaks
+// PTY reads split anywhere, so a multi-byte rune regularly straddles two writes,
+// and vt10x returns a short count with a nil error and drops what it could not
+// decode (vt_posix.go, "not enough bytes for a full rune"). That breaks
 // io.Writer: io.MultiWriter turns it into ErrShortWrite, io.Copy stops, nothing
 // drains the PTY, and the agent blocks forever. So Write splits on a rune
 // boundary itself and carries the remainder into the next call.
@@ -90,12 +87,10 @@ func (s *Screen) Resize(cols, rows int) { s.term.Resize(cols, rows) }
 
 func (s *Screen) Size() (cols, rows int) { return s.term.Size() }
 
-// Text returns the screen as plain rows, one per line, with no styling. It is
-// what a detector matches against and what a recording dumps for review.
+// Text is the screen as plain rows, one per line, with no styling.
 func (s *Screen) Text() string { return s.term.String() }
 
-// style is the drawable part of a glyph: everything a repaint must restate when
-// it moves to a cell.
+// style is everything a repaint must restate when it moves to a cell.
 type style struct {
 	fg, bg    vt10x.Color
 	bold      bool

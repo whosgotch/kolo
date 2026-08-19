@@ -106,9 +106,9 @@ func (s *Session) noteChange() {
 	}
 }
 
-// Options are the choices of the question on screen, empty whenever there is no
-// question. Read here as well as by the relay, because the hub has a screen and
-// no queue: somebody joining mid-question is caught up from this.
+// Options are the choices of the question on screen, empty when there is none.
+// Read here as well as by the relay, so somebody joining mid-question is caught
+// up from the hub's own screen.
 func (s *Session) Options() []detect.Option { return s.markers.Options(s.Text()) }
 
 // Text is the agent's screen as it stands. It is what the relay reads before
