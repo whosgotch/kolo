@@ -72,7 +72,6 @@ func (k *keyboards) holder(agent string) (Person, bool) {
 	return held.who, ok
 }
 
-// forget drops an agent's keyboard, for one that has gone.
 func (k *keyboards) forget(agent string) {
 	k.mu.Lock()
 	defer k.mu.Unlock()

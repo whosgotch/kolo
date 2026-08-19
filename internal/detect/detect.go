@@ -43,7 +43,6 @@ func (s State) String() string {
 	}
 }
 
-// CanSend reports whether a guest's line may be written to the agent now.
 func (s State) CanSend() bool { return s == Idle }
 
 // Markers are the strings one agent kind puts on screen in each state, each

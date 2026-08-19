@@ -38,7 +38,6 @@ type Screen struct {
 	partial []byte
 }
 
-// New returns a Screen sized to cols x rows.
 func New(cols, rows int) *Screen {
 	return &Screen{term: vt10x.New(vt10x.WithSize(cols, rows))}
 }
@@ -87,10 +86,8 @@ func incompleteTail(b []byte) int {
 	return 0
 }
 
-// Resize changes the screen size, following the host's terminal.
 func (s *Screen) Resize(cols, rows int) { s.term.Resize(cols, rows) }
 
-// Size returns the current screen size.
 func (s *Screen) Size() (cols, rows int) { return s.term.Size() }
 
 // Text returns the screen as plain rows, one per line, with no styling. It is

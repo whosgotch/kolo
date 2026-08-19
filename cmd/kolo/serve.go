@@ -15,7 +15,6 @@ import (
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
-// serveCmd runs the hub for one org.
 func serveCmd(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	orgPath := fs.String("org", "org.json", "org file listing members and their token hashes")
@@ -63,7 +62,6 @@ func serveCmd(args []string) error {
 	return s.Serve()
 }
 
-// portOf is the port part of a host:port, for putting in a suggestion.
 func portOf(addr string) string {
 	if _, port, ok := strings.Cut(addr, ":"); ok {
 		return port

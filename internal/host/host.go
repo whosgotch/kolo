@@ -167,7 +167,6 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 	}
 }
 
-// report carries what became of each agent up to the hub.
 func report(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 	for {
 		select {

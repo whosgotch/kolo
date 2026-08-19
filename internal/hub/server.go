@@ -76,7 +76,6 @@ func Listen(org *Org, addr string) (*Server, error) {
 // for by asking for zero.
 func (s *Server) Addr() string { return s.ln.Addr().String() }
 
-// Registry is every connected host and the agents on them.
 func (s *Server) Registry() *Registry { return s.registry }
 
 func (s *Server) Serve() error {

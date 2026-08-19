@@ -48,8 +48,6 @@ type subscriber struct {
 	closed bool
 }
 
-// New returns a Session whose terminal is cols x rows, showing an agent whose
-// screen reads by markers.
 func New(cols, rows int, markers detect.Markers) *Session {
 	return &Session{
 		markers: markers,
@@ -61,7 +59,6 @@ func New(cols, rows int, markers detect.Markers) *Session {
 	}
 }
 
-// Viewers is how many are currently watching.
 func (s *Session) Viewers() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

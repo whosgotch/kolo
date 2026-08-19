@@ -183,7 +183,6 @@ func (r *Registry) Add(a Agent) (Sender, error) {
 	return h.send, nil
 }
 
-// SetStatus records what a host says became of an agent.
 func (r *Registry) SetStatus(name, status, reason string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -192,7 +191,6 @@ func (r *Registry) SetStatus(name, status, reason string) {
 	}
 }
 
-// Sender is how to reach the host running an agent.
 func (r *Registry) Sender(name string) (Sender, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

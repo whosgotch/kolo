@@ -65,12 +65,10 @@ func (a *Agent) Write(p []byte) (int, error) {
 	return a.pty.Write(p)
 }
 
-// Resize tells the agent its terminal changed size, so it redraws to fit.
 func (a *Agent) Resize(cols, rows int) error {
 	return pty.Setsize(a.pty, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 }
 
-// Wait blocks until the agent exits.
 func (a *Agent) Wait() error { return a.cmd.Wait() }
 
 // Close kills the agent if it is still running and releases the PTY, which ends
