@@ -9,7 +9,8 @@ package ui
 
 import "embed"
 
-// FS is the page, ready to serve: index.html at the root, assets beneath it.
+// FS is the pages, ready to serve: index.html and the join page at the root,
+// assets beneath them.
 //
-//go:embed index.html assets
+//go:embed index.html join.html assets
 var FS embed.FS

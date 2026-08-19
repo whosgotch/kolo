@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>join kolo</title>
+<style>
+  :root {
+    --bg: #0b0b0b; --panel: #141414; --line: #262626;
+    --text: #ddd; --dim: #8a8f94; --warn: #e88;
+    --mono: ui-monospace, Menlo, Consolas, monospace;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+  body { display: flex; font: 13px var(--mono); align-items: center; justify-content: center; }
+  [hidden] { display: none !important; }
+  main { max-width: 34em; padding: 16px; }
+  h1 { font-size: 15px; margin: 0 0 12px; }
+  p { color: var(--dim); line-height: 1.5; }
+  button, input {
+    background: #1b1b1b; color: var(--text); border: 1px solid var(--line);
+    border-radius: 4px; padding: 6px 8px; font: inherit;
+  }
+  button { cursor: pointer; }
+  button:hover { background: #232323; }
+  .problem { color: var(--warn); }
+</style>
+</head>
+<body data-org="{{.Org}}">
+<main>
+  <h1>join <span class="org"></span></h1>
+
+  <section class="ask" hidden>
+    <p>What should everyone call you? It is the name against every message you
+       send and every question you answer.</p>
+    <form method="post" action="/join">
+      <input name="invite" type="hidden">
+      <input name="name" placeholder="your name" maxlength="40" autofocus required>
+      <button type="submit">join</button>
+    </form>
+  </section>
+
+  <p class="problem nolink" hidden>This link is missing its invite. Ask for the whole
+     of it — everything after the <code>#</code> is the part that matters.</p>
+  <p class="problem refused" hidden>This invite no longer works. Ask whoever runs
+     kolo for another.</p>
+</main>
+
+<script>
+  // The invite rides in the fragment, which browsers do not send anywhere: it
+  // stays out of the hub's logs, out of proxies in between, and out of the
+  // Referer header of everything this page could go on to load.
+  const invite = decodeURIComponent(location.hash.slice(1));
+  const org = document.querySelector('.org');
+  org.textContent = document.body.dataset.org || 'kolo';
+
+  const show = sel => document.querySelector(sel).hidden = false;
+  if (new URLSearchParams(location.search).has('refused')) {
+    show('.refused');
+  } else if (!invite.startsWith('kolo_')) {
+    show('.nolink');
+  } else {
+    document.querySelector('input[name=invite]').value = invite;
+    show('.ask');
+  }
+</script>
+</body>
+</html>

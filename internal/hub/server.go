@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -31,12 +33,19 @@ const (
 // Server is the hub: the org, the hosts lending themselves to it, and the agents
 // running on them.
 type Server struct {
+	// Replaced wholesale when somebody claims an invite, which is the only
+	// thing that changes an org while the hub is running. Read under the lock,
+	// never reached into directly.
+	orgMu     sync.RWMutex
 	org       *Org
 	registry  *Registry
 	screens   *screens
 	keyboards *keyboards
-	ln        net.Listener
-	srv       *http.Server
+	// Held across the read-modify-write of a claim, so two people opening the
+	// same invite together become two members rather than one.
+	claiming sync.Mutex
+	ln       net.Listener
+	srv      *http.Server
 
 	// Cancelled by Close, which is the only thing that reaches a host connection:
 	// net/http does not, a websocket having been hijacked out of its hands.
@@ -64,6 +73,8 @@ func Listen(org *Org, addr string) (*Server, error) {
 	mux.HandleFunc("DELETE /v1/agents/{name}", s.handleDelete)
 	mux.HandleFunc("GET /v1/agent/{name}", s.handleScreen)
 	mux.HandleFunc("GET /v1/watch/{name}", s.handleWatch)
+	mux.HandleFunc("GET /join", s.handleJoinPage)
+	mux.HandleFunc("POST /join", s.handleJoin)
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.Handle("GET /assets/", http.FileServerFS(ui.FS))
@@ -77,6 +88,30 @@ func Listen(org *Org, addr string) (*Server, error) {
 func (s *Server) Addr() string { return s.ln.Addr().String() }
 
 func (s *Server) Registry() *Registry { return s.registry }
+
+func (s *Server) verifyMember(token string) (Member, bool) {
+	s.orgMu.RLock()
+	defer s.orgMu.RUnlock()
+	return s.org.VerifyMember(token)
+}
+
+func (s *Server) verifyHost(token string) (Host, bool) {
+	s.orgMu.RLock()
+	defer s.orgMu.RUnlock()
+	return s.org.VerifyHost(token)
+}
+
+func (s *Server) orgName() string {
+	s.orgMu.RLock()
+	defer s.orgMu.RUnlock()
+	return s.org.Name
+}
+
+func (s *Server) orgPath() string {
+	s.orgMu.RLock()
+	defer s.orgMu.RUnlock()
+	return s.org.path
+}
 
 func (s *Server) Serve() error {
 	if err := s.srv.Serve(s.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -101,10 +136,10 @@ const sessionCookie = "kolo_session"
 // travels in a header rather than the URL, which every proxy in between logs.
 func (s *Server) authenticate(r *http.Request) (Member, bool) {
 	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-		return s.org.VerifyMember(token)
+		return s.verifyMember(token)
 	}
 	if c, err := r.Cookie(sessionCookie); err == nil {
-		return s.org.VerifyMember(c.Value)
+		return s.verifyMember(c.Value)
 	}
 	return Member{}, false
 }
@@ -125,10 +160,16 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 // pasted into a form on every visit.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimSpace(r.FormValue("token"))
-	if _, ok := s.org.VerifyMember(token); !ok {
+	if _, ok := s.verifyMember(token); !ok {
 		http.Redirect(w, r, "/?refused=1", http.StatusSeeOther)
 		return
 	}
+	s.signIn(w, r, token)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// signIn puts a member's token where the browser will send it back.
+func (s *Server) signIn(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    token,
@@ -141,6 +182,56 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   overTLS(r),
 		MaxAge:   int((90 * 24 * time.Hour).Seconds()),
 	})
+}
+
+// handleJoinPage asks whoever opened an invite what to call them. The invite
+// itself is in the fragment, which never reaches here.
+func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
+	page, err := template.ParseFS(ui.FS, "join.html")
+	if err != nil {
+		http.Error(w, "no page", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	page.Execute(w, struct{ Org string }{s.orgName()})
+}
+
+// handleJoin spends an invite on a new member and signs them in, so the whole of
+// joining is opening a link and saying a name.
+func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
+	invite := strings.TrimSpace(r.FormValue("invite"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	if invite == "" || name == "" {
+		http.Redirect(w, r, "/join?refused=1", http.StatusSeeOther)
+		return
+	}
+
+	path := s.orgPath()
+	if path == "" {
+		http.Error(w, "this hub cannot take new members", http.StatusNotImplemented)
+		return
+	}
+
+	// One claim at a time: two people opening the same link together would
+	// otherwise read the same file, and the second write would drop the first.
+	s.claiming.Lock()
+	defer s.claiming.Unlock()
+
+	org, member, token, err := Claim(path, invite, name)
+	if err != nil {
+		if errors.Is(err, ErrNoInvite) || errors.Is(err, ErrInviteSpent) {
+			http.Redirect(w, r, "/join?refused=1", http.StatusSeeOther)
+			return
+		}
+		http.Error(w, "could not join", http.StatusInternalServerError)
+		return
+	}
+	s.orgMu.Lock()
+	s.org = org
+	s.orgMu.Unlock()
+	log.Printf("hub: %s joined %s as %s", member.Name, org.Name, member.ID)
+
+	s.signIn(w, r, token)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -163,7 +254,7 @@ func (s *Server) authenticateHost(r *http.Request) (Host, bool) {
 	if !ok {
 		return Host{}, false
 	}
-	return s.org.VerifyHost(token)
+	return s.verifyHost(token)
 }
 
 // handleHost takes a machine lending itself to the org and keeps it connected.
@@ -204,7 +295,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.registry.Leave(h.ID)
 
-	if err := write(ctx, conn, hostWelcome{Type: "welcome", Org: s.org.Name, Host: h.ID}); err != nil {
+	if err := write(ctx, conn, hostWelcome{Type: "welcome", Org: s.orgName(), Host: h.ID}); err != nil {
 		return
 	}
 
@@ -228,7 +319,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, listResponse{
-		Org:    s.org.Name,
+		Org:    s.orgName(),
 		You:    member.Person(),
 		Hosts:  s.registry.Hosts(),
 		Agents: s.registry.Agents(),
