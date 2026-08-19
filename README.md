@@ -52,9 +52,10 @@ an invite link to send the team — good for ten people over a week, withdrawabl
 with one command. It lends the directory it was started in and runs
 whichever agents it finds installed, both of which `-dir` and `-allow` override.
 
-An org whose hub lives somewhere other than the machine running the agents runs
-the two halves separately — `kolo serve` and `kolo host`, with `kolo token` in
-between. See [docs/hub.md](docs/hub.md).
+`kolo help` is the rest of it: `invite` and `who` for letting people in and
+seeing who is in, and `serve`, `token` and `host` for an org whose hub lives
+somewhere other than the machine running the agents. See
+[docs/hub.md](docs/hub.md).
 
 Everyone else opens that link, says what to call them, and picks an agent.
 The org file is read again whenever it changes, so joining, adding somebody by
