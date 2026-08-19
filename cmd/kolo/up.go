@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/host"
@@ -89,17 +90,15 @@ func upCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	var firstToken string
+	// An invite rather than a member: whoever started this joins the same way
+	// everyone else does, so there is one way in rather than a founder's way and
+	// a joiner's way.
+	var invite string
 	if len(org.Members) == 0 {
-		me := whoami()
-		token, hash, err := hub.NewToken()
-		if err != nil {
+		var err error
+		if org, invite, err = hub.AddInvite(*orgPath, "team", time.Now().Add(inviteDays*24*time.Hour), 0); err != nil {
 			return err
 		}
-		if org, err = hub.AddMember(*orgPath, hub.Member{ID: me, Name: me, TokenHash: hash}); err != nil {
-			return err
-		}
-		firstToken = token
 	}
 
 	s, err := hub.Listen(org, *addr)
@@ -135,11 +134,11 @@ func upCmd(args []string) error {
 	}
 	fmt.Printf("\n%s is up at %s\n", org.Name, browseURL(s.Addr()))
 	fmt.Printf("Lending %s, running %s.\n", strings.Join(dirs, " "), strings.Join(allow, " "))
-	if firstToken != "" {
-		fmt.Printf("\nOpen it and sign in with this. It is stored nowhere, so keep it:\n\n    %s\n", firstToken)
+	if invite != "" {
+		fmt.Printf("\nSend your team this. Opening it is the whole of joining, and it works\nfor %d days:\n\n    %s\n", inviteDays, hub.InviteURL(browseURL(s.Addr()), invite))
+	} else {
+		fmt.Printf("\nAdd people:   kolo invite -org %s -hub %s\n", *orgPath, browseURL(s.Addr()))
 	}
-	fmt.Printf("\nAdd someone:  kolo token -org %s -id <id> -name <name> -hub %s\n", *orgPath, browseURL(s.Addr()))
-	fmt.Printf("The hub reads %s once, so restart this to let them in.\n", *orgPath)
 	if !onLoopback(*addr) {
 		fmt.Printf("\nTokens cross the network in a header, and this hub has no TLS: on anything\n" +
 			"but a trusted network, put it behind something that terminates TLS.\n")
@@ -169,6 +168,11 @@ func upCmd(args []string) error {
 		return nil
 	}
 }
+
+// inviteDays is how long the invite kolo up makes is good for. Long enough to
+// get a team in over a week that has a weekend in it, short enough that a link
+// left in a channel stops working.
+const inviteDays = 7
 
 // installedKinds is every agent kolo knows about that this machine can actually
 // run, so the common case names none of them.
