@@ -4,7 +4,7 @@ Multiplayer for AI. Your team lends one machine, and everybody gets shared agent
 running on it — created from a browser, used by anyone, no install.
 
 ```
-$ kolo host --dir ~/work/api --allow claude     # on the machine you lend
+$ cd ~/work/api && kolo up                      # on the machine you lend
 ```
 
 Everyone else opens a link. The agent list is the front door: make one, join one
@@ -43,17 +43,17 @@ without — and the agents survive being killed and outlive the host restarting.
 
 ```
 $ go build -o kolo ./cmd/kolo
-$ echo '{"org": "acme"}' > org.json
-$ ./kolo token -host -id devbox                     # prints the line to run below
-$ ./kolo token -id dana -name "Dana"                # prints what to send Dana
-$ ./kolo serve -org org.json                        # the hub
-
-$ ./kolo host -join kolo_join_… -dir ~/work/api -allow claude   # the machine you lend
+$ cd ~/work/api && kolo up
 ```
 
-Minting writes to the org file rather than printing something to paste into it,
-and a machine's hub and token travel as one join string, because they were minted
-together and are useless apart.
+That is the whole of it. `kolo up` runs the hub and lends this machine to it,
+and makes what it needs on the way: the org file, this machine's credential, and
+a token for whoever ran it. It lends the directory it was started in and runs
+whichever agents it finds installed, both of which `-dir` and `-allow` override.
+
+An org whose hub lives somewhere other than the machine running the agents runs
+the two halves separately — `kolo serve` and `kolo host`, with `kolo token` in
+between. See [docs/hub.md](docs/hub.md).
 
 Everyone else opens the hub, pastes their token once, and picks an agent.
 

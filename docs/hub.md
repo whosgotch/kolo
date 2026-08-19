@@ -3,6 +3,44 @@
 Two things run: a **hub**, which the org connects to, and a **host**, which lends
 a machine for agents to run on. They can be the same machine or different ones.
 
+## One machine
+
+When they are the same machine, one command is the whole of it:
+
+```
+$ cd ~/work/api
+$ kolo up
+Created org.json for api.
+
+api is up at http://192.168.1.24:7300
+Lending /Users/you/work/api, running claude.
+
+Open it and sign in with this. It is stored nowhere, so keep it:
+
+    kolo_yPNNK8ZnHdvgKFDiQV2Oc…
+```
+
+`kolo up` makes whatever is missing: the org file, named after the directory
+unless `-name` says otherwise; a credential for this machine, minted fresh on
+every start and never written down; and, the first time, a member token for
+whoever ran it. It lends the directory it was started in and allows whichever
+agents kolo knows about and finds on `PATH`. `-dir` and `-allow` say otherwise,
+and repeat.
+
+It listens on every interface, so the org can reach it, which is also why the
+warning below about TLS applies to it. `-addr 127.0.0.1:7300` keeps it to this
+machine.
+
+Adding a second person is still `kolo token`, and still needs a restart to take
+effect:
+
+```
+$ kolo token -id dana -name "Dana" -hub http://192.168.1.24:7300
+```
+
+The rest of this page is the other deployment: a hub somewhere the org can
+already reach, and one or more machines lending themselves to it from elsewhere.
+
 ## The hub
 
 An org file starts as its name. It is the only thing kolo cannot pick for you:
