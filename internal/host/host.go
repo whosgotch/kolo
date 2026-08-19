@@ -133,9 +133,8 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 		}
 		switch c.Type {
 		case "spawn":
-			// Checked here as well as at the hub. This is the machine that runs
-			// the process, so this is the only refusal worth anything; the hub's
-			// copy exists to give a person a reason, not to be relied on.
+			// The refusal that counts, this being the machine that runs the
+			// process. See hub.Registry.Add for the hub's copy of the checks.
 			if err := agents.Start(c.Agent); err != nil {
 				agents.report(c.Agent.Name, hub.StatusFailed, err.Error())
 			}

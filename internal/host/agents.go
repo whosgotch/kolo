@@ -570,7 +570,7 @@ func (a *Agents) push(ctx context.Context, name string, live *session.Session) e
 	defer unsubscribe()
 
 	for _, m := range backlog {
-		if err := sendScreen(ctx, conn, m); err != nil {
+		if err := session.Send(ctx, conn, m); err != nil {
 			return err
 		}
 	}
@@ -582,23 +582,11 @@ func (a *Agents) push(ctx context.Context, name string, live *session.Session) e
 			if !ok {
 				return nil
 			}
-			if err := sendScreen(ctx, conn, m); err != nil {
+			if err := session.Send(ctx, conn, m); err != nil {
 				return err
 			}
 		}
 	}
-}
-
-// sendScreen puts terminal output on the wire as binary and anything kolo says
-// about it as text, so neither has to be told apart by looking inside.
-func sendScreen(ctx context.Context, conn *websocket.Conn, m session.Message) error {
-	kind := websocket.MessageBinary
-	if m.Control {
-		kind = websocket.MessageText
-	}
-	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
-	defer cancel()
-	return conn.Write(ctx, kind, m.Data)
 }
 
 // refuse tells an agent's watchers why something they sent went nowhere.

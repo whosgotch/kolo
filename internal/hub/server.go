@@ -388,11 +388,11 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	defer s.resize(name, conn, 0, 0)
 
 	for _, m := range backlog {
-		if err := forward(ctx, conn, m); err != nil {
+		if err := session.Send(ctx, conn, m); err != nil {
 			return
 		}
 	}
-	if err := forward(ctx, conn, catchUp(live)); err != nil {
+	if err := session.Send(ctx, conn, catchUp(live)); err != nil {
 		return
 	}
 	// Who is typing is part of what a joiner is missing: without it a second
@@ -414,7 +414,7 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			if err := forward(ctx, conn, m); err != nil {
+			if err := session.Send(ctx, conn, m); err != nil {
 				return
 			}
 		}
@@ -525,18 +525,6 @@ func (s *Server) resize(name string, at any, cols, rows int) {
 	if send, ok := s.registry.Sender(name); ok {
 		send(toAgent{Type: "resize", Name: name, Cols: cols, Rows: rows})
 	}
-}
-
-// forward sends one message to a viewer: terminal output as binary, everything
-// kolo says about it as text, so a browser tells them apart without looking in.
-func forward(ctx context.Context, conn *websocket.Conn, m session.Message) error {
-	kind := websocket.MessageBinary
-	if m.Control {
-		kind = websocket.MessageText
-	}
-	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
-	defer cancel()
-	return conn.Write(ctx, kind, m.Data)
 }
 
 // sender writes commands to one host. Writes are serialised: a spawn and a stop
