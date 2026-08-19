@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/session"
 	"github.com/whosgotch/kolo/internal/ui"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 const (
@@ -49,6 +51,15 @@ type Server struct {
 	conns *conns
 	ln    net.Listener
 	srv   *http.Server
+	// Set by Secure: the certificate manager, and the port 80 listener Let's
+	// Encrypt reaches it on. Both nil for a hub serving plain http.
+	acme       *autocert.Manager
+	challenges net.Listener
+	// Added by AlsoServe: plain http, for a caller on this machine. Guarded by
+	// startMu, which also marks the point after which adding one is too late.
+	startMu sync.Mutex
+	serving bool
+	extra   []net.Listener
 
 	// Cancelled by Close, which is the only thing that reaches a host connection:
 	// net/http does not, a websocket having been hijacked out of its hands.
@@ -118,15 +129,45 @@ func (s *Server) orgPath() string {
 
 func (s *Server) Serve() error {
 	go s.watchOrg()
-	if err := s.srv.Serve(s.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	s.startMu.Lock()
+	s.serving = true
+	extra := slices.Clone(s.extra)
+	s.startMu.Unlock()
+
+	for _, ln := range extra {
+		go func() {
+			if err := s.srv.Serve(ln); err != nil && !isClosed(err) {
+				log.Printf("hub: %v", err)
+			}
+		}()
+	}
+	serve := s.srv.Serve
+	if s.acme != nil {
+		go s.serveChallenges()
+		// Empty paths: the certificate comes from the manager in TLSConfig, not
+		// from files on disk.
+		serve = func(ln net.Listener) error { return s.srv.ServeTLS(ln, "", "") }
+	}
+	if err := serve(s.ln); err != nil && !isClosed(err) {
 		return err
 	}
 	return nil
 }
 
+// isClosed reports whether an error is only this hub being shut down.
+func isClosed(err error) bool {
+	return errors.Is(err, http.ErrServerClosed) || errors.Is(err, net.ErrClosed)
+}
+
 // Close stops serving and disconnects every host.
 func (s *Server) Close() error {
 	s.cancel()
+	if s.challenges != nil {
+		s.challenges.Close()
+	}
+	for _, ln := range s.extra {
+		ln.Close()
+	}
 	return s.srv.Close()
 }
 
