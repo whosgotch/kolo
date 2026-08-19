@@ -31,8 +31,8 @@ It listens on every interface, so the org can reach it, which is also why the
 warning below about TLS applies to it. `-addr 127.0.0.1:7300` keeps it to this
 machine.
 
-The link is the whole of joining. Whoever opens it says what to call them and
-is in — no token to paste, nothing to install, and no restart, because an invite
+The link is the whole of joining, for the first ten people who open it within a
+week. Whoever opens it says what to call them and is in — no token to paste, nothing to install, and no restart, because an invite
 is read when it is spent rather than at startup. Later ones come from
 `kolo invite`:
 
@@ -43,11 +43,37 @@ Send this to everyone who should have an agent. It works for 7 days:
     http://192.168.1.24:7300/join#kolo_4aGx1SI4Sgb…
 ```
 
-An invite can only be spent on becoming a member, and only until it expires,
-which is what makes it safe to paste in the channel a team already has. `-days`
-moves the window and `-uses` caps how many people may spend it. It is recorded
-in the org file as a hash like everything else, so withdrawing one early is
-deleting its line.
+An invite can only be spent on becoming a member, and it is bounded twice: by
+**how many people** may spend it — ten unless `-uses` says otherwise, or `0` for
+anyone holding it — and by **how long** it lasts, seven days unless `-days` says
+otherwise.
+
+Neither bound is security on its own. Whoever holds the link can spend it, and
+they choose the name they appear under. The bounds are what keeps a leak small
+enough to notice and undo:
+
+```
+$ kolo who
+acme
+
+members       2
+  dana        Dana        joined 19 Aug 14:23 via team
+  artem       Artem       added by hand
+
+machines      1
+  devbox
+
+links that still work   1
+  team        8 uses left   until Wed 26 Aug 14:23
+```
+
+```
+$ kolo invite -off team
+```
+
+Withdrawing takes effect within a couple of seconds and does not remove whoever
+already came through — they are members now, and `via` in `kolo who` is how you
+find them. Removing one is deleting their line.
 
 A member's id comes from the name they gave — Dana Scully becomes `dana-scully`
 — and a name already spoken for gets a number after it. Two people called Dana
