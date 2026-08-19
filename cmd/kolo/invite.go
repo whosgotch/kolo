@@ -19,9 +19,11 @@ func inviteCmd(args []string) error {
 	hubURL := fs.String("hub", defaultHubURL, "where the people opening it will reach the hub")
 	id := fs.String("id", "team", "what this invite is called in the org file and the log")
 	days := fs.Int("days", 7, "how many days it works for")
-	uses := fs.Int("uses", 0, "how many people may use it, or 0 for as many as the window allows")
+	uses := fs.Int("uses", defaultUses, "how many people may use it, or 0 for anyone who has it")
+	off := fs.String("off", "", "withdraw the invite with this name instead of making one")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo invite [-hub <url>] [-days <n>] [-uses <n>]")
+		fmt.Fprintln(os.Stderr, "       kolo invite -off <name>")
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "\nAn invite can only be spent on becoming a member, and only until it")
 		fmt.Fprintln(os.Stderr, "expires, which is what makes it safe to paste where a team can see it.")
@@ -29,6 +31,17 @@ func inviteCmd(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+
+	if *off != "" {
+		if _, err := hub.WithdrawInvite(*orgPath, *off); err != nil {
+			return missingOrg(err, *orgPath)
+		}
+		fmt.Printf("Withdrew %s. The link stops working within a couple of seconds.\n\n", *off)
+		fmt.Printf("Whoever already joined with it is still a member: kolo who -org %s says\n", *orgPath)
+		fmt.Printf("who came through it, and removing one is deleting their line.\n")
+		return nil
+	}
+
 	if *days < 1 {
 		return fmt.Errorf("-days must be at least 1: an invite that has already expired is one nobody can use")
 	}
@@ -39,20 +52,25 @@ func inviteCmd(args []string) error {
 		return missingOrg(err, *orgPath)
 	}
 
-	fmt.Printf("Send this to everyone who should have an agent. It works %s:\n\n", forDays(*days))
-	fmt.Printf("    %s\n\n", hub.InviteURL(*hubURL, token))
-	fmt.Println("They open it, say what to call them, and are in. Nothing to install and")
-	fmt.Println("no token to paste.")
-	if *uses > 0 {
-		fmt.Printf("\nIt is good for %d, and stops working after that.\n", *uses)
-	}
-	fmt.Printf("\nThe hub already running has it: an invite is read when it is spent, not\nat startup.\n")
+	fmt.Printf("Send this to the people who should have an agent:\n\n    %s\n\n", hub.InviteURL(*hubURL, token))
+	fmt.Printf("%s.\n", bound(*uses, *days))
+	fmt.Printf("They say what to call them and are in — nothing to install, no token\nto paste.\n\n")
+	fmt.Printf("Anyone holding the link can use it, so if it goes somewhere it should not:\n\n")
+	fmt.Printf("    kolo invite -org %s -off %s\n", *orgPath, *id)
 	return nil
 }
 
-func forDays(days int) string {
-	if days == 1 {
-		return "for a day"
+// bound says what stops the link, in the order somebody worries about it: how
+// many people, then how long.
+func bound(uses, days int) string {
+	who := fmt.Sprintf("The first %d people who open it are in", uses)
+	if uses == 0 {
+		who = "Anyone who opens it is in"
+	} else if uses == 1 {
+		who = "The first person to open it is in"
 	}
-	return fmt.Sprintf("for %d days", days)
+	if days == 1 {
+		return who + ", and it stops working after a day"
+	}
+	return fmt.Sprintf("%s, and it stops working after %d days", who, days)
 }

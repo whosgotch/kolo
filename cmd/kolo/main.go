@@ -3,6 +3,7 @@
 //	kolo up        a hub and this machine lending itself to it
 //	kolo serve     the hub an org connects to
 //	kolo invite    a link that turns whoever opens it into a member
+//	kolo who       who is in the org, and how they got in
 //	kolo token     mint credentials
 //	kolo host      lend this machine to the org
 //
@@ -28,6 +29,7 @@ var commands = map[string]struct {
 	"up":     {upCmd, "start a hub and lend this machine to it"},
 	"serve":  {serveCmd, "run the hub for an org"},
 	"invite": {inviteCmd, "make a link that lets someone join"},
+	"who":    {whoCmd, "say who is in the org"},
 	"token":  {tokenCmd, "mint credentials"},
 	"host":   {hostCmd, "lend this machine to the org"},
 }

@@ -96,7 +96,7 @@ func upCmd(args []string) error {
 	var invite string
 	if len(org.Members) == 0 {
 		var err error
-		if org, invite, err = hub.AddInvite(*orgPath, "team", time.Now().Add(inviteDays*24*time.Hour), 0); err != nil {
+		if org, invite, err = hub.AddInvite(*orgPath, "team", time.Now().Add(inviteDays*24*time.Hour), defaultUses); err != nil {
 			return err
 		}
 	}
@@ -135,7 +135,9 @@ func upCmd(args []string) error {
 	fmt.Printf("\n%s is up at %s\n", org.Name, browseURL(s.Addr()))
 	fmt.Printf("Lending %s, running %s.\n", strings.Join(dirs, " "), strings.Join(allow, " "))
 	if invite != "" {
-		fmt.Printf("\nSend your team this. Opening it is the whole of joining, and it works\nfor %d days:\n\n    %s\n", inviteDays, hub.InviteURL(browseURL(s.Addr()), invite))
+		fmt.Printf("\nSend your team this. Opening it is the whole of joining:\n\n    %s\n\n", hub.InviteURL(browseURL(s.Addr()), invite))
+		fmt.Printf("%s.\n", bound(defaultUses, inviteDays))
+		fmt.Printf("Anyone holding the link can use it: kolo invite -off team withdraws it,\nand kolo who says who came through.\n")
 	} else {
 		fmt.Printf("\nAdd people:   kolo invite -org %s -hub %s\n", *orgPath, browseURL(s.Addr()))
 	}
@@ -169,10 +171,17 @@ func upCmd(args []string) error {
 	}
 }
 
-// inviteDays is how long the invite kolo up makes is good for. Long enough to
-// get a team in over a week that has a weekend in it, short enough that a link
-// left in a channel stops working.
-const inviteDays = 7
+// What kolo up hands out, and what kolo invite offers unless told otherwise. A
+// link goes in a channel, gets forwarded, and outlives the reason it was made,
+// so it is bounded twice: long enough to get a team in over a week that has a
+// weekend in it, and wide enough for a team rather than a company.
+//
+// Neither bound is security on its own — whoever holds the link can spend it —
+// they are what keeps a leak small enough to notice and undo.
+const (
+	inviteDays  = 7
+	defaultUses = 10
+)
 
 // installedKinds is every agent kolo knows about that this machine can actually
 // run, so the common case names none of them.
