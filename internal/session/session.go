@@ -26,10 +26,8 @@ type Message struct {
 }
 
 // Session owns the virtual terminal and fans the agent's output out to viewers.
-//
-// Every viewer gets its own subscription. Letting a new connection take over from
-// the old was wrong twice over: guests are meant to watch together, and a page
-// that reconnects on its own turns a takeover into a loop.
+// Every viewer gets its own subscription: guests watch together, and a page that
+// reconnects on its own would otherwise take the screen from itself.
 type Session struct {
 	// How the agent's kind wears its state, so that what the session says about
 	// the screen is read with the markers of the agent drawing it.

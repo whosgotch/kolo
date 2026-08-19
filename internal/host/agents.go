@@ -304,11 +304,6 @@ func (v view) announce(e event) {
 
 // watch tells everybody what the agent's screen has become. Polling, because a
 // screen arriving at a particular arrangement has no event to subscribe to.
-//
-// This is all that is left of what was once the queue's release loop: the state
-// is no longer permission to type, since members type for themselves. It is what
-// the room is told — the badge on the board, and the question that needs one of
-// them.
 func (a *Agents) watch(ctx context.Context, input *relay.Relay, live *session.Session) {
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()

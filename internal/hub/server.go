@@ -560,19 +560,9 @@ type hostHello struct {
 	Version string   `json:"version"`
 }
 
-// viewerMessage is what a browser may send.
-//
-// Keystrokes were once excluded on principle — kolo submits with Enter, and
-// Enter means something else when the agent has a question up. That reasoning
-// held for a line kolo typed on somebody's behalf at a moment it picked. It does
-// not hold for a member typing at a screen they are watching: they can see the
-// question, and pressing Enter at it is a decision rather than an accident.
-//
-// What the exclusion cost was everything the agent's own interface can do and
-// kolo cannot name — a panel with its own keys (`d to day · w to week`), a
-// filter box, a mode the footer offers — which left agents stranded on screens
-// nobody could leave. So keys go through, from the one member holding the
-// keyboard.
+// viewerMessage is what a browser may send. Keys go through raw, from the one
+// member holding the keyboard: they are watching the screen those keys land on,
+// so Enter at a question is a decision rather than an accident.
 type viewerMessage struct {
 	Type   string `json:"type"`
 	Choice int    `json:"choice"`

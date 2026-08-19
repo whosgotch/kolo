@@ -13,10 +13,7 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// Adapter is the two things kolo knows about an agent kind. It was three until
-// members could type for themselves: which lines address the agent's own CLI
-// mattered while kolo was typing them, and a member typing /clear needs nobody's
-// help to put the slash in the first column.
+// Adapter is what kolo knows about an agent kind.
 //
 // See docs/architecture.md "What kolo knows about each agent kind".
 type Adapter struct {

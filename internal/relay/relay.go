@@ -1,14 +1,9 @@
-// Package relay is the only thing that writes to an agent.
-//
-// It used to be a queue: kolo held members' messages and picked the moment to
-// type them, because nobody could type at the agent themselves. They can now,
-// so the queue and the gate that timed it are gone, and what is left is the one
-// rule that outlived them — two writers to one terminal interleave, so every
-// write goes through here.
+// Package relay is the only thing that writes to an agent: two writers to one
+// terminal interleave, so every write goes through here.
 //
 // Keystrokes come from the member holding the keyboard. Answering and
-// interrupting are the two things kolo still does on somebody's behalf, and both
-// mean the screen that is up at the moment they ask.
+// interrupting are the two things kolo does on somebody's behalf, and both mean
+// the screen that is up at the moment they ask.
 //
 // See docs/architecture.md "Input".
 package relay
