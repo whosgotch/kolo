@@ -27,9 +27,10 @@ whoever ran it. It lends the directory it was started in and allows whichever
 agents kolo knows about and finds on `PATH`. `-dir` and `-allow` say otherwise,
 and repeat.
 
-It listens on every interface, so the org can reach it, which is also why the
-warning below about TLS applies to it. `-addr 127.0.0.1:7300` keeps it to this
-machine.
+It listens on every interface, so the org can reach it — over plain HTTP unless
+`-tls-domain` says otherwise. See [Being reachable from
+anywhere](#being-reachable-from-anywhere). `-addr 127.0.0.1:7300` keeps it to
+this machine.
 
 The link is the whole of joining, for the first ten people who open it within a
 week. Whoever opens it says what to call them and is in — no token to paste, nothing to install, and no restart, because an invite
@@ -150,11 +151,41 @@ $ kolo serve -org org.json -addr 0.0.0.0:7300
 kolo: hub for acme on 0.0.0.0:7300, 2 member(s)
 ```
 
-> **The hub carries no TLS of its own.** A member's token is sent in a header,
-> and over plain HTTP that header crosses the network in the clear, where anyone
-> in between can take it and use it. Reaching a hub across the internet means
-> putting it behind something that terminates TLS. On a trusted network, or over
-> a VPN, plain HTTP is a considered choice rather than an accident.
+## Being reachable from anywhere
+
+A member's token is sent in a header. Over plain HTTP that header crosses the
+network in the clear, and anyone in between can take it and use it — which means
+driving an agent, which means running commands as the host user. On a network
+you trust that is a considered choice. Anywhere else it is not.
+
+Point a domain at the machine and let kolo get its own certificate:
+
+```
+$ kolo up -tls-domain hub.acme.com
+$ kolo serve -org org.json -tls-domain hub.acme.com    # the hub on its own
+```
+
+Kolo asks Let's Encrypt for a certificate the first time somebody connects,
+caches it, and renews it from then on. There is no proxy to run, no certificate
+file to place and no renewal to remember.
+
+It needs two things of the network:
+
+- **The domain resolves to this machine.** A certificate is issued for a name.
+- **Ports 80 and 443 are reachable from the internet.** Let's Encrypt connects
+  back on 80 to check the machine really answers for the name; 443 is where the
+  org arrives. Anything else arriving on 80 is redirected to https, so somebody
+  typing the bare name still ends up somewhere encrypted.
+
+Certificates are cached under your config directory, `-tls-cache` to move them.
+Keep that directory: losing it means asking for new certificates, and Let's
+Encrypt counts how often that happens. `-tls-staging` asks a test service whose
+certificates browsers do not trust and whose limits are generous — worth using
+while getting DNS and ports right.
+
+A machine behind NAT with no public name cannot do this, and no flag will change
+that. The options there are a port forward, or a hub on a machine that does have
+a name.
 
 ## The host
 

@@ -26,6 +26,10 @@ alongside everyone else who might.
 - **Members install nothing.** A browser and a token. The host dials out to the
   hub, so there is no port to open and nothing to tunnel.
 
+Reaching it from anywhere is `-tls-domain`: the hub gets and renews its own
+certificate, so there is no proxy to run and no token crossing the network in
+the clear.
+
 Execution stays on a machine you own, with your files and your permissions.
 That is the part that is not negotiable, and it is the difference between this
 and a hosted agent that can only see what you upload.
