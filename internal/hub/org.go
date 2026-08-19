@@ -22,6 +22,9 @@ import (
 // Org is an organisation and the people in it: a file the operator edits by
 // hand. Membership is small and changes rarely, so a file that reads at a glance
 // and lives in version control beats anywhere to click.
+//
+// It is read by a hub that may be running and written by one taking a claim, so
+// an edit is picked up rather than waited on. See watchOrg.
 type Org struct {
 	Name    string   `json:"org"`
 	Members []Member `json:"members"`
@@ -89,8 +92,8 @@ type Person struct {
 // Person returns the member without their secret.
 func (m Member) Person() Person { return Person{ID: m.ID, Name: m.Name} }
 
-// Load reads an org from a JSON file. Changes take effect on restart, so
-// revoking a member is removing their line and restarting.
+// Load reads an org from a JSON file. A running hub reads it again when it
+// changes, so revoking a member is removing their line.
 func Load(path string) (*Org, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -267,6 +270,27 @@ func (o *Org) VerifyMember(token string) (Member, bool) {
 		}
 	}
 	return found, ok
+}
+
+// knowsMember reports whether a hash is still one a member holds. Not
+// constant-time, and not needing to be: the hash comes from a connection this
+// hub authenticated earlier, not from whoever is on the other end of it.
+func (o *Org) knowsMember(hash string) bool {
+	for _, m := range o.Members {
+		if m.TokenHash == hash {
+			return true
+		}
+	}
+	return false
+}
+
+func (o *Org) knowsHost(hash string) bool {
+	for _, h := range o.Hosts {
+		if h.TokenHash == hash {
+			return true
+		}
+	}
+	return false
 }
 
 // VerifyHost returns the host a token belongs to. A member's token is not a
