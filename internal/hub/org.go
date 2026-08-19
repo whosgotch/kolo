@@ -14,6 +14,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
+	"time"
+	"unicode"
 )
 
 // Org is an organisation and the people in it: a file the operator edits by
@@ -23,6 +26,12 @@ type Org struct {
 	Name    string   `json:"org"`
 	Members []Member `json:"members"`
 	Hosts   []Host   `json:"hosts"`
+	Invites []Invite `json:"invites,omitempty"`
+
+	// Where this was read from, so an org that grows a member while the hub is
+	// running can write itself back. Empty for one built in memory, which is
+	// what refuses a claim rather than losing it.
+	path string
 }
 
 // Host is a machine lending itself to the org. It authenticates as itself rather
@@ -44,6 +53,30 @@ type Member struct {
 	// TokenHash is the hex SHA-256 of the member's token.
 	TokenHash string `json:"token_hash"`
 }
+
+// Invite is a link that turns whoever opens it into a member. It exists because
+// the alternative is minting one token per person and sending each of them
+// somewhere private: an org gets one link, in the channel it already has.
+//
+// It is weaker than a member's token — it can only be spent on becoming a
+// member, and only until it expires — which is what makes it safe to paste
+// where a team can see it.
+type Invite struct {
+	// ID says what this invite was for, in the file and in the log. It is not
+	// a secret and is never asked for.
+	ID        string `json:"id"`
+	TokenHash string `json:"token_hash"`
+	// Expires is when it stops working. Always set: a link with no end is one
+	// nobody remembers to withdraw.
+	Expires time.Time `json:"expires"`
+	// Uses left, or zero for as many as the window allows. A team link is
+	// bounded by time rather than by a count nobody can predict — the twenty
+	// first person to click is not the attacker.
+	Uses int `json:"uses,omitempty"`
+}
+
+// Spent reports whether an invite can no longer be claimed.
+func (i Invite) Spent(now time.Time) bool { return now.After(i.Expires) }
 
 // Person is a member as everyone else sees them. A separate type from the one
 // carrying the token hash, so keeping the secret out of a response is a property
@@ -70,31 +103,33 @@ func Load(path string) (*Org, error) {
 	if err := org.validate(); err != nil {
 		return nil, fmt.Errorf("hub: %s: %w", path, err)
 	}
+	org.path = path
 	return &org, nil
 }
 
 // AddMember records a new person in the org file at path.
 func AddMember(path string, m Member) (*Org, error) {
-	return update(path, func(o *Org) { o.Members = append(o.Members, m) })
+	return update(path, func(o *Org) error { o.Members = append(o.Members, m); return nil })
 }
 
 // AddHost records a new machine in the org file at path.
 func AddHost(path string, h Host) (*Org, error) {
-	return update(path, func(o *Org) { o.Hosts = append(o.Hosts, h) })
+	return update(path, func(o *Org) error { o.Hosts = append(o.Hosts, h); return nil })
 }
 
 // SetHost records a machine, replacing any entry it already has. A host's token
 // is not recoverable from the file, so a machine that mints its own on every
 // start replaces the hash rather than accumulating one per start.
 func SetHost(path string, h Host) (*Org, error) {
-	return update(path, func(o *Org) {
+	return update(path, func(o *Org) error {
 		for i, existing := range o.Hosts {
 			if existing.ID == h.ID {
 				o.Hosts[i] = h
-				return
+				return nil
 			}
 		}
 		o.Hosts = append(o.Hosts, h)
+		return nil
 	})
 }
 
@@ -127,12 +162,14 @@ func Init(path, name string) (created bool, err error) {
 //
 // The file is written whole and renamed into place: it is read by a hub that may
 // be running, and a half-written org is one nobody belongs to.
-func update(path string, change func(*Org)) (*Org, error) {
+func update(path string, change func(*Org) error) (*Org, error) {
 	org, err := Load(path)
 	if err != nil {
 		return nil, err
 	}
-	change(org)
+	if err := change(org); err != nil {
+		return nil, err
+	}
 	// The same check the hub makes at startup, so a duplicate id is refused here
 	// rather than written down and met later as a hub that will not start.
 	if err := org.validate(); err != nil {
@@ -188,7 +225,33 @@ func (o *Org) validate() error {
 			return err
 		}
 	}
+	for i, v := range o.Invites {
+		if err := check("invite", v.ID, v.TokenHash, i); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// taken reports whether an id belongs to anything already. Members, hosts and
+// invites share one namespace, so a name in the log identifies one thing.
+func (o *Org) taken(id string) bool {
+	for _, m := range o.Members {
+		if m.ID == id {
+			return true
+		}
+	}
+	for _, h := range o.Hosts {
+		if h.ID == id {
+			return true
+		}
+	}
+	for _, v := range o.Invites {
+		if v.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // VerifyMember returns the member a token belongs to. Every member is compared
@@ -219,4 +282,121 @@ func (o *Org) VerifyHost(token string) (Host, bool) {
 		}
 	}
 	return found, ok
+}
+
+// Path is where this org was read from, or empty for one built in memory.
+func (o *Org) Path() string { return o.path }
+
+// Refusals a caller shows to whoever clicked the link. They say the invite is no
+// good without saying which of the two it was, because the difference is only
+// useful to somebody trying invites.
+var (
+	ErrNoInvite    = errors.New("hub: this invite is not one this hub knows")
+	ErrInviteSpent = errors.New("hub: this invite has run out")
+)
+
+// AddInvite records a link that turns whoever opens it into a member, and
+// returns the token to put in it.
+func AddInvite(path, id string, expires time.Time, uses int) (*Org, string, error) {
+	token, hash, err := NewToken()
+	if err != nil {
+		return nil, "", err
+	}
+	org, err := update(path, func(o *Org) error {
+		o.Invites = append(o.Invites, Invite{ID: o.freeID(id), TokenHash: hash, Expires: expires, Uses: uses})
+		return nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return org, token, nil
+}
+
+// Claim spends an invite on a new member and returns them with the token they
+// will use from now on. The file is re-read first, so an invite withdrawn by
+// hand is honoured and a claim lands alongside whatever else has changed.
+//
+// It is the one thing that adds to an org while the hub is running. Everything
+// else is a restart, because everything else is rare.
+func Claim(path, token, name string) (org *Org, member Member, memberToken string, err error) {
+	memberToken, hash, err := NewToken()
+	if err != nil {
+		return nil, Member{}, "", err
+	}
+	org, err = update(path, func(o *Org) error {
+		i, ok := o.findInvite(token)
+		if !ok {
+			return ErrNoInvite
+		}
+		if o.Invites[i].Spent(time.Now()) {
+			return ErrInviteSpent
+		}
+		if o.Invites[i].Uses > 0 {
+			o.Invites[i].Uses--
+			// A link with one use left is spent by using it, and an expiry in
+			// the past is how every other reader already knows that.
+			if o.Invites[i].Uses == 0 {
+				o.Invites[i].Expires = time.Now().Add(-time.Second)
+			}
+		}
+		member = Member{ID: o.freeID(slug(name)), Name: name, TokenHash: hash}
+		o.Members = append(o.Members, member)
+		return nil
+	})
+	if err != nil {
+		return nil, Member{}, "", err
+	}
+	return org, member, memberToken, nil
+}
+
+// findInvite is constant-time per invite, like the other two, so neither the
+// duration nor the match can be read from outside.
+func (o *Org) findInvite(token string) (int, bool) {
+	want := HashToken(token)
+	found, ok := 0, false
+	for i, v := range o.Invites {
+		if subtle.ConstantTimeCompare([]byte(v.TokenHash), []byte(want)) == 1 {
+			found, ok = i, true
+		}
+	}
+	return found, ok
+}
+
+// freeID is base, or base with a number after it if base is spoken for. Two
+// people called Dana are a thing that happens, and the second one joining is not
+// an error worth showing her.
+func (o *Org) freeID(base string) string {
+	if !o.taken(base) {
+		return base
+	}
+	for n := 2; ; n++ {
+		id := fmt.Sprintf("%s-%d", base, n)
+		if !o.taken(id) {
+			return id
+		}
+	}
+}
+
+// slug is a typed name reduced to something that reads well in a log and a URL.
+// A name with nothing usable in it — one written in a script this does not know
+// — still needs an id, so it gets a plain one rather than an empty one.
+func slug(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			if dash && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(r)
+			dash = false
+		default:
+			dash = true
+		}
+	}
+	if b.Len() == 0 {
+		return "member"
+	}
+	return b.String()
 }

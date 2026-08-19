@@ -79,3 +79,12 @@ func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
 	return hex.EncodeToString(sum[:])
 }
+
+// InviteURL is the link to send a team: the hub, and the invite in the fragment.
+//
+// The fragment is not sent to a server by any browser, so the secret stays out
+// of the hub's own logs and out of anything in between — it is read by the page
+// and posted back deliberately.
+func InviteURL(hubURL, token string) string {
+	return strings.TrimSuffix(hubURL, "/") + "/join#" + token
+}
