@@ -55,6 +55,12 @@ type Member struct {
 	Name string `json:"name"`
 	// TokenHash is the hex SHA-256 of the member's token.
 	TokenHash string `json:"token_hash"`
+	// Joined is when they claimed an invite, and Via is the invite they
+	// claimed. Both are empty for somebody minted by hand, who arrived by a
+	// route that has no record to keep. They are what turns "a link leaked" into
+	// a list of exactly who came through it.
+	Joined time.Time `json:"joined,omitempty"`
+	Via    string    `json:"via,omitempty"`
 }
 
 // Invite is a link that turns whoever opens it into a member. It exists because
@@ -363,7 +369,10 @@ func Claim(path, token, name string) (org *Org, member Member, memberToken strin
 				o.Invites[i].Expires = time.Now().Add(-time.Second)
 			}
 		}
-		member = Member{ID: o.freeID(slug(name)), Name: name, TokenHash: hash}
+		member = Member{
+			ID: o.freeID(slug(name)), Name: name, TokenHash: hash,
+			Joined: time.Now().Round(time.Second), Via: o.Invites[i].ID,
+		}
 		o.Members = append(o.Members, member)
 		return nil
 	})
@@ -423,4 +432,34 @@ func slug(name string) string {
 		return "member"
 	}
 	return b.String()
+}
+
+// ErrNoSuchInvite is a withdrawal naming an invite that is not there, which is
+// usually one already withdrawn or one whose name was mistyped.
+var ErrNoSuchInvite = errors.New("hub: no invite by that name")
+
+// WithdrawInvite removes an invite, so a link that got somewhere it should not
+// stops working. Whoever already joined through it stays a member: they are
+// removed one at a time, by name, and Via says which of them came from where.
+func WithdrawInvite(path, id string) (*Org, error) {
+	return update(path, func(o *Org) error {
+		for i, v := range o.Invites {
+			if v.ID == id {
+				o.Invites = append(o.Invites[:i], o.Invites[i+1:]...)
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: %s", ErrNoSuchInvite, id)
+	})
+}
+
+// Live is every invite that can still be claimed.
+func (o *Org) Live(now time.Time) []Invite {
+	var out []Invite
+	for _, v := range o.Invites {
+		if !v.Spent(now) {
+			out = append(out, v)
+		}
+	}
+	return out
 }

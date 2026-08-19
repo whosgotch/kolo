@@ -179,3 +179,67 @@ func TestClaimNeedsAFile(t *testing.T) {
 		t.Error("claiming against no file should fail rather than lose the member")
 	}
 }
+
+func TestWithdrawInvite(t *testing.T) {
+	path := newOrgFile(t)
+	_, invite, err := AddInvite(path, "team", time.Now().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := Claim(path, invite, "Dana"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := WithdrawInvite(path, "team"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := Claim(path, invite, "Fox"); !errors.Is(err, ErrNoInvite) {
+		t.Errorf("claiming a withdrawn invite: err = %v, want ErrNoInvite", err)
+	}
+
+	// Withdrawing a link does not remove whoever came through it: they are a
+	// member now, and removing one is a separate, deliberate act.
+	org, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(org.Members) != 1 || org.Members[0].ID != "dana" {
+		t.Errorf("members = %+v, want dana alone", org.Members)
+	}
+
+	if _, err := WithdrawInvite(path, "team"); !errors.Is(err, ErrNoSuchInvite) {
+		t.Errorf("withdrawing twice: err = %v, want ErrNoSuchInvite", err)
+	}
+}
+
+// Who came in through which link is the question a leaked invite raises, so a
+// member has to carry the answer.
+func TestClaimRecordsWhereTheyCameFrom(t *testing.T) {
+	path := newOrgFile(t)
+	_, invite, err := AddInvite(path, "contractors", time.Now().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, member, _, err := Claim(path, invite, "Dana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.Via != "contractors" {
+		t.Errorf("via = %q, want contractors", member.Via)
+	}
+	if member.Joined.IsZero() {
+		t.Error("a member who joined has no time of joining")
+	}
+}
+
+func TestLiveInvites(t *testing.T) {
+	now := time.Now()
+	org := &Org{Name: "acme", Invites: []Invite{
+		{ID: "old", Expires: now.Add(-time.Hour)},
+		{ID: "team", Expires: now.Add(time.Hour)},
+	}}
+	live := org.Live(now)
+	if len(live) != 1 || live[0].ID != "team" {
+		t.Errorf("live = %+v, want team alone", live)
+	}
+}
