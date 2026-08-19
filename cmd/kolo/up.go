@@ -34,11 +34,17 @@ func upCmd(args []string) error {
 	fs.Var(&allow, "allow", "an agent command the org may run (repeat, or comma-separated; default whichever kolo knows and finds installed)")
 	orgPath := fs.String("org", "org.json", "org file, created if it is not there")
 	name := fs.String("name", "", "org name, used only when creating the org file (default this directory's name)")
-	addr := fs.String("addr", "0.0.0.0:7300", "address the hub listens on; 127.0.0.1:7300 to keep it to this machine")
+	addr := fs.String("addr", "", "address the hub listens on (default 0.0.0.0:7300, or :443 with -tls-domain)")
+	tlsDomain := fs.String("tls-domain", "", "get and renew a certificate for this domain, and serve https")
+	tlsCache := fs.String("tls-cache", hub.DefaultCache(), "where to keep certificates between restarts")
+	tlsStaging := fs.Bool("tls-staging", false, "use Let's Encrypt's test service, whose certificates browsers do not trust")
 	state := fs.String("state", defaultState(), "where to record the agents running here")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo up [-dir <path>...] [-allow <command>]")
 		fs.PrintDefaults()
+		fmt.Fprintln(os.Stderr, "\nWith -tls-domain the hub gets and renews its own certificate, so it can")
+		fmt.Fprintln(os.Stderr, "be reached from anywhere. That needs the domain pointed at this machine")
+		fmt.Fprintln(os.Stderr, "and ports 80 and 443 open to the internet.")
 		fmt.Fprintln(os.Stderr, "\nStarts a hub and lends this machine to it. What the org may run here")
 		fmt.Fprintln(os.Stderr, "is bounded by -dir and -allow, but a running agent has this user's")
 		fmt.Fprintln(os.Stderr, "whole account. Run it as a user that owns only what the org should have.")
@@ -101,11 +107,36 @@ func upCmd(args []string) error {
 		}
 	}
 
+	domains := split(*tlsDomain)
+	if *addr == "" {
+		*addr = "0.0.0.0:7300"
+		if len(domains) > 0 {
+			*addr = ":443"
+		}
+	}
 	s, err := hub.Listen(org, *addr)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
+
+	// Where a person types the hub, and where the host half in this process
+	// reaches it. They differ once there is a certificate: the org arrives by
+	// name over https, and the host half stays on loopback rather than going out
+	// to that name and hoping the network answers itself.
+	shown := browseURL(s.Addr())
+	local := "http://" + net.JoinHostPort("127.0.0.1", portOf(s.Addr()))
+	if len(domains) > 0 {
+		if err := s.Secure(hub.TLS{Domains: domains, Cache: *tlsCache, Staging: *tlsStaging}); err != nil {
+			return err
+		}
+		shown = "https://" + domains[0]
+		loopback, err := s.AlsoServe("127.0.0.1:0")
+		if err != nil {
+			return err
+		}
+		local = "http://" + loopback
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -118,7 +149,7 @@ func upCmd(args []string) error {
 	// directly, so it is the same host talking to the same hub as it would be on
 	// two machines. One process is a deployment, not a second code path.
 	agents := host.NewAgents(host.Config{
-		Hub:     "http://" + net.JoinHostPort("127.0.0.1", portOf(s.Addr())),
+		Hub:     local,
 		Token:   hostToken,
 		Dirs:    dirs,
 		Allow:   allow,
@@ -132,18 +163,19 @@ func upCmd(args []string) error {
 	if created {
 		fmt.Printf("Created %s for %s.\n", *orgPath, org.Name)
 	}
-	fmt.Printf("\n%s is up at %s\n", org.Name, browseURL(s.Addr()))
+	fmt.Printf("\n%s is up at %s\n", org.Name, shown)
 	fmt.Printf("Lending %s, running %s.\n", strings.Join(dirs, " "), strings.Join(allow, " "))
 	if invite != "" {
-		fmt.Printf("\nSend your team this. Opening it is the whole of joining:\n\n    %s\n\n", hub.InviteURL(browseURL(s.Addr()), invite))
+		fmt.Printf("\nSend your team this. Opening it is the whole of joining:\n\n    %s\n\n", hub.InviteURL(shown, invite))
 		fmt.Printf("%s.\n", bound(defaultUses, inviteDays))
 		fmt.Printf("Anyone holding the link can use it: kolo invite -off team withdraws it,\nand kolo who says who came through.\n")
 	} else {
-		fmt.Printf("\nAdd people:   kolo invite -org %s -hub %s\n", *orgPath, browseURL(s.Addr()))
+		fmt.Printf("\nAdd people:   kolo invite -org %s -hub %s\n", *orgPath, shown)
 	}
-	if !onLoopback(*addr) {
-		fmt.Printf("\nTokens cross the network in a header, and this hub has no TLS: on anything\n" +
-			"but a trusted network, put it behind something that terminates TLS.\n")
+	if len(domains) == 0 && !onLoopback(*addr) {
+		fmt.Printf("\nThis hub serves plain http, so a member's token crosses the network where\n" +
+			"anyone on the path can read it. Fine on a network you trust. To be reached\n" +
+			"from anywhere, point a domain at this machine and pass -tls-domain.\n")
 	}
 	fmt.Println()
 

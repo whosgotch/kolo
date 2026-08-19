@@ -141,3 +141,14 @@ func defaultState() string {
 	}
 	return filepath.Join(dir, "kolo", "agents.json")
 }
+
+// split reads a flag that may carry a comma-separated set.
+func split(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}

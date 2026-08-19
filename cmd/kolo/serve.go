@@ -18,13 +18,16 @@ import (
 func serveCmd(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	orgPath := fs.String("org", "org.json", "org file listing members and their token hashes")
-	addr := fs.String("addr", "127.0.0.1:7300", "address to listen on; 0.0.0.0:7300 to accept other machines")
+	addr := fs.String("addr", "", "address to listen on (default 127.0.0.1:7300, or :443 with -tls-domain)")
+	tlsDomain := fs.String("tls-domain", "", "get and renew a certificate for this domain, and serve https (repeat, or comma-separated)")
+	tlsCache := fs.String("tls-cache", hub.DefaultCache(), "where to keep certificates between restarts")
+	tlsStaging := fs.Bool("tls-staging", false, "use Let's Encrypt's test service, whose certificates browsers do not trust")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo serve [flags]")
 		fs.PrintDefaults()
-		fmt.Fprintln(os.Stderr, "\nThe hub carries no TLS of its own. Reaching it across a network")
-		fmt.Fprintln(os.Stderr, "means putting it behind something that does, or a member's token")
-		fmt.Fprintln(os.Stderr, "travels in the clear.")
+		fmt.Fprintln(os.Stderr, "\nWithout -tls-domain the hub serves plain http, and a member's token")
+		fmt.Fprintln(os.Stderr, "crosses the network in a header anyone on the path can read. That is a")
+		fmt.Fprintln(os.Stderr, "considered choice on a trusted network and a bad one anywhere else.")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -33,6 +36,13 @@ func serveCmd(args []string) error {
 	org, err := hub.Load(*orgPath)
 	if err != nil {
 		return err
+	}
+	domains := split(*tlsDomain)
+	if *addr == "" {
+		*addr = "127.0.0.1:7300"
+		if len(domains) > 0 {
+			*addr = ":443"
+		}
 	}
 	s, err := hub.Listen(org, *addr)
 	if err != nil {
@@ -47,7 +57,15 @@ func serveCmd(args []string) error {
 		return err
 	}
 
-	log.Printf("hub for %s on %s, %d member(s)", org.Name, s.Addr(), len(org.Members))
+	if len(domains) > 0 {
+		if err := s.Secure(hub.TLS{Domains: domains, Cache: *tlsCache, Staging: *tlsStaging}); err != nil {
+			return err
+		}
+		log.Printf("hub for %s on %s, https for %s, %d member(s)",
+			org.Name, s.Addr(), strings.Join(domains, " "), len(org.Members))
+	} else {
+		log.Printf("hub for %s on %s, %d member(s)", org.Name, s.Addr(), len(org.Members))
+	}
 
 	// Shut down on a signal, so agents are disconnected deliberately and come
 	// back on their own rather than holding a dead socket.

@@ -87,10 +87,21 @@ It lends the directory it was started in and allows whichever agent
 commands kolo knows about and finds installed. -dir and -allow say
 otherwise, and may be repeated.
 
-It listens on every interface, so the org can reach it. That means a
-member's token crosses the network in a header with no TLS, which is a
-considered choice on a trusted network and a bad one anywhere else.
--addr 127.0.0.1:7300 keeps it to this machine.
+It listens on every interface, so the org can reach it, and over plain
+http a member's token crosses the network in a header anyone on the path
+can read. That is a considered choice on a network you trust.
+
+To be reached from anywhere, point a domain at this machine and let kolo
+get its own certificate:
+
+    kolo up -tls-domain hub.acme.com
+
+That needs the domain resolving here and ports 80 and 443 open to the
+internet, because Let's Encrypt connects back to check. The certificate
+renews itself. -tls-staging tries it against a test service first, whose
+certificates browsers do not trust but whose limits are generous.
+
+-addr 127.0.0.1:7300 keeps the hub to this machine instead.
 
 `,
 
@@ -128,9 +139,12 @@ running the agents.
 
     kolo serve -org org.json -addr 0.0.0.0:7300
 
-The hub carries no TLS. Reaching it across the internet means putting it
-behind something that terminates TLS, or a member's token travels in the
-clear.
+    kolo serve -org org.json -tls-domain hub.acme.com
+
+With -tls-domain the hub gets and renews its own certificate, and needs
+ports 80 and 443 open to the internet for it. Without one it serves plain
+http, and a member's token travels in the clear unless something in front
+terminates TLS.
 
 It reads the org file again whenever it changes, so adding somebody and
 revoking them both take effect without a restart. A file that will not
