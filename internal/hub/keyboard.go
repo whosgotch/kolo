@@ -8,10 +8,9 @@ import (
 // keyboards is who is typing at each agent.
 //
 // One at a time, because two people typing into one terminal interleave inside a
-// word and neither gets what they meant. Not a permission: anybody may take the
-// keyboard from anybody, and everybody watching is told who has it. The agent is
-// communal, so the thing that stops two people typing at once is the same thing
-// that stops it at a real keyboard — seeing that somebody else is.
+// word. Not a permission: anybody may take it from anybody, and everybody
+// watching is told who has it — what stops two people typing at once is the same
+// thing that stops it at a real keyboard, seeing that somebody else is.
 type keyboards struct {
 	mu sync.Mutex
 	m  map[string]keyboard

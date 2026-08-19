@@ -1,10 +1,9 @@
 // Package adapter holds what kolo knows about each kind of agent.
 //
-// A kind kolo has no adapter for gets the zero Adapter, and the zero Adapter is
-// harmless by construction: no marker matches, so its screen never reads as idle
-// and nothing is ever answered on it; and it cannot be resumed, so it restarts
-// fresh. Such an agent is watchable and typeable, but kolo can say nothing about
-// what is on its screen.
+// A kind with no adapter gets the zero Adapter, which is harmless by
+// construction: no marker matches, so nothing is ever answered on it, and it
+// cannot be resumed, so it restarts fresh. Watchable and typeable, but kolo can
+// say nothing about what is on its screen.
 package adapter
 
 import (

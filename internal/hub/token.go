@@ -35,10 +35,8 @@ func NewToken() (token, hash string, err error) {
 const JoinPrefix = TokenPrefix + "join_"
 
 // join is what a machine needs to reach an org: where the hub is, and the token
-// to arrive with. They are minted together and used together, so they travel as
-// one thing. Two halves of one secret sent separately is a ritual rather than a
-// safeguard — they end up in the same message anyway, and the halves are what
-// somebody setting up a host has to get right by hand.
+// to arrive with. One string rather than two, because two halves sent separately
+// end up in the same message anyway, and are one more thing to get right by hand.
 type join struct {
 	Hub   string `json:"hub"`
 	Token string `json:"token"`

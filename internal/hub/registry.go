@@ -149,9 +149,8 @@ func (r *Registry) Agent(name string) (Agent, bool) {
 // Add records an agent and returns the host's sender, so the caller can dispatch
 // the spawn without holding the lock.
 //
-// Every rule the host enforces is checked here too. The host still checks, and
-// has to — it is the only place a refusal is worth anything. This copy exists so
-// the person creating an agent is told why it will not work, in their response.
+// Every rule the host enforces is checked here too, so the person creating an
+// agent is told why it will not work. The host's own check is the one that counts.
 func (r *Registry) Add(a Agent) (Sender, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

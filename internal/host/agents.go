@@ -199,10 +199,8 @@ func (a *Agents) Answer(name, from string, choice int, label string) error {
 	return nil
 }
 
-// Type gives the agent a member's keystrokes. Not announced: a keystroke is not
-// news, and saying so for each one would bury what the agent is doing under a
-// running commentary of somebody typing. Who holds the keyboard is the news, and
-// the hub says that.
+// Type gives the agent a member's keystrokes. Not announced: who holds the
+// keyboard is the news, and the hub says that.
 func (a *Agents) Type(name, keys string) error {
 	v, err := a.reach(name)
 	if err != nil {

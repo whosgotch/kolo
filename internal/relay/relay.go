@@ -38,10 +38,8 @@ type Relay struct {
 	// What kolo knows about this agent's kind: how to read its screen.
 	kind adapter.Adapter
 	// The screen as text, and how long it has been that same picture, read fresh
-	// each time — the picture rather than a verdict about it, because answering
-	// needs the choices as well as the state, and both must come from the same
-	// screen. The stillness comes with it because for some kinds it is half the
-	// state.
+	// each time. The picture rather than a verdict about it: answering needs the
+	// choices as well as the state, and both must come from the same screen.
 	screen func() (string, time.Duration)
 
 	mu      sync.Mutex
@@ -69,10 +67,9 @@ func (r *Relay) Options() []detect.Option {
 // the screen the instant before the key is written: a dialog replaced by the next
 // question is a different question with the same numbers on it.
 //
-// Pressing the number rather than walking the highlight with arrows is the safer
-// guess. A key the dialog does not understand is discarded (probe-findings #5),
-// so a wrong guess costs an answer that does not land — where a wrong guess about
-// arrows leaves a different option highlighted and Enter still meaning yes.
+// The number rather than the arrows: a key the dialog does not understand is
+// discarded (probe-findings #5), so a wrong guess lands nothing — where a wrong
+// guess with arrows leaves another option highlighted and Enter still meaning yes.
 func (r *Relay) Answer(number int, label string) error {
 	// Two digits would be two keystrokes, and the first of them is an answer.
 	if number < 1 || number > 9 {

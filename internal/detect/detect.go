@@ -50,14 +50,11 @@ func (s State) CanSend() bool { return s == Idle }
 // case-sensitively: "esc to interrupt" and "Esc to cancel" are different states.
 type Markers struct {
 	// Idle is the hints an input box that can take a line carries, any one of
-	// which means idle. More than one string because the hint changes between
-	// versions and permission modes while meaning the same thing: v2.1.226 put
-	// "? for shortcuts" under the box where v2.1.234 puts nothing of the sort,
-	// and a kolo that knows only the version it was written against stops
-	// sending anything the day the agent upgrades (probe-findings #7).
+	// which means idle. Several, because the hint changes between versions and
+	// permission modes while meaning the same thing (probe-findings #7).
 	//
-	// Idle is read last and only as an absence: a screen carrying a dialog or a
-	// working line is answered before this is looked at.
+	// Read last and only as an absence: a dialog or a working line is answered
+	// first.
 	Idle         []string
 	Busy         string
 	DialogFooter string
@@ -67,13 +64,10 @@ type Markers struct {
 	// front of the first choice.
 	DialogSelected string
 	// Settle is how long the screen must go unchanged before it reads as idle,
-	// for a kind that has no idle marker because it says nothing while it waits.
-	// Zero means idle is a thing the screen says and silence means nothing,
-	// which is the safer arrangement and the one to prefer.
+	// for a kind that says nothing while it waits. Zero means silence proves
+	// nothing, which is the safer arrangement and the one to prefer.
 	//
-	// See docs/probe-findings.md #6: a kind whose working line comes and goes
-	// mid-turn leaves working and waiting looking the same, and the only thing
-	// telling them apart is that one of them is still changing.
+	// See docs/probe-findings.md #6.
 	Settle time.Duration
 }
 
@@ -130,16 +124,14 @@ func (m Markers) Options(screen string) []Option {
 	return options
 }
 
-// OfSettled classifies the screen for a kind whose state is not a property of
-// one screen. It is Of, plus the one answer a single screen cannot give: a kind
-// that declares a settle period reads as idle once nothing has changed for that
-// long — but only from a screen Of made nothing of, so a working line or a
-// question still wins however long it has been up.
+// OfSettled is Of, plus the answer a single screen cannot give: a kind that
+// declares a settle period reads as idle once nothing has changed for that long.
+// Only from a screen Of made nothing of, so a working line or a question still
+// wins however long it has been up.
 //
-// still is how long the screen has been the same picture. A blank screen is
-// never idle however long it has been blank: an agent that has drawn nothing has
-// not started, and silence is only meaningful once there is something to be
-// silent under.
+// still is how long the screen has been the same picture. A blank screen is never
+// idle: an agent that has drawn nothing has not started, and silence means
+// something only once there is something to be silent under.
 func (m Markers) OfSettled(screen string, still time.Duration) State {
 	if s := m.Of(screen); s != Unknown {
 		return s
