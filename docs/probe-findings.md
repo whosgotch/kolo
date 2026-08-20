@@ -6,14 +6,12 @@ directory. Finding 6 is roadmap step 6 and probes a second kind against the same
 questions; it is here rather than in its own file because it is an answer to
 finding 4.
 
-The probe itself lives on `probe/milestone-0` and is not merged. Reproduce with:
+The one-off probe these were found with is gone; `cmd/kolorec` is what is left of
+it, and the scripts that drove each finding are in `scripts/`. Reproduce with:
 
 ```bash
-go build -o /tmp/probe ./probe && /tmp/probe -script probe/scripts/q3b-isolate.txt -out /tmp/out -dir /tmp/sandbox claude
+go run ./cmd/kolorec -script scripts/permission-dialog.txt -out /tmp/out claude
 ```
-
-Two tests on that branch are **expected to fail** — they are the evidence for
-finding 1: `TestOSCTitleLeaks/bel_with_leading_rune` and `TestReplay/charmbracelet`.
 
 ---
 
@@ -166,8 +164,9 @@ Options, cheapest first:
    the host's up-front choice the entire trust boundary. Honest and robust, but
    strictly more dangerous per-action and a bigger claim to make in the README.
 
-Recommendation: (2) for v1, plus documenting in `docs/security.md` that guest
-messages are held while the agent is asking the host something. (1) and (2) share
+Recommendation: (2) for v1, plus documenting in `docs/architecture.md` under
+Security that guest messages are held while the agent is asking the host
+something. (1) and (2) share
 the same detector; (2) just fails safe.
 
 ## 6. A second kind does not wear its state for the whole turn
