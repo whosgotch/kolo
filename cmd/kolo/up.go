@@ -41,6 +41,7 @@ func upCmd(args []string) error {
 	tlsCache := fs.String("tls-cache", hub.DefaultCache(), "where to keep certificates between restarts")
 	tlsStaging := fs.Bool("tls-staging", false, "use Let's Encrypt's test service, whose certificates browsers do not trust")
 	state := fs.String("state", config.Path("agents.json"), "where to record the agents running here")
+	kinds := fs.String("kinds", config.Path("kinds.json"), "agent kinds to know about beyond the ones kolo ships with")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo up [-dir <path>...] [-allow <command>]")
 		fs.PrintDefaults()
@@ -69,12 +70,18 @@ func upCmd(args []string) error {
 	if err := resolveDirs(dirs); err != nil {
 		return err
 	}
+	// Before the agent commands are settled, because a kind configured here is
+	// one kolo can then find installed and offer without being asked.
+	if err := loadKinds(*kinds); err != nil {
+		return err
+	}
 	if len(allow) == 0 {
 		allow = installedKinds()
 		if len(allow) == 0 {
 			return fmt.Errorf("no agent command found: kolo knows %s, and none of them are on PATH\n"+
-				"Install one, or name it with -allow if it lives somewhere else",
-				strings.Join(adapter.Kinds(), ", "))
+				"Install one, or name it with -allow — any command that draws a terminal will run,\n"+
+				"and %s describes one kolo does not know so its screen can be read too",
+				strings.Join(adapter.Kinds(), ", "), *kinds)
 		}
 	}
 

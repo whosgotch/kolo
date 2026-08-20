@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/config"
 	"github.com/whosgotch/kolo/internal/host"
 	"github.com/whosgotch/kolo/internal/hub"
@@ -27,6 +28,7 @@ func hostCmd(args []string) error {
 	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join, if not joining with -join (default $KOLO_HUB)")
 	token := fs.String("token", os.Getenv("KOLO_TOKEN"), "this machine's token, if not joining with -join (default $KOLO_TOKEN)")
 	state := fs.String("state", config.Path("agents.json"), "where to record the agents running here")
+	kinds := fs.String("kinds", config.Path("kinds.json"), "agent kinds to know about beyond the ones kolo ships with")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo host -dir <path> [-dir <path>...] -allow <command>")
 		fs.PrintDefaults()
@@ -35,6 +37,9 @@ func hostCmd(args []string) error {
 		fmt.Fprintln(os.Stderr, "user that owns only what the org should have.")
 	}
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := loadKinds(*kinds); err != nil {
 		return err
 	}
 
@@ -142,4 +147,18 @@ func split(v string) []string {
 		}
 	}
 	return out
+}
+
+// loadKinds takes on the agent kinds this machine has been configured with, and
+// says which they were: a kind that came from a file is the one to name when an
+// agent behaves as though kolo cannot read it.
+func loadKinds(path string) error {
+	added, err := adapter.Load(path)
+	if err != nil {
+		return err
+	}
+	if len(added) > 0 {
+		log.Printf("agent kinds from %s: %s", path, strings.Join(added, ", "))
+	}
+	return nil
 }

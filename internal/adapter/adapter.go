@@ -4,6 +4,10 @@
 package adapter
 
 import (
+	"encoding/json"
+	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -13,12 +17,14 @@ import (
 
 // See docs/architecture.md "What kolo knows about each agent kind".
 type Adapter struct {
-	Markers detect.Markers
+	Markers detect.Markers `json:"markers"`
 	// Resume is appended to the command to bring back the last conversation.
 	// Empty means the kind cannot be resumed, so every restart of one is fresh.
-	Resume []string
+	Resume []string `json:"resume,omitempty"`
 }
 
+// kinds is replaced by Load at startup, so a machine can lend an agent kolo does
+// not ship an adapter for.
 var kinds = map[string]Adapter{
 	"claude": {
 		Markers: detect.Markers{
@@ -67,4 +73,55 @@ func Kinds() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// Load reads agent kinds from a JSON file and adds them to the ones kolo ships
+// with, replacing any of the same name. A file that is not there is not an
+// error: most machines run the kinds kolo knows.
+//
+//	{
+//	  "codex": {
+//	    "markers": {"busy": "esc to interrupt", "idle": ["? for shortcuts"],
+//	                "dialogFooter": "Esc to cancel", "dialogSelected": "❯"},
+//	    "resume": ["--continue"]
+//	  }
+//	}
+//
+// This is how an org runs an agent kolo has never heard of without waiting for
+// a release: the markers are strings off that agent's own screen, and the way to
+// get them right is to record one (see cmd/kolorec) rather than guess.
+//
+// Called once at startup, before any agent runs, because it replaces the table
+// every other package reads through For.
+func Load(path string) (added []string, err error) {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("adapter: read %s: %w", path, err)
+	}
+	var configured map[string]Adapter
+	if err := json.Unmarshal(b, &configured); err != nil {
+		return nil, fmt.Errorf("adapter: parse %s: %w", path, err)
+	}
+
+	merged := make(map[string]Adapter, len(kinds)+len(configured))
+	maps.Copy(merged, kinds)
+	for name, a := range configured {
+		if name == "" || name != filepath.Base(name) {
+			return nil, fmt.Errorf("adapter: %s: %q is not the name of a command", path, name)
+		}
+		// An entry that says nothing is a kind kolo would treat exactly as one it
+		// has never heard of, so it is a typo rather than a choice — an empty
+		// object where the markers were meant to go, or a name spelt twice.
+		if a.Markers.Blank() && len(a.Resume) == 0 {
+			return nil, fmt.Errorf("adapter: %s: %s says nothing about how to read or resume that agent", path, name)
+		}
+		merged[name] = a
+		added = append(added, name)
+	}
+	kinds = merged
+	sort.Strings(added)
+	return added, nil
 }

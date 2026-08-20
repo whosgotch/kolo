@@ -62,6 +62,13 @@ type Markers struct {
 	Settle time.Duration `json:"settle,omitempty"`
 }
 
+// Blank reports whether these markers say nothing at all, and so read every
+// screen as Unknown. It is what a kind kolo has no adapter for gets, and what a
+// configured one must not be.
+func (m Markers) Blank() bool {
+	return len(m.Idle) == 0 && m.Busy == "" && m.DialogFooter == "" && m.DialogSelected == ""
+}
+
 // Option is one numbered choice of the dialog on screen.
 type Option struct {
 	Number   int    `json:"number"`

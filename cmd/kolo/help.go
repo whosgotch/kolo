@@ -93,6 +93,12 @@ it comes up:
 
     kolo up -allow "claude --model opus"
 
+Any command that draws a terminal will run, and the org can watch it,
+type at it and stop it. What kolo has to be told is how a particular
+agent wears its states, or the list cannot say which of them are asking
+something. Describing one kolo does not ship is ~/.kolo/kinds.json; see
+docs/hub.md.
+
 It listens on every interface, so the org can reach it, and over plain
 http a member's token crosses the network in a header anyone on the path
 can read. That is a considered choice on a network you trust.
