@@ -332,6 +332,42 @@ what it loses is the list saying what it is doing, and its conversation across a
 restart. Kolo says so rather than guessing: an unreadable
 screen reads as unknown, and nothing is claimed about it.
 
+### Checking it fits
+
+`kolo doctor` says what this machine can and cannot do with what it lends, and
+changes nothing while it looks:
+
+```
+$ kolo doctor
+what this machine runs
+  ok   claude --model opus  (/opt/homebrew/bin/claude)
+  fail codex --full-auto
+      codex is not on PATH, so an agent asked for here will fail to start
+
+what kolo knows about them
+  agent   watch  type  stop  reads screen  resume
+  claude  yes    yes   yes   yes           --continue
+  codex   yes    yes   -     -             -
+      codex runs and is shared, but kolo cannot read its screen: the list will
+      not say what it is doing, nobody can stop it from the browser, and it
+      starts fresh every restart. Describe it in kinds.json — see docs/hub.md.
+
+agents this machine was running
+  ok   checkups  idle for 20 minutes
+  note releases  its screen has said nothing kolo understands for 3 days
+      the markers for codex do not fit what it is drawing. Nothing else
+      would have told you: watching and typing work either way.
+```
+
+The last group is the one to run after an agent upgrades. Markers are strings
+off a screen, and a CLI that moved one breaks nothing that says so — the stop
+button just stops working. An agent that has read as unknown for days is exactly
+that, and this is the only place it surfaces.
+
+It reads what the host wrote down next to its agents, so it needs none of the
+flags `kolo up` was given and works whether or not kolo is running. It exits
+non-zero when something will not work, so it can end a setup script.
+
 ## Everyone else
 
 Open the invite link and say what to call you. Failing that — an org that mints

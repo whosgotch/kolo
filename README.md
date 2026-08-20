@@ -75,6 +75,12 @@ Code; a host describes anything else in `~/.kolo/kinds.json`, and one it has no
 entry for is honestly labelled unknown rather than guessed at. See
 [docs/hub.md](docs/hub.md#which-agents).
 
+`kolo doctor` says what this machine can and cannot do with what it lends — which
+commands are actually there, what kolo knows about each of them, and whether it
+has been able to read what any of them are doing. That last one is what catches
+an agent whose CLI upgraded and moved the strings kolo reads its screen by, which
+otherwise shows up as a stop button that quietly does nothing.
+
 `kolo help` is the rest of it: `invite` and `who` for letting people in and
 seeing who is in, and `serve`, `token` and `host` for an org whose hub lives
 somewhere other than the machine running the agents. See
