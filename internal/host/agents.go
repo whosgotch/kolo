@@ -86,6 +86,11 @@ type process struct {
 	// one. Read off the agent's own screen and kept across restarts, because a
 	// process that has gone cannot be asked what it was doing.
 	session string
+	// How this agent's screen has been reading, and since when. Kept for kolo
+	// doctor: an agent whose screen has said nothing kolo understands for three
+	// days has markers that do not fit it, and nothing else would ever say so.
+	state detect.State
+	since time.Time
 }
 
 func NewAgents(cfg Config, state string) *Agents {
@@ -177,6 +182,10 @@ func (a *Agents) launch(name string) error {
 	screen, closeScreen := context.WithCancel(context.Background())
 	p.agent, p.started, p.live, p.input = started, time.Now(), live, input
 	p.resumed, p.fresh, p.bounced = resumed, false, false
+	// From the launch rather than from the first change: an agent whose screen
+	// never says anything kolo understands would otherwise have been unknown
+	// since the beginning of time, which is the one case worth noticing.
+	p.state, p.since = detect.Unknown, time.Now()
 	a.mu.Unlock()
 
 	// The PTY has to be read or the agent blocks once its buffer fills. Reading
@@ -312,12 +321,28 @@ func (a *Agents) watch(ctx context.Context, name string, kind adapter.Adapter, l
 		// On change rather than every tick.
 		if now := live.State(); now != was {
 			was = now
+			a.reading(name, now)
 			live.Announce(event{Type: "state", State: now.String()})
 		}
 		if id := kind.SessionFrom(live.Text()); id != "" {
 			a.remember(name, id)
 		}
 	}
+}
+
+// reading records how an agent's screen is being read, and from when. Written
+// down for the same reason the conversation is: the process that knew goes away,
+// and a machine coming back should be able to say what was happening.
+func (a *Agents) reading(name string, now detect.State) {
+	a.mu.Lock()
+	p, ok := a.running[name]
+	if !ok || p.state == now {
+		a.mu.Unlock()
+		return
+	}
+	p.state, p.since = now, time.Now()
+	a.mu.Unlock()
+	a.save()
 }
 
 // remember records the conversation an agent says it is in, so a restart can ask
@@ -463,13 +488,47 @@ func (a *Agents) Names() []string {
 	return names
 }
 
-// record is one agent as this machine remembers it: what the org asked for, and
-// the conversation it was in. The second is written down here and nowhere else —
-// the hub lists agents and has no use for which conversation one is in, and the
-// machine that ran it is the only party that saw the id go past.
-type record struct {
+// State is what this machine remembers about its own work: what it was lent for,
+// and what it was running.
+//
+// Written by the host and read by kolo doctor, which is why it holds what the
+// machine was started with as well as what it is doing. A diagnostic that has to
+// be handed the same flags kolo up was given is one nobody runs.
+type State struct {
+	Lends  []string `json:"lends,omitempty"`
+	Allows []string `json:"allows,omitempty"`
+	Agents []Record `json:"agents"`
+}
+
+// Record is one agent as this machine remembers it: what the org asked for, the
+// conversation it was in, and how its screen has been reading.
+//
+// The last two are written down here and nowhere else — the hub lists agents and
+// has no use for either, and the machine that ran the process is the only party
+// that saw them.
+type Record struct {
 	Spec    hub.Agent `json:"spec"`
 	Session string    `json:"session,omitempty"`
+	// State is idle, busy, dialog or unknown, as the words detect uses.
+	State string    `json:"state,omitempty"`
+	Since time.Time `json:"since,omitzero"`
+}
+
+// ReadState is what a machine last wrote down about itself. A machine that has
+// never run anything has nothing to say, which is not an error.
+func ReadState(path string) (State, error) {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return State{}, nil
+	}
+	if err != nil {
+		return State{}, fmt.Errorf("host: read %s: %w", path, err)
+	}
+	var state State
+	if err := json.Unmarshal(b, &state); err != nil {
+		return State{}, fmt.Errorf("host: parse %s: %w", path, err)
+	}
+	return state, nil
 }
 
 // Restore starts everything this machine was running when it last stopped.
@@ -477,18 +536,11 @@ func (a *Agents) Restore() error {
 	if a.state == "" {
 		return nil
 	}
-	b, err := os.ReadFile(a.state)
-	if os.IsNotExist(err) {
-		return nil
-	}
+	state, err := ReadState(a.state)
 	if err != nil {
-		return fmt.Errorf("host: read %s: %w", a.state, err)
+		return err
 	}
-	var records []record
-	if err := json.Unmarshal(b, &records); err != nil {
-		return fmt.Errorf("host: parse %s: %w", a.state, err)
-	}
-	for _, rec := range records {
+	for _, rec := range state.Agents {
 		// One failing to come back does not stop the others. These agents were
 		// mid-life when the machine went, so they resume rather than start fresh.
 		if err := a.start(rec.Spec, false, rec.Session); err != nil {
@@ -506,7 +558,9 @@ func (a *Agents) save() {
 	if a.state == "" || closing {
 		return
 	}
-	b, err := json.MarshalIndent(a.records(), "", "  ")
+	b, err := json.MarshalIndent(State{
+		Lends: a.cfg.Dirs, Allows: a.cfg.Allow, Agents: a.records(),
+	}, "", "  ")
 	if err != nil {
 		return
 	}
@@ -531,15 +585,18 @@ func (a *Agents) save() {
 
 // records is what to write down, oldest first, so a machine coming back brings
 // its agents back in the order the org made them.
-func (a *Agents) records() []record {
+func (a *Agents) records() []Record {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	out := make([]record, 0, len(a.running))
+	out := make([]Record, 0, len(a.running))
 	for _, p := range a.running {
-		out = append(out, record{Spec: p.spec, Session: p.session})
+		out = append(out, Record{
+			Spec: p.spec, Session: p.session,
+			State: p.state.String(), Since: p.since,
+		})
 	}
-	slices.SortFunc(out, func(x, y record) int { return x.Spec.CreatedAt.Compare(y.Spec.CreatedAt) })
+	slices.SortFunc(out, func(x, y Record) int { return x.Spec.CreatedAt.Compare(y.Spec.CreatedAt) })
 	return out
 }
 

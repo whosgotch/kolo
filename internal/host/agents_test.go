@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -186,12 +187,17 @@ func TestTheStateFileBringsAgentsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var written []record
+	var written State
 	if err := json.Unmarshal(b, &written); err != nil {
 		t.Fatal(err)
 	}
-	if len(written) != 1 || written[0].Spec.CreatedBy.ID != "artem" {
+	if len(written.Agents) != 1 || written.Agents[0].Spec.CreatedBy.ID != "artem" {
 		t.Fatalf("wrote %+v; who asked for it has to survive too", written)
+	}
+	// What the machine was started with, so kolo doctor does not have to be
+	// handed the flags kolo up was given.
+	if !slices.Equal(written.Lends, []string{dir}) || !slices.Equal(written.Allows, []string{"cat"}) {
+		t.Errorf("wrote %+v; what the machine lends has to survive too", written)
 	}
 
 	second := NewAgents(Config{Dirs: []string{dir}, Allow: []string{"cat"}}, state)
@@ -573,4 +579,36 @@ sleep 30
 	waitFor(t, func() bool {
 		return strings.Contains(screenOf(t, second, "checkups").Text(), "args [--resume 9f3c-11ab]")
 	})
+}
+
+// TestTheStateFileSaysHowAScreenIsReading is what kolo doctor stands on: an
+// agent whose markers do not fit it reads as unknown for its whole life, and
+// nothing else in kolo would ever say so.
+func TestTheStateFileSaysHowAScreenIsReading(t *testing.T) {
+	dir := t.TempDir()
+	state := filepath.Join(t.TempDir(), "agents.json")
+	// Named for a kind kolo has no adapter for, so nothing matches its screen.
+	script := fakeAgentNamed(t, dir, "stranger", "printf '? for shortcuts\\r\\n'\nsleep 30\n")
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, state)
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+
+	written, err := ReadState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(written.Agents) != 1 {
+		t.Fatalf("wrote %+v", written)
+	}
+	rec := written.Agents[0]
+	if rec.State != "unknown" {
+		t.Errorf("a screen nothing is known about was written down as %q", rec.State)
+	}
+	if rec.Since.IsZero() {
+		t.Error("nothing says since when, so nobody can tell a moment from three days")
+	}
 }
