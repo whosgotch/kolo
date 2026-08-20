@@ -78,17 +78,6 @@ type process struct {
 	bounced bool
 }
 
-// resumeArgv is the command with whatever brings back its last conversation
-// appended. Nil for an agent kind that cannot be resumed, so every restart of
-// one starts fresh.
-func resumeArgv(command string) []string {
-	resume := adapter.For(command).Resume
-	if len(resume) == 0 {
-		return nil
-	}
-	return append([]string{command}, resume...)
-}
-
 func NewAgents(cfg Config, state string) *Agents {
 	return &Agents{
 		cfg:     cfg,
@@ -145,9 +134,12 @@ func (a *Agents) launch(name string) error {
 		return fmt.Errorf("%s is no longer wanted", name)
 	}
 	spec := p.spec
-	argv, resumed := []string{spec.Command}, false
-	if r := resumeArgv(spec.Command); r != nil && !p.fresh {
-		argv, resumed = r, true
+	// The resume flag goes after the arguments the host lent the command with,
+	// so an agent comes back the way it was started rather than the way kolo
+	// would have started it.
+	argv, resumed := adapter.Argv(spec.Command), false
+	if r := adapter.For(spec.Command).Resume; len(r) > 0 && !p.fresh {
+		argv, resumed = append(argv, r...), true
 	}
 	a.mu.Unlock()
 

@@ -87,6 +87,12 @@ It lends the directory it was started in and allows whichever agent
 commands kolo knows about and finds installed. -dir and -allow say
 otherwise, and may be repeated.
 
+An -allow entry is a whole command line, so the flags an agent needs are
+part of what the org may start rather than something to type at it after
+it comes up:
+
+    kolo up -allow "claude --model opus"
+
 It listens on every interface, so the org can reach it, and over plain
 http a member's token crosses the network in a header anyone on the path
 can read. That is a considered choice on a network you trust.

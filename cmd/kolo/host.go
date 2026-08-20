@@ -22,7 +22,7 @@ func hostCmd(args []string) error {
 	fs := flag.NewFlagSet("host", flag.ExitOnError)
 	var dirs, allow list
 	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more)")
-	fs.Var(&allow, "allow", "an agent command the org may run (repeat, or comma-separated)")
+	fs.Var(&allow, "allow", "an agent command line the org may run, flags and all (repeat, or comma-separated)")
 	join := fs.String("join", os.Getenv("KOLO_JOIN"), "the join string the hub printed for this machine; supplies both -hub and -token (default $KOLO_JOIN)")
 	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join, if not joining with -join (default $KOLO_HUB)")
 	token := fs.String("token", os.Getenv("KOLO_TOKEN"), "this machine's token, if not joining with -join (default $KOLO_TOKEN)")
@@ -76,7 +76,7 @@ func hostCmd(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("lending %s, running %s", strings.Join(dirs, " "), strings.Join(allow, " "))
+	log.Printf("lending %s, running %s", strings.Join(dirs, ", "), strings.Join(allow, ", "))
 
 	// Before the hub is reached, so that agents come back whether or not it is
 	// up. They are the org's, not the connection's.

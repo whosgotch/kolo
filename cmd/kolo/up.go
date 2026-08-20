@@ -33,7 +33,7 @@ func upCmd(args []string) error {
 	fs := flag.NewFlagSet("up", flag.ExitOnError)
 	var dirs, allow list
 	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default the current directory)")
-	fs.Var(&allow, "allow", "an agent command the org may run (repeat, or comma-separated; default whichever kolo knows and finds installed)")
+	fs.Var(&allow, "allow", "an agent command line the org may run, flags and all (repeat; default whichever kolo knows and finds installed)")
 	orgPath := fs.String("org", config.Path("org.json"), "org file, created if it is not there")
 	name := fs.String("name", "", "org name, used only when creating the org file (default this directory's name)")
 	addr := fs.String("addr", "", "address the hub listens on (default 0.0.0.0:7300, or :443 with -tls-domain)")

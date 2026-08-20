@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -345,16 +344,28 @@ sleep 30
 	waitFor(t, func() bool { return a.Interrupt("checkups", "Artem") != nil })
 }
 
-// TestOnlyAKnownAgentKindResumes: resuming is per agent kind, and an agent kind
-// kolo has no resume command for starts clean rather than being guessed at.
-func TestOnlyAKnownAgentKindResumes(t *testing.T) {
-	got := resumeArgv("/usr/local/bin/claude")
-	if !slices.Equal(got, []string{"/usr/local/bin/claude", "--continue"}) {
-		t.Errorf("claude resumes with %v", got)
+// TestAnAgentKeepsTheFlagsItWasLentWith: what a host allows is a whole command
+// line, so an agent comes back the way the host started it and the resume flag
+// goes after rather than instead.
+func TestAnAgentKeepsTheFlagsItWasLentWith(t *testing.T) {
+	defer quickRestarts()()
+	dir := t.TempDir()
+	script := fakeAgentNamed(t, dir, "claude", `printf 'args [%s]\r\n? for shortcuts\r\n' "$*"
+sleep 30
+`)
+	command := script + " --model opus"
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{command}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, command)); err != nil {
+		t.Fatal(err)
 	}
-	if got := resumeArgv("/usr/bin/something-else"); got != nil {
-		t.Errorf("an unknown agent kind was given %v to resume with", got)
-	}
+	nextReport(t, a)
+	waitFor(t, func() bool {
+		return strings.Contains(screenOf(t, a, "checkups").Text(), "args [--model opus]")
+	})
+
+	bounce(t, a, "checkups", a.Restart, "args [--model opus --continue]")
 }
 
 // TestRestartResumesAndFreshDoesNot is the difference between the two actions.

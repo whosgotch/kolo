@@ -6,6 +6,7 @@ package adapter
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/whosgotch/kolo/internal/detect"
 )
@@ -34,8 +35,27 @@ var kinds = map[string]Adapter{
 	},
 }
 
-// For is keyed by the name of the binary rather than the path it was found at.
-func For(command string) Adapter { return kinds[filepath.Base(command)] }
+// Argv splits a command line into the program and its arguments.
+//
+// On whitespace and nothing else: an argument with a space inside it is not
+// expressible, and a host that needs one puts it in a script and lends that.
+// Quoting rules here would be a shell nobody asked for, and one that differs
+// from the shell the flag was typed into.
+func Argv(command string) []string { return strings.Fields(command) }
+
+// For is keyed by the name of the binary rather than the path it was found at,
+// and reads that name off the front of the command line: what "claude" and
+// "/opt/bin/claude --model x" have in common is the kind kolo knows.
+//
+// Arguments are not looked at. A kind is how an agent wears its states and how
+// it is resumed, and no flag changes either.
+func For(command string) Adapter {
+	argv := Argv(command)
+	if len(argv) == 0 {
+		return Adapter{}
+	}
+	return kinds[filepath.Base(argv[0])]
+}
 
 // Kinds is every agent command kolo knows how to run, sorted. What a host may
 // be told to start is still only what it was started with; this is for asking
