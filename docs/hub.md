@@ -274,6 +274,7 @@ knows what it is running, and the hub is told rather than configured:
 | `dialogFooter` | what a question's footer says |
 | `dialogSelected` | the sigil in front of the highlighted choice |
 | `resume` | what to append to the command line to continue the last conversation |
+| `interrupt` | the key that stops this agent working: `esc`, `ctrl+c`, or a single character. Left out it is `esc`, which is what most of them use |
 | `session` | for an agent that resumes by naming a conversation rather than asking for the last one: a pattern whose one capture is the id, read off the agent's own screen. `resume` then carries `{session}` where the id goes |
 | `settle` | for an agent that says nothing while it waits: how long the screen must be unchanged to read as idle. Prefer leaving it out — see `docs/probe-findings.md` #6 |
 
@@ -309,6 +310,12 @@ startup: a `{session}` nothing knows how to fill, a pattern nothing uses, a
 pattern that does not compile, or one that captures other than exactly once, are
 all refused when the file is read rather than at a restart somebody was counting
 on.
+
+`interrupt` is the one field that is not read off the screen — it is a key kolo
+presses rather than something the agent says. It is only ever pressed while the
+agent's own `busy` marker is up, because the key that means stop while an agent
+is working means something else while it is not: Esc at an input box clears it,
+and at a question it answers by cancelling.
 
 These are strings from that agent's screen, not from its source, and getting one
 subtly wrong is worse than leaving it out: an agent that reads as idle while it

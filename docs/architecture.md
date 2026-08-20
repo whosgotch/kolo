@@ -88,7 +88,7 @@ safe:
 | action | permitted when |
 |---|---|
 | answer a question | a dialog with choices is on screen |
-| interrupt | the agent is working |
+| interrupt | the agent is working, and with that kind's own key |
 | restart, start fresh, stop | always |
 
 Answering exists for the board, where a member is not watching the screen at all:
@@ -99,16 +99,22 @@ first.
 
 ## What kolo knows about each agent kind
 
-Two things:
+Three things:
 
 - how its screen looks when idle, working, and asking a question
 - how to resume its last conversation
+- which key stops it working
 
 They live together in `internal/adapter`, one value per kind, looked up by the
 name of the binary at the front of the command line — the arguments a host lends
-it with change neither. It was three things until members could type for
-themselves: which lines address the agent's own CLI mattered while kolo was
-typing them.
+it with change neither.
+
+The interrupt key is the one of the three that is not read off the screen: it is
+a key kolo presses rather than something the agent said. It is only ever pressed
+while that kind's own busy marker is up, so a key that means stop while an agent
+is working is never sent while it means something else. It was Esc for every kind
+there was until kinds kolo does not ship could be described, and an agent that
+stops on Ctrl-C was being sent the key that clears its input.
 
 Claude Code is the one kolo ships. A host adds others in `~/.kolo/kinds.json`,
 which replaces a shipped kind of the same name, so an org runs an agent kolo has
