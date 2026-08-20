@@ -80,9 +80,9 @@ to the hub with the screen they describe rather than being looked up there, and
 a host adds a kind in `~/.kolo/kinds.json`. Anything that draws a terminal is
 already watched, typed at and stopped, and resuming covers both shapes an agent
 uses — the last conversation, or one named by an id read off its own screen.
-What is left of this step is the proof —
-a second kind kolo ships with, arrived at by recording a real one, and if
-shipping it needs a code change then the seam was in the wrong place.
+What is left of this step is the proof — a second kind kolo ships with,
+arrived at by recording a real one, and if shipping it needs a code change
+then the seam was in the wrong place.
 
 ## Then
 
