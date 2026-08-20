@@ -62,7 +62,16 @@ and makes what it needs on the way, all of it under `~/.kolo`: the org file,
 this machine's credential, and an invite link to send the team — good for ten
 people over a week, withdrawable with one command. It lends the directory it
 was started in and runs whichever agents it finds installed, both of which
-`-dir` and `-allow` override.
+`-dir` and `-allow` override — with flags and all, since `-allow "claude --model
+opus"` is the agent somebody actually wanted.
+
+Any command that draws a terminal runs, and the org can watch it, type at it and
+stop it without kolo knowing what it is. Knowing the kind buys two more things,
+both read off the agent's own screen: the list saying which agents are asking
+something, and a conversation that survives a restart. Kolo ships with Claude
+Code; a host describes anything else in `~/.kolo/kinds.json`, and one it has no
+entry for is honestly labelled unknown rather than guessed at. See
+[docs/hub.md](docs/hub.md#which-agents).
 
 `kolo help` is the rest of it: `invite` and `who` for letting people in and
 seeing who is in, and `serve`, `token` and `host` for an org whose hub lives

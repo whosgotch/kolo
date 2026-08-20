@@ -214,6 +214,10 @@ instead, or `$KOLO_HUB` and `$KOLO_TOKEN`.
 Anyone in the org can now create an agent in one of those directories, running
 one of those commands, and nothing else.
 
+An `-allow` entry is a whole command line, so the flags an agent needs are part
+of what the org may start rather than something somebody types at it once it is
+up: `-allow "claude --model opus"`.
+
 That bounds what can be **started**, not what a running agent can **reach**: it
 has the host user's account, so `~/.ssh` and every other repo on the disk are
 open to whoever is driving it. Run the host as a user that owns only what the org
@@ -230,6 +234,60 @@ machine.
 
 Whoever runs the host does not use it. They do not need a terminal open, and
 nothing the org does with an agent should ever require them.
+
+## Which agents
+
+Any command that draws a terminal will run. The org can watch it, take its
+keyboard, type at it, stop it and restart it, and none of that depends on kolo
+knowing what the command is.
+
+Two things do, and both are read off the agent's own screen:
+
+- **which of them are asking something**, which is what makes the agent list a
+  board rather than a row of black rectangles, and what lets a question be
+  answered by whoever is free instead of by whoever takes the keyboard
+- **how to bring back its last conversation**, without which every restart is a
+  fresh start
+
+Kolo ships with those for `claude`. For anything else, describe it in
+`~/.kolo/kinds.json` — the host's file, because the host is the machine that
+knows what it is running, and the hub is told rather than configured:
+
+```json
+{
+  "codex": {
+    "markers": {
+      "idle": ["? for shortcuts"],
+      "busy": "esc to interrupt",
+      "dialogFooter": "Esc to cancel",
+      "dialogSelected": "❯"
+    },
+    "resume": ["--continue"]
+  }
+}
+```
+
+| field | what it is |
+|---|---|
+| `idle` | the hints the input box carries when it can take a line. Any one of them is enough: they change between versions and modes while meaning the same thing |
+| `busy` | what the agent puts on screen while it is working. This is the one that matters most — without it, working is indistinguishable from waiting |
+| `dialogFooter` | what a question's footer says |
+| `dialogSelected` | the sigil in front of the highlighted choice |
+| `resume` | what to append to the command line to continue the last conversation |
+| `settle` | for an agent that says nothing while it waits: how long the screen must be unchanged to read as idle. Prefer leaving it out — see `docs/probe-findings.md` #6 |
+
+An entry replaces a kind kolo ships with rather than merging into it, so an agent
+that moved its footer between releases is fixed here without one of kolo.
+
+These are strings from that agent's screen, not from its source, and getting one
+subtly wrong is worse than leaving it out: an agent that reads as idle while it
+is working swallows what anybody sends it. Record a session rather than guess —
+`cmd/kolorec` drives an agent through a script and writes down what came back.
+
+A command with no entry still runs. It is watched and typed at like any other;
+what it loses is the list saying what it is doing, the answer buttons, and its
+conversation across a restart. Kolo says so rather than guessing: an unreadable
+screen reads as unknown, and nothing is claimed about it.
 
 ## Everyone else
 

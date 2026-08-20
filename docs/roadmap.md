@@ -69,6 +69,13 @@ terminal. One agent per directory, enforced.
 Screen markers and a resume command for one more agent. This is what proves the
 seam is real rather than a shape Claude Code happens to fit.
 
+The seam is now data: an `-allow` entry is a whole command line, markers travel
+to the hub with the screen they describe rather than being looked up there, and
+a host adds a kind in `~/.kolo/kinds.json`. Anything that draws a terminal is
+already watched, typed at and stopped. What is left of this step is the proof —
+a second kind kolo ships with, arrived at by recording a real one, and if
+shipping it needs a code change then the seam was in the wrong place.
+
 ## Then
 
 The log — who asked for what, when, who stopped it — durable across restarts.

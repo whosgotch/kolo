@@ -105,15 +105,31 @@ Two things:
 - how to resume its last conversation
 
 They live together in `internal/adapter`, one value per kind, looked up by the
-name of the binary. It was three until members could type for themselves: which
-lines address the agent's own CLI mattered while kolo was typing them.
+name of the binary at the front of the command line — the arguments a host lends
+it with change neither. It was three things until members could type for
+themselves: which lines address the agent's own CLI mattered while kolo was
+typing them.
 
-Claude Code is the first. An agent kind kolo has neither for gets the empty
-adapter: no marker matches, so nothing is claimed about its screen and no
-question is answered on it, and it cannot be resumed, so it restarts fresh. It is
-still watchable, and still typeable by whoever holds its keyboard — which is the
-difference this change made. An unknown kind used to be watchable and nothing
-else.
+Claude Code is the one kolo ships. A host adds others in `~/.kolo/kinds.json`,
+which replaces a shipped kind of the same name, so an org runs an agent kolo has
+never heard of — or fixes one whose footer moved between releases — without
+waiting for a release of kolo. See [hub.md](hub.md#which-agents).
+
+The markers are the host's, and they travel to the hub on the agent's screen
+socket rather than being looked up there. The hub knows no agent kinds at all: it
+reads the screen it is handed with what it was handed to read it with. A second
+table on the hub would be one more thing to agree with the host's, and learning a
+new agent would mean upgrading the machine that never sees one.
+
+An agent kind kolo has neither for gets the empty adapter: no marker matches, so
+nothing is claimed about its screen and no question is answered on it, and it
+cannot be resumed, so it restarts fresh. It is still watchable, and still typeable
+by whoever holds its keyboard — which is the difference this change made. An
+unknown kind used to be watchable and nothing else.
+
+That is the whole of what "supporting an agent" means here. Anything that draws a
+terminal runs and is shared; a kind with markers is also legible from the list
+and survives a restart.
 
 ## Restart
 
