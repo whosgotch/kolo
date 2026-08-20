@@ -41,7 +41,7 @@ See [docs/architecture.md](docs/architecture.md) for the shape,
 ## What works today
 
 The loop. A host lends a machine, anyone in the org makes an agent on it from a
-browser, watches it work, sends it messages, answers the questions it asks,
+browser, watches it work, types at it, answers the questions it asks,
 stops it when it is going wrong, and restarts it — with its conversation, or
 without — and the agents survive being killed and outlive the host restarting.
 
@@ -96,11 +96,18 @@ without trace or its Enter answers a question the agent was asking. See
 [docs/probe-findings.md](docs/probe-findings.md); every part of it was found by
 experiment, not guessed at.
 
-Answering works the other way round, and is the one thing kolo still does for
-somebody. The choices are read off the agent's screen and offered as buttons, and
-the answer carries the label the member was shown — so it either lands on the
-question they were offered or is refused. That is what lets a question be
-answered by whoever is free, without them taking the keyboard to do it.
+Answering a question went the same way, and for the same reason. Kolo used to
+read the choices off the screen and offer them as buttons; it does not any more.
+Which choices a question has, what they mean, and which key selects one are the
+agent's own business, and kolo reverse-engineering them from a picture of a
+terminal is the same mistake in a smaller frame — right for the one agent it was
+written against, wrong the moment that agent redraws its dialog or another agent
+draws a different one.
+
+What kolo says is that the agent is waiting on a person. The question itself is
+on the screen everybody can already see, and whoever is free takes the keyboard
+and presses what it says. When an agent CLI offers a real interface for its
+questions, that is what kolo will use.
 
 A restart resumes the conversation, and one whose resume is refused — the CLI
 upgraded, the state gone — comes back clean and says so on the page. Silent

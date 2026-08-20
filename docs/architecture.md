@@ -82,20 +82,30 @@ gone. What is left of it is in `docs/probe-findings.md` #3–#5, which is worth
 reading anyway: it is the evidence that typing at somebody else's TUI from a
 program is harder than it looks.
 
-Two things kolo still does on a member's behalf, each permitted only where it is
-safe:
+What kolo does on a member's behalf, each permitted only where it is safe:
 
 | action | permitted when |
 |---|---|
-| answer a question | a dialog with choices is on screen |
 | interrupt | the agent is working, and with that kind's own key |
 | restart, start fresh, stop | always |
 
-Answering exists for the board, where a member is not watching the screen at all:
-the choices are read off it, and an answer carries the label the member was shown
-so it either lands on the question they were offered or is refused. Interrupting
-exists so that stopping a runaway agent does not require taking the keyboard
-first.
+Interrupting exists so that stopping a runaway agent does not require taking the
+keyboard first. It is the only key kolo presses that nobody pressed.
+
+**Answering a question is not on that list.** Kolo used to read the choices off
+the dialog and offer them as buttons, checking the label against the screen
+before pressing the number. It worked, and it was still the wrong shape: which
+choices a question has, what they mean, and which key selects one belong to the
+agent, and a program deducing them from a picture of a terminal is guessing about
+somebody else's interface — the same mistake as the message queue, in a smaller
+frame. It held for exactly one agent's dialog, and only until that agent redrew
+it.
+
+So kolo says a question is up and stops there. Reading the question is what the
+screen is for; answering it is what taking the keyboard is for. When an agent CLI
+offers its questions through an interface of its own, that interface is what kolo
+will use — a question the agent hands over is a question kolo can carry without
+inventing anything.
 
 ## What kolo knows about each agent kind
 
@@ -104,6 +114,9 @@ Three things:
 - how its screen looks when idle, working, and asking a question
 - how to resume its last conversation
 - which key stops it working
+
+Not what it is asking. That is the agent's, and whoever holds its keyboard reads
+it off the screen like a person sitting in front of it.
 
 They live together in `internal/adapter`, one value per kind, looked up by the
 name of the binary at the front of the command line — the arguments a host lends
@@ -128,8 +141,8 @@ table on the hub would be one more thing to agree with the host's, and learning 
 new agent would mean upgrading the machine that never sees one.
 
 An agent kind kolo has neither for gets the empty adapter: no marker matches, so
-nothing is claimed about its screen and no question is answered on it, and it
-cannot be resumed, so it restarts fresh. It is still watchable, and still typeable
+nothing is claimed about its screen, and it cannot be resumed, so it restarts
+fresh. It is still watchable, and still typeable
 by whoever holds its keyboard — which is the difference this change made. An
 unknown kind used to be watchable and nothing else.
 
@@ -177,8 +190,8 @@ cut off. Each window then draws that grid as large as it will go.
 | the log | | ✓ |
 
 Whatever is decided from the screen is decided next to the screen. The hub
-carries keystrokes and answers; it never reads a screen to judge whether they may
-be sent.
+carries keystrokes and interrupts; it never reads a screen to judge whether they
+may be sent.
 
 ## Security
 

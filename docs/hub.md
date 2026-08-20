@@ -244,8 +244,8 @@ knowing what the command is.
 Two things do, and both are read off the agent's own screen:
 
 - **which of them are asking something**, which is what makes the agent list a
-  board rather than a row of black rectangles, and what lets a question be
-  answered by whoever is free instead of by whoever takes the keyboard
+  board rather than a row of black rectangles: whoever is free can see an agent
+  is waiting on a person and go and be that person
 - **how to bring back its last conversation**, without which every restart is a
   fresh start
 
@@ -272,7 +272,7 @@ knows what it is running, and the hub is told rather than configured:
 | `idle` | the hints the input box carries when it can take a line. Any one of them is enough: they change between versions and modes while meaning the same thing |
 | `busy` | what the agent puts on screen while it is working. This is the one that matters most — without it, working is indistinguishable from waiting |
 | `dialogFooter` | what a question's footer says |
-| `dialogSelected` | the sigil in front of the highlighted choice |
+| `dialogSelected` | the sigil in front of the highlighted choice. Used to recognise a question, never to answer one |
 | `resume` | what to append to the command line to continue the last conversation |
 | `interrupt` | the key that stops this agent working: `esc`, `ctrl+c`, or a single character. Left out it is `esc`, which is what most of them use |
 | `session` | for an agent that resumes by naming a conversation rather than asking for the last one: a pattern whose one capture is the id, read off the agent's own screen. `resume` then carries `{session}` where the id goes |
@@ -312,10 +312,15 @@ all refused when the file is read rather than at a restart somebody was counting
 on.
 
 `interrupt` is the one field that is not read off the screen — it is a key kolo
-presses rather than something the agent says. It is only ever pressed while the
-agent's own `busy` marker is up, because the key that means stop while an agent
-is working means something else while it is not: Esc at an input box clears it,
-and at a question it answers by cancelling.
+presses rather than something the agent says, and the only key it presses that
+nobody pressed. It is only ever sent while the agent's own `busy` marker is up,
+because the key that means stop while an agent is working means something else
+while it is not: Esc at an input box clears it, and at a question it answers by
+cancelling.
+
+Nothing here describes a question's choices, and nothing needs to. Kolo says an
+agent is asking something; the question is on the screen, and answering it means
+taking the keyboard.
 
 These are strings from that agent's screen, not from its source, and getting one
 subtly wrong is worse than leaving it out: an agent that reads as idle while it
@@ -323,8 +328,8 @@ is working swallows what anybody sends it. Record a session rather than guess �
 `cmd/kolorec` drives an agent through a script and writes down what came back.
 
 A command with no entry still runs. It is watched and typed at like any other;
-what it loses is the list saying what it is doing, the answer buttons, and its
-conversation across a restart. Kolo says so rather than guessing: an unreadable
+what it loses is the list saying what it is doing, and its conversation across a
+restart. Kolo says so rather than guessing: an unreadable
 screen reads as unknown, and nothing is claimed about it.
 
 ## Everyone else
@@ -333,7 +338,7 @@ Open the invite link and say what to call you. Failing that — an org that mint
 one token per person with `kolo token` — open the hub and paste the token that
 was sent to you. The agent
 list is the front door: create one, join one someone else is already using, send
-it work, answer its questions, restart it, stop it.
+it work, take its keyboard to answer what it asks, restart it, stop it.
 
 ## Revoking a member
 

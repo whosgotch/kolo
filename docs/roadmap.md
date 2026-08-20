@@ -44,12 +44,18 @@ agent until the host walks back to their keyboard, and the host is not supposed
 to be there at all. An agent nobody can interrupt is worse — it goes down a wrong
 path and the org watches.
 
-All four are built. Answering and interrupting send no keystroke anybody chose:
-the choices are read off the screen and offered as buttons, an answer is the
-number of the option plus the label the member was shown, and it is refused if
-the screen has moved on to a different question. Interrupt is Esc, and only while
-the agent is working — Esc means cancel at a dialog and clear at an input box,
-and neither is what somebody pressing stop is asking for.
+All four are reachable from the browser, and the host is never needed for any of
+them. Answering is not a thing kolo does, though: the member takes the keyboard
+and presses what the screen says, which is what "without the host" was asking
+for. Kolo read the choices off the dialog and offered them as buttons for a
+while — it worked for one agent's dialog and was a guess about anybody else's, so
+it went the way the queue went. When an agent CLI hands its questions over
+through an interface, that is what to build against.
+
+Interrupt is the one key kolo presses that nobody pressed, and it goes only while
+the agent is working: the key that means stop then means cancel at a dialog and
+clear at an input box, and neither is what somebody pressing stop is asking for.
+Which key it is belongs to the agent kind.
 
 Restart and start fresh are a different mechanism: the process, and the resume
 command in the per-agent adapter. Neither needs a particular screen, because
