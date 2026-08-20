@@ -137,6 +137,15 @@ Agents are supervised, and resume on restart. When resume fails — killed
 mid-tool-call, CLI upgraded, state gone — the agent starts clean and the log says
 so. Silent context loss is worse than visible context loss.
 
+How to resume is the kind's, and comes in two shapes: an agent that asks for its
+last conversation (`--continue`), and one that names a particular conversation
+(`--resume <id>`). The id for the second is read off the agent's own screen, kept
+by the host, and put back on the command line at the next launch — the same
+principle as everything else here, which is that what is known about an agent is
+what the agent said, next to the screen it said it on. An agent that has never
+named a conversation is not resumed; a fresh start that says so beats a command
+line with a hole in it.
+
 A restart replaces the screen, so the buffer is cleared and re-seeded from the
 new process rather than repainting newcomers with a picture of a process that no
 longer exists.

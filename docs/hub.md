@@ -274,10 +274,41 @@ knows what it is running, and the hub is told rather than configured:
 | `dialogFooter` | what a question's footer says |
 | `dialogSelected` | the sigil in front of the highlighted choice |
 | `resume` | what to append to the command line to continue the last conversation |
+| `session` | for an agent that resumes by naming a conversation rather than asking for the last one: a pattern whose one capture is the id, read off the agent's own screen. `resume` then carries `{session}` where the id goes |
 | `settle` | for an agent that says nothing while it waits: how long the screen must be unchanged to read as idle. Prefer leaving it out — see `docs/probe-findings.md` #6 |
 
 An entry replaces a kind kolo ships with rather than merging into it, so an agent
 that moved its footer between releases is fixed here without one of kolo.
+
+### Agents that resume by name
+
+`--continue` is the easy shape. An agent that instead wants `--resume <id>` says
+which conversation it is in on its own screen, usually once at startup, and that
+is where kolo reads it:
+
+```json
+{
+  "robo": {
+    "markers": {"idle": ["type a message"], "busy": "esc to interrupt"},
+    "resume": ["--resume", "{session}"],
+    "session": "session: ([0-9a-f-]+)"
+  }
+}
+```
+
+The host takes the id down as it goes past and keeps it in `-state`, so a restart
+— and a machine coming back in the morning — asks for that conversation by name.
+The last id on screen wins: an agent told to start a new conversation says so on
+the same screen, and resuming the one before it would bring back what somebody
+just cleared. Starting fresh from the browser drops the id along with the
+conversation.
+
+An agent that never says one restarts fresh and says so, which is the same thing
+that happens when the agent itself refuses a resume. Both halves are checked at
+startup: a `{session}` nothing knows how to fill, a pattern nothing uses, a
+pattern that does not compile, or one that captures other than exactly once, are
+all refused when the file is read rather than at a restart somebody was counting
+on.
 
 These are strings from that agent's screen, not from its source, and getting one
 subtly wrong is worse than leaving it out: an agent that reads as idle while it

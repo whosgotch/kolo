@@ -68,7 +68,9 @@ opus"` is the agent somebody actually wanted.
 Any command that draws a terminal runs, and the org can watch it, type at it and
 stop it without kolo knowing what it is. Knowing the kind buys two more things,
 both read off the agent's own screen: the list saying which agents are asking
-something, and a conversation that survives a restart. Kolo ships with Claude
+something, and a conversation that survives a restart — including for an agent
+that resumes by naming a conversation rather than asking for the last one, whose
+id kolo reads off its screen and keeps. Kolo ships with Claude
 Code; a host describes anything else in `~/.kolo/kinds.json`, and one it has no
 entry for is honestly labelled unknown rather than guessed at. See
 [docs/hub.md](docs/hub.md#which-agents).
