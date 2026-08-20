@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -81,8 +82,14 @@ func serveCmd(args []string) error {
 	return s.Serve()
 }
 
+// portOf is the port an address is listening on.
+//
+// net.SplitHostPort rather than cutting at a colon: a listener on every
+// interface reports itself as [::]:7300, and the first colon in that is inside
+// the address. Cutting there produced ":]:7300", which went on to be joined
+// into a loopback URL the host half could not dial.
 func portOf(addr string) string {
-	if _, port, ok := strings.Cut(addr, ":"); ok {
+	if _, port, err := net.SplitHostPort(addr); err == nil {
 		return port
 	}
 	return addr
@@ -90,12 +97,12 @@ func portOf(addr string) string {
 
 // nextAddr suggests the port above the one that was taken.
 func nextAddr(addr string) string {
-	host, port, ok := strings.Cut(addr, ":")
-	n, err := strconv.Atoi(port)
-	if !ok || err != nil {
+	host, port, err := net.SplitHostPort(addr)
+	n, convErr := strconv.Atoi(port)
+	if err != nil || convErr != nil {
 		return addr
 	}
-	return host + ":" + strconv.Itoa(n+1)
+	return net.JoinHostPort(host, strconv.Itoa(n+1))
 }
 
 // tokenCmd mints credentials for one member or one host and records them in the
