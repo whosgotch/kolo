@@ -58,6 +58,12 @@ type Agents struct {
 	// A full buffer drops news rather than blocking a process trying to exit; a
 	// reconnecting host says what it has in its hello anyway.
 	reports chan any
+
+	// One writer to the state file at a time. It is written from whichever
+	// goroutine noticed the change — an agent starting, one exiting, one saying
+	// which conversation it is in — and two of those overlapping leaves a file
+	// that is neither.
+	saveMu sync.Mutex
 }
 
 type process struct {
@@ -76,6 +82,10 @@ type process struct {
 	resumed bool
 	// An exit the org asked for, which must not count towards giving up.
 	bounced bool
+	// The conversation this agent is in, for a kind whose resume command names
+	// one. Read off the agent's own screen and kept across restarts, because a
+	// process that has gone cannot be asked what it was doing.
+	session string
 }
 
 func NewAgents(cfg Config, state string) *Agents {
@@ -89,9 +99,11 @@ func NewAgents(cfg Config, state string) *Agents {
 
 // Start runs an agent, after checking it is one this machine agreed to run. A
 // new agent starts fresh: a conversation left in its directory is not its own.
-func (a *Agents) Start(spec hub.Agent) error { return a.start(spec, true) }
+func (a *Agents) Start(spec hub.Agent) error { return a.start(spec, true, "") }
 
-func (a *Agents) start(spec hub.Agent, fresh bool) error {
+// start records an agent and launches it. session is the conversation it is to
+// come back to, which only a machine restoring what it was running has.
+func (a *Agents) start(spec hub.Agent, fresh bool, session string) error {
 	spec.Dir = filepath.Clean(spec.Dir)
 	if !slices.Contains(a.cfg.Dirs, spec.Dir) {
 		return fmt.Errorf("this machine does not lend %s", spec.Dir)
@@ -113,7 +125,7 @@ func (a *Agents) start(spec hub.Agent, fresh bool) error {
 	}
 	// Reserved before the process exists, so two spawns arriving together cannot
 	// both find the name free.
-	a.running[spec.Name] = &process{spec: spec, fresh: fresh}
+	a.running[spec.Name] = &process{spec: spec, fresh: fresh, session: session}
 	a.mu.Unlock()
 
 	if err := a.launch(spec.Name); err != nil {
@@ -133,12 +145,12 @@ func (a *Agents) launch(name string) error {
 		a.mu.Unlock()
 		return fmt.Errorf("%s is no longer wanted", name)
 	}
-	spec := p.spec
+	spec, was := p.spec, p.session
 	// The resume flag goes after the arguments the host lent the command with,
 	// so an agent comes back the way it was started rather than the way kolo
 	// would have started it.
 	argv, resumed := adapter.Argv(spec.Command), false
-	if r := adapter.For(spec.Command).Resume; len(r) > 0 && !p.fresh {
+	if r, ok := adapter.For(spec.Command).ResumeArgs(was); ok && !p.fresh {
 		argv, resumed = append(argv, r...), true
 	}
 	a.mu.Unlock()
@@ -171,7 +183,7 @@ func (a *Agents) launch(name string) error {
 	// it into the session is also what keeps the screen current.
 	go io.Copy(live, started)
 	go a.stream(screen, name, live)
-	go a.watch(screen, input, live)
+	go a.watch(screen, name, kind, input, live)
 	go a.wait(name, started, closeScreen)
 	return nil
 }
@@ -249,7 +261,10 @@ func (a *Agents) bounce(name, from string, fresh bool) error {
 	}
 	p.bounced = true
 	if fresh {
-		p.fresh = true
+		// The id goes with it. Otherwise the process dying before the new one has
+		// said what it is now would bring back the conversation somebody just
+		// asked to be rid of.
+		p.fresh, p.session = true, ""
 	}
 	running, v := p.agent, p.view()
 	a.mu.Unlock()
@@ -292,9 +307,10 @@ func (v view) announce(e event) {
 	v.live.Announce(e)
 }
 
-// watch tells everybody what the agent's screen has become. Polling, because a
-// screen arriving at a particular arrangement has no event to subscribe to.
-func (a *Agents) watch(ctx context.Context, input *relay.Relay, live *session.Session) {
+// watch tells everybody what the agent's screen has become, and takes down the
+// conversation it says it is in. Polling, because a screen arriving at a
+// particular arrangement has no event to subscribe to.
+func (a *Agents) watch(ctx context.Context, name string, kind adapter.Adapter, input *relay.Relay, live *session.Session) {
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
@@ -316,7 +332,25 @@ func (a *Agents) watch(ctx context.Context, input *relay.Relay, live *session.Se
 			was, asked = now, options
 			live.Announce(event{Type: "state", State: now.String(), Options: options})
 		}
+		if id := kind.SessionFrom(live.Text()); id != "" {
+			a.remember(name, id)
+		}
 	}
+}
+
+// remember records the conversation an agent says it is in, so a restart can ask
+// for that one by name. Written down when it changes, because the state file is
+// what survives the machine going away mid-conversation.
+func (a *Agents) remember(name, id string) {
+	a.mu.Lock()
+	p, ok := a.running[name]
+	if !ok || p.session == id {
+		a.mu.Unlock()
+		return
+	}
+	p.session = id
+	a.mu.Unlock()
+	a.save()
 }
 
 // event is what a page is told about an agent. The screen shows what the agent
@@ -357,8 +391,9 @@ func (a *Agents) wait(name string, started *agent.Agent, closeScreen context.Can
 		p.fails = 0
 	case p.resumed:
 		// A resumed run dying at once reads as the resume being refused. Starting
-		// clean and saying so beats losing the context silently.
-		p.fresh = true
+		// clean and saying so beats losing the context silently. The id goes with
+		// it: it is the one that was just refused.
+		p.fresh, p.session = true, ""
 		reason = "could not resume the conversation; starting fresh"
 	default:
 		p.fails++
@@ -447,6 +482,15 @@ func (a *Agents) Names() []string {
 	return names
 }
 
+// record is one agent as this machine remembers it: what the org asked for, and
+// the conversation it was in. The second is written down here and nowhere else —
+// the hub lists agents and has no use for which conversation one is in, and the
+// machine that ran it is the only party that saw the id go past.
+type record struct {
+	Spec    hub.Agent `json:"spec"`
+	Session string    `json:"session,omitempty"`
+}
+
 // Restore starts everything this machine was running when it last stopped.
 func (a *Agents) Restore() error {
 	if a.state == "" {
@@ -459,15 +503,15 @@ func (a *Agents) Restore() error {
 	if err != nil {
 		return fmt.Errorf("host: read %s: %w", a.state, err)
 	}
-	var specs []hub.Agent
-	if err := json.Unmarshal(b, &specs); err != nil {
+	var records []record
+	if err := json.Unmarshal(b, &records); err != nil {
 		return fmt.Errorf("host: parse %s: %w", a.state, err)
 	}
-	for _, spec := range specs {
+	for _, rec := range records {
 		// One failing to come back does not stop the others. These agents were
 		// mid-life when the machine went, so they resume rather than start fresh.
-		if err := a.start(spec, false); err != nil {
-			a.report(spec.Name, hub.StatusFailed, err.Error())
+		if err := a.start(rec.Spec, false, rec.Session); err != nil {
+			a.report(rec.Spec.Name, hub.StatusFailed, err.Error())
 		}
 	}
 	return nil
@@ -481,14 +525,41 @@ func (a *Agents) save() {
 	if a.state == "" || closing {
 		return
 	}
-	b, err := json.MarshalIndent(a.Specs(), "", "  ")
+	b, err := json.MarshalIndent(a.records(), "", "  ")
 	if err != nil {
 		return
 	}
+
+	a.saveMu.Lock()
+	defer a.saveMu.Unlock()
+
 	if err := os.MkdirAll(filepath.Dir(a.state), 0o700); err != nil {
 		return
 	}
-	os.WriteFile(a.state, b, 0o600)
+	// Written whole and renamed into place, as the org file is: this is what a
+	// machine reads to find out what it was running, and a half-written one is a
+	// machine that was running nothing.
+	tmp := a.state + ".new"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, a.state); err != nil {
+		os.Remove(tmp)
+	}
+}
+
+// records is what to write down, oldest first, so a machine coming back brings
+// its agents back in the order the org made them.
+func (a *Agents) records() []record {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	out := make([]record, 0, len(a.running))
+	for _, p := range a.running {
+		out = append(out, record{Spec: p.spec, Session: p.session})
+	}
+	slices.SortFunc(out, func(x, y record) int { return x.Spec.CreatedAt.Compare(y.Spec.CreatedAt) })
+	return out
 }
 
 func (a *Agents) forget(name string) {

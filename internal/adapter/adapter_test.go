@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -105,5 +106,73 @@ func write(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestAKindThatResumesByNamingAConversation is the gap this closes: an agent
+// whose resume command wants an id rather than "the last one".
+func TestAKindThatResumesByNamingAConversation(t *testing.T) {
+	defer restoreKinds()()
+	path := filepath.Join(t.TempDir(), "kinds.json")
+	write(t, path, `{"robo": {"markers": {"busy": "working"},
+		"resume": ["--resume", "{session}"], "session": "session: ([0-9a-f-]+)"}}`)
+	if _, err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	robo := For("robo")
+
+	id := robo.SessionFrom("robo v2\r\nsession: 9f3c-11ab\r\ntype a message\r\n")
+	if id != "9f3c-11ab" {
+		t.Fatalf("read %q off the screen", id)
+	}
+	got, ok := robo.ResumeArgs(id)
+	if !ok || !slices.Equal(got, []string{"--resume", "9f3c-11ab"}) {
+		t.Errorf("resumes with %v, %v", got, ok)
+	}
+	// A kind that needs an id and has never seen one cannot resume. Starting
+	// fresh and saying so beats a command line with a hole in it.
+	if got, ok := robo.ResumeArgs(""); ok {
+		t.Errorf("resumed a conversation it cannot name: %v", got)
+	}
+	// A kind that names nothing is unaffected by an id it never asked for.
+	if got, ok := For("claude").ResumeArgs("9f3c-11ab"); !ok || !slices.Equal(got, []string{"--continue"}) {
+		t.Errorf("claude resumes with %v, %v", got, ok)
+	}
+}
+
+// TestTheLastConversationOnScreenWins: an agent told to start a new conversation
+// says so on the same screen, and resuming the one before it would bring back
+// what somebody just cleared.
+func TestTheLastConversationOnScreenWins(t *testing.T) {
+	robo := Adapter{Resume: []string{"-r", "{session}"}, Session: `session: (\S+)`}
+	if id := robo.SessionFrom("session: one\r\ncleared\r\nsession: two\r\n"); id != "two" {
+		t.Errorf("read %q", id)
+	}
+	if id := robo.SessionFrom("nothing about a session here"); id != "" {
+		t.Errorf("read %q off a screen that carries none", id)
+	}
+	// A pattern that drags in half the screen is a pattern to fix, not an id to
+	// put on a command line.
+	if id := robo.SessionFrom("session: " + strings.Repeat("x", maxSession+1)); id != "" {
+		t.Errorf("read %d characters as an id", len(id))
+	}
+}
+
+// TestLoadRefusesAHalfDescribedSession: each half is useless without the other,
+// and both fail at a restart somebody was counting on rather than at startup.
+func TestLoadRefusesAHalfDescribedSession(t *testing.T) {
+	defer restoreKinds()()
+	dir := t.TempDir()
+	for _, bad := range []string{
+		`{"robo": {"resume": ["--resume", "{session}"], "markers": {"busy": "x"}}}`,
+		`{"robo": {"resume": ["--continue"], "session": "id: (\\S+)", "markers": {"busy": "x"}}}`,
+		`{"robo": {"resume": ["-r", "{session}"], "session": "id: (", "markers": {"busy": "x"}}}`,
+		`{"robo": {"resume": ["-r", "{session}"], "session": "id: (\\S+) (\\S+)", "markers": {"busy": "x"}}}`,
+	} {
+		path := filepath.Join(dir, "kinds.json")
+		write(t, path, bad)
+		if _, err := Load(path); err == nil {
+			t.Errorf("%s was accepted", bad)
+		}
 	}
 }

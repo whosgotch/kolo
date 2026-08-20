@@ -9,8 +9,12 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"unicode"
 
 	"github.com/whosgotch/kolo/internal/detect"
 )
@@ -20,7 +24,98 @@ type Adapter struct {
 	Markers detect.Markers `json:"markers"`
 	// Resume is appended to the command to bring back the last conversation.
 	// Empty means the kind cannot be resumed, so every restart of one is fresh.
+	//
+	// An agent that resumes by naming a particular conversation carries
+	// {session} in one of these, and Session says where to read that name.
 	Resume []string `json:"resume,omitempty"`
+	// Session is a pattern whose first capture is the id this kind's resume
+	// command needs, matched against the agent's own screen — the same screen
+	// everything else about the agent is read off, because the id is something
+	// the agent said rather than something kolo arranged.
+	//
+	// Empty for a kind that resumes without naming anything.
+	Session string `json:"session,omitempty"`
+}
+
+// SessionPlaceholder stands in the resume command for the id read off the
+// screen. Braces because an agent's own flags do not use them.
+const SessionPlaceholder = "{session}"
+
+// Longer than any id worth having, and a bound on what a greedy pattern can
+// drag onto a command line.
+const maxSession = 200
+
+// ResumeArgs is what to append to the command line to bring back this agent's
+// last conversation, and whether that can be done at all.
+//
+// session is the id last read off its screen. A kind that needs one and has
+// never been given one cannot resume — which is a fresh start that says so,
+// the same as a resume the agent itself refuses.
+func (a Adapter) ResumeArgs(session string) ([]string, bool) {
+	if len(a.Resume) == 0 {
+		return nil, false
+	}
+	if a.Session == "" {
+		return slices.Clone(a.Resume), true
+	}
+	if session == "" {
+		return nil, false
+	}
+	out := make([]string, len(a.Resume))
+	for i, arg := range a.Resume {
+		out[i] = strings.ReplaceAll(arg, SessionPlaceholder, session)
+	}
+	return out, true
+}
+
+// SessionFrom reads this agent's session id off its screen, or returns empty
+// when the screen is not carrying one — which is most of the time, an id being
+// something an agent says once.
+//
+// The last match wins rather than the first: an agent told to start a new
+// conversation says so on the same screen, and resuming the one before it would
+// bring back what somebody just cleared.
+func (a Adapter) SessionFrom(screen string) string {
+	if a.Session == "" {
+		return ""
+	}
+	re := compiled(a.Session)
+	if re == nil {
+		return ""
+	}
+	found := re.FindAllStringSubmatch(screen, -1)
+	if len(found) == 0 {
+		return ""
+	}
+	id := strings.TrimSpace(found[len(found)-1][1])
+	// A pattern that drags in half the screen is a pattern to fix, not an id to
+	// put on a command line.
+	if id == "" || len(id) > maxSession || strings.ContainsFunc(id, unprintable) {
+		return ""
+	}
+	return id
+}
+
+func unprintable(r rune) bool { return !unicode.IsPrint(r) }
+
+// compiled keeps one regexp per pattern: the screen is read every few hundred
+// milliseconds per agent, and the set of patterns is the set of agent kinds.
+var (
+	patternsMu sync.Mutex
+	patterns   = map[string]*regexp.Regexp{}
+)
+
+func compiled(pattern string) *regexp.Regexp {
+	patternsMu.Lock()
+	defer patternsMu.Unlock()
+	if re, ok := patterns[pattern]; ok {
+		return re
+	}
+	// Errors are impossible here for a pattern that came through Load or the
+	// table below, both of which compile it first.
+	re, _ := regexp.Compile(pattern)
+	patterns[pattern] = re
+	return re
 }
 
 // kinds is replaced by Load at startup, so a machine can lend an agent kolo does
@@ -75,6 +170,30 @@ func Kinds() []string {
 	return names
 }
 
+// validate refuses a kind that would fail later, at a restart somebody was
+// counting on, with nothing on screen to point at.
+func (a Adapter) validate() error {
+	wants := slices.ContainsFunc(a.Resume, func(arg string) bool {
+		return strings.Contains(arg, SessionPlaceholder)
+	})
+	switch {
+	case a.Session == "" && wants:
+		return fmt.Errorf("resume asks for %s, but nothing says where to read it off the screen", SessionPlaceholder)
+	case a.Session != "" && !wants:
+		return fmt.Errorf("session says how to read an id that resume never uses; put %s in it", SessionPlaceholder)
+	case a.Session == "":
+		return nil
+	}
+	re, err := regexp.Compile(a.Session)
+	if err != nil {
+		return fmt.Errorf("session: %w", err)
+	}
+	if re.NumSubexp() != 1 {
+		return fmt.Errorf("session must capture exactly one thing — the id — and captures %d", re.NumSubexp())
+	}
+	return nil
+}
+
 // Load reads agent kinds from a JSON file and adds them to the ones kolo ships
 // with, replacing any of the same name. A file that is not there is not an
 // error: most machines run the kinds kolo knows.
@@ -117,6 +236,9 @@ func Load(path string) (added []string, err error) {
 		// object where the markers were meant to go, or a name spelt twice.
 		if a.Markers.Blank() && len(a.Resume) == 0 {
 			return nil, fmt.Errorf("adapter: %s: %s says nothing about how to read or resume that agent", path, name)
+		}
+		if err := a.validate(); err != nil {
+			return nil, fmt.Errorf("adapter: %s: %s: %w", path, name, err)
 		}
 		merged[name] = a
 		added = append(added, name)

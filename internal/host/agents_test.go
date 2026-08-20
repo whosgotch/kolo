@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/agent"
 	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/hub"
@@ -185,11 +186,11 @@ func TestTheStateFileBringsAgentsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var written []hub.Agent
+	var written []record
 	if err := json.Unmarshal(b, &written); err != nil {
 		t.Fatal(err)
 	}
-	if len(written) != 1 || written[0].CreatedBy.ID != "artem" {
+	if len(written) != 1 || written[0].Spec.CreatedBy.ID != "artem" {
 		t.Fatalf("wrote %+v; who asked for it has to survive too", written)
 	}
 
@@ -469,4 +470,111 @@ sleep 30
 	if len(a.Names()) != 1 {
 		t.Fatalf("did not come back: %v", a.Names())
 	}
+}
+
+// robo is an agent kind that resumes by naming a conversation rather than by
+// asking for the last one, described the way a host describes one.
+func robo(t *testing.T) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "kinds.json")
+	body := `{"robo": {"markers": {"idle": ["type a message"], "busy": "esc to interrupt"},
+		"resume": ["--resume", "{session}"], "session": "session: ([0-9a-z-]+)"}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.Load(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// sessionOf is the conversation this machine has taken down for an agent.
+func sessionOf(t *testing.T, a *Agents, name string) string {
+	t.Helper()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	p, ok := a.running[name]
+	if !ok {
+		t.Fatalf("%s is not running", name)
+	}
+	return p.session
+}
+
+// TestAnAgentIsResumedByName: the id is read off the agent's own screen, kept,
+// and put back on the command line at a restart. Starting fresh drops it, or
+// the conversation somebody just cleared comes back at the next restart.
+func TestAnAgentIsResumedByName(t *testing.T) {
+	defer quickRestarts()()
+	robo(t)
+	dir := t.TempDir()
+	script := fakeAgentNamed(t, dir, "robo", `printf 'args [%s]\r\nsession: 9f3c-11ab\r\ntype a message\r\n' "$*"
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	// A new agent starts fresh, and nothing has been read off its screen yet.
+	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "args []") })
+	waitFor(t, func() bool { return sessionOf(t, a, "checkups") == "9f3c-11ab" })
+
+	bounce(t, a, "checkups", a.Restart, "args [--resume 9f3c-11ab]")
+	bounce(t, a, "checkups", a.Fresh, "args []")
+}
+
+// TestAConversationNobodyNamedIsNotResumed: a kind that resumes by name, and a
+// run that never said which conversation it was in. A command line with a hole
+// in it is worse than a fresh start that says so.
+func TestAConversationNobodyNamedIsNotResumed(t *testing.T) {
+	defer quickRestarts()()
+	robo(t)
+	dir := t.TempDir()
+	script := fakeAgentNamed(t, dir, "robo", `printf 'args [%s]\r\ntype a message\r\n' "$*"
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "args []") })
+
+	bounce(t, a, "checkups", a.Restart, "args []")
+}
+
+// TestTheStateFileKeepsTheConversation: the machine went away mid-conversation,
+// and the process that knew which one cannot be asked.
+func TestTheStateFileKeepsTheConversation(t *testing.T) {
+	defer quickRestarts()()
+	robo(t)
+	dir := t.TempDir()
+	state := filepath.Join(t.TempDir(), "agents.json")
+	script := fakeAgentNamed(t, dir, "robo", `printf 'args [%s]\r\nsession: 9f3c-11ab\r\ntype a message\r\n' "$*"
+sleep 30
+`)
+	first := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, state)
+	if err := first.Start(spec("checkups", dir, script)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, first)
+	// On the file rather than what the process is holding: what survives the
+	// machine is what was written down, and it is written a moment later.
+	waitFor(t, func() bool {
+		b, err := os.ReadFile(state)
+		return err == nil && strings.Contains(string(b), `"session": "9f3c-11ab"`)
+	})
+	first.StopAll()
+
+	second := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, state)
+	if err := second.Restore(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(second.StopAll)
+	waitFor(t, func() bool {
+		return strings.Contains(screenOf(t, second, "checkups").Text(), "args [--resume 9f3c-11ab]")
+	})
 }
