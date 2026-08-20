@@ -156,6 +156,26 @@ func TestInterruptOnlyWhileWorking(t *testing.T) {
 	}
 }
 
+// TestTheInterruptKeyIsTheKindsOwn: Esc was sent to every agent there was, and
+// it is the key that clears the input box of one that stops on Ctrl-C. What is
+// pressed is now the kind's, and it is pressed under the same rule — only while
+// the agent is working.
+func TestTheInterruptKeyIsTheKindsOwn(t *testing.T) {
+	rec := &recorder{}
+	stops := adapter.Adapter{
+		Markers:   adapter.For("claude").Markers,
+		Interrupt: "ctrl+c",
+	}
+	r := New(rec, func() (string, time.Duration) { return screens[detect.Busy], 0 }, stops)
+
+	if err := r.Interrupt(); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.writes) != 1 || rec.writes[0] != "\x03" {
+		t.Errorf("writes = %q, want one Ctrl-C", rec.writes)
+	}
+}
+
 // TestOptionsAreOnlyOfferedForAQuestion keeps a page from showing choices for a
 // screen that has moved on.
 func TestOptionsAreOnlyOfferedForAQuestion(t *testing.T) {

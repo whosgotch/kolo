@@ -1,11 +1,14 @@
 package adapter
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/whosgotch/kolo/internal/detect"
 )
 
 // TestAKindIsTheBinaryNotTheCommandLine: a host lends a command line, and what
@@ -173,6 +176,45 @@ func TestLoadRefusesAHalfDescribedSession(t *testing.T) {
 		write(t, path, bad)
 		if _, err := Load(path); err == nil {
 			t.Errorf("%s was accepted", bad)
+		}
+	}
+}
+
+// TestTheInterruptKeyBelongsToTheKind: kolo sent Esc to everything, which is a
+// key that clears the input box of an agent that stops on Ctrl-C.
+func TestTheInterruptKeyBelongsToTheKind(t *testing.T) {
+	for _, c := range []struct {
+		named string
+		sends []byte
+	}{
+		{"", []byte{Esc}},
+		{"esc", []byte{Esc}},
+		{"ESCAPE", []byte{Esc}},
+		{"ctrl+c", []byte{3}},
+		{"ctrl+g", []byte{7}},
+		{"q", []byte("q")},
+	} {
+		if got := (Adapter{Interrupt: c.named}).InterruptKey(); !slices.Equal(got, c.sends) {
+			t.Errorf("%q sends %v, want %v", c.named, got, c.sends)
+		}
+	}
+}
+
+// TestLoadRefusesAKeyNobodyCanPress: a key kolo cannot spell is a stop button
+// that does nothing, found at the moment somebody needs it most.
+func TestLoadRefusesAKeyNobodyCanPress(t *testing.T) {
+	defer restoreKinds()()
+	path := filepath.Join(t.TempDir(), "kinds.json")
+	for _, bad := range []string{"ctrl+enter", "ctrl+", "control-c", "escape key"} {
+		body, err := json.Marshal(map[string]Adapter{
+			"robo": {Markers: detect.Markers{Busy: "working"}, Interrupt: bad},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, path, string(body))
+		if _, err := Load(path); err == nil {
+			t.Errorf("%q was accepted as a key", bad)
 		}
 	}
 }

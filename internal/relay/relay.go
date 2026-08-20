@@ -18,8 +18,6 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-const esc = 0x1b
-
 // One press worth of keys: an escape sequence and a fast typist's backlog fit,
 // a file streamed in one frame at a time does not.
 const maxKeys = 256
@@ -99,14 +97,19 @@ func (r *Relay) Type(keys string) error {
 	})
 }
 
-// Interrupt stops the agent working, and only then: Esc at an input box clears
-// what is in it, and Esc at a dialog answers by cancelling.
+// Interrupt stops the agent working, and only then: the key that means stop
+// while it is working means something else while it is not — Esc at an input box
+// clears what is in it, and at a dialog answers by cancelling.
+//
+// Which key it is belongs to the agent kind. It was Esc for everything until
+// kinds kolo does not ship could be described, and an agent that stops on Ctrl-C
+// was being sent a key that clears its input instead.
 func (r *Relay) Interrupt() error {
 	return r.exclusive(func() error {
 		if r.state() != detect.Busy {
 			return fmt.Errorf("relay: the agent is not working")
 		}
-		_, err := r.agent.Write([]byte{esc})
+		_, err := r.agent.Write(r.kind.InterruptKey())
 		return err
 	})
 }

@@ -35,6 +35,54 @@ type Adapter struct {
 	//
 	// Empty for a kind that resumes without naming anything.
 	Session string `json:"session,omitempty"`
+	// Interrupt is the key that stops this kind working, named rather than
+	// spelt as a byte, because a control character is not a thing to put in a
+	// configuration file by hand: "esc", "ctrl+c", or a single character.
+	//
+	// Empty means Esc, which is what most of these agents use and what kolo did
+	// for every kind before this was a choice.
+	Interrupt string `json:"interrupt,omitempty"`
+}
+
+// Esc is what an unnamed interrupt key is.
+const Esc = 0x1b
+
+// InterruptKey is what to send to stop this kind working — the bytes a person
+// pressing that key at the agent's own terminal would send, because that is the
+// only thing the agent is listening for.
+//
+// Ctrl-C included: an agent in raw mode reads it as a byte rather than being
+// signalled, which is exactly what pressing it in front of the agent does.
+func (a Adapter) InterruptKey() []byte {
+	keys, ok := parseKey(a.Interrupt)
+	if !ok {
+		// Refused by validate at startup, so this is a kind kolo ships with and
+		// a test would have caught it.
+		return []byte{Esc}
+	}
+	return keys
+}
+
+// parseKey turns a key's name into what pressing it sends.
+func parseKey(name string) ([]byte, bool) {
+	switch name = strings.ToLower(strings.TrimSpace(name)); name {
+	case "", "esc", "escape":
+		return []byte{Esc}, true
+	}
+	if letter, ok := strings.CutPrefix(name, "ctrl+"); ok {
+		r := []rune(letter)
+		if len(r) != 1 || r[0] < 'a' || r[0] > 'z' {
+			return nil, false
+		}
+		return []byte{byte(r[0]-'a') + 1}, true
+	}
+	// A plain character, for an agent that stops on a letter of its own. One
+	// character: a word here is somebody expecting kolo to type at their agent,
+	// which is what taking the keyboard is for.
+	if r := []rune(name); len(r) == 1 && unicode.IsPrint(r[0]) {
+		return []byte(name), true
+	}
+	return nil, false
 }
 
 // SessionPlaceholder stands in the resume command for the id read off the
@@ -132,7 +180,8 @@ var kinds = map[string]Adapter{
 			DialogFooter:   "Esc to cancel",
 			DialogSelected: "❯",
 		},
-		Resume: []string{"--continue"},
+		Resume:    []string{"--continue"},
+		Interrupt: "esc",
 	},
 }
 
@@ -176,6 +225,9 @@ func (a Adapter) validate() error {
 	wants := slices.ContainsFunc(a.Resume, func(arg string) bool {
 		return strings.Contains(arg, SessionPlaceholder)
 	})
+	if _, ok := parseKey(a.Interrupt); !ok {
+		return fmt.Errorf("interrupt: %q is not a key — try esc, ctrl+c, or a single character", a.Interrupt)
+	}
 	switch {
 	case a.Session == "" && wants:
 		return fmt.Errorf("resume asks for %s, but nothing says where to read it off the screen", SessionPlaceholder)
