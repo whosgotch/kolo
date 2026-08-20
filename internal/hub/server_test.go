@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
@@ -411,6 +412,12 @@ func watch(t *testing.T, ctx context.Context, s *Server, token, name string) *we
 
 // openScreen connects an agent's terminal as its host would.
 func openScreen(t *testing.T, ctx context.Context, s *Server, token, name string) *websocket.Conn {
+	// With the markers, as a host does: the screens these tests draw are Claude
+	// Code's, and the hub is told how to read one rather than knowing.
+	return openScreenWith(t, ctx, s, token, name, adapter.For("claude").Markers)
+}
+
+func openScreenWith(t *testing.T, ctx context.Context, s *Server, token, name string, markers detect.Markers) *websocket.Conn {
 	t.Helper()
 	conn, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/agent/"+name, &websocket.DialOptions{
 		HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
@@ -419,7 +426,11 @@ func openScreen(t *testing.T, ctx context.Context, s *Server, token, name string
 		t.Fatalf("screen %s: %v", name, err)
 	}
 	t.Cleanup(func() { conn.CloseNow() })
-	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"screen","cols":80,"rows":24}`)); err != nil {
+	hello, err := json.Marshal(screenHello{Type: "screen", Cols: 80, Rows: 24, Markers: markers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, hello); err != nil {
 		t.Fatal(err)
 	}
 	return conn
@@ -785,6 +796,42 @@ func TestAJoinerIsToldWhatItMayDo(t *testing.T) {
 	}
 	if state.Options[1].Label != "No" || !state.Options[0].Selected {
 		t.Errorf("the choices arrived as %+v", state.Options)
+	}
+}
+
+// TestAnAgentKindWithNoMarkersClaimsNothing: a host lending a command kolo has
+// no adapter for sends no markers, and the hub then says nothing about that
+// agent's screen rather than reading it with somebody else's. It is still
+// watched and still typed at; what it loses is the board being able to say what
+// it is doing.
+func TestAnAgentKindWithNoMarkersClaimsNothing(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken := hubFixture(t)
+	control := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, control, &cmd)
+
+	screen := openScreenWith(t, ctx, s, hostToken, "checkups", detect.Markers{})
+	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
+
+	dialog := " Do you want to create note.txt?\r\n ❯ 1. Yes\r\n   2. No\r\n\r\n Esc to cancel\r\n"
+	if err := screen.Write(ctx, websocket.MessageBinary, []byte(dialog)); err != nil {
+		t.Fatal(err)
+	}
+
+	live, ok := s.screens.get("checkups")
+	if !ok {
+		t.Fatal("no screen")
+	}
+	waitFor(t, func() bool { return strings.Contains(live.Text(), "note.txt") })
+	if state := live.State(); state != detect.Unknown {
+		t.Errorf("an unreadable screen was read as %s", state)
+	}
+	if options := live.Options(); len(options) != 0 {
+		t.Errorf("choices were offered off a screen nothing is known about: %+v", options)
 	}
 }
 

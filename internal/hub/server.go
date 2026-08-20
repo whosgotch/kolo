@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/session"
 	"github.com/whosgotch/kolo/internal/ui"
@@ -474,8 +473,10 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The hub reads this screen too — to catch a joiner up on what may be done
-	// with it — so it needs the markers of the kind drawing it.
-	live := s.screens.open(name, hello.Cols, hello.Rows, adapter.For(a.Command).Markers)
+	// with it — so it needs the markers of the kind drawing it. They come from
+	// the host, which is where the kinds are configured; the hub knows no agent
+	// kinds of its own and does not have to be upgraded to learn one.
+	live := s.screens.open(name, hello.Cols, hello.Rows, hello.Markers)
 	defer s.screens.close(name, live)
 
 	for {
@@ -716,9 +717,10 @@ type toAgent struct {
 }
 
 type screenHello struct {
-	Type string `json:"type"`
-	Cols int    `json:"cols"`
-	Rows int    `json:"rows"`
+	Type    string         `json:"type"`
+	Cols    int            `json:"cols"`
+	Rows    int            `json:"rows"`
+	Markers detect.Markers `json:"markers"`
 }
 
 type hostWelcome struct {

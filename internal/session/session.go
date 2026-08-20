@@ -59,6 +59,11 @@ func New(cols, rows int, markers detect.Markers) *Session {
 	}
 }
 
+// Markers are what this session reads its screen with. The host sends them on
+// with the screen itself, so the hub reads that screen the same way rather than
+// keeping a table of its own to look the agent up in.
+func (s *Session) Markers() detect.Markers { return s.markers }
+
 func (s *Session) Viewers() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

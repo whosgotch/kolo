@@ -48,18 +48,18 @@ type Markers struct {
 	// which means idle: the hint changes between versions and permission modes
 	// while meaning the same thing (probe-findings #7). Read last and only as an
 	// absence.
-	Idle         []string
-	Busy         string
-	DialogFooter string
+	Idle         []string `json:"idle,omitempty"`
+	Busy         string   `json:"busy,omitempty"`
+	DialogFooter string   `json:"dialogFooter,omitempty"`
 	// DialogSelected is the sigil in front of a dialog's highlighted choice. It
 	// is not a marker of the dialog on its own — the input box draws the same
 	// sigil in front of its placeholder — so what is looked for is the sigil in
 	// front of the first choice.
-	DialogSelected string
+	DialogSelected string `json:"dialogSelected,omitempty"`
 	// Settle is how long the screen must go unchanged before it reads as idle,
 	// for a kind that says nothing while it waits. Zero means silence proves
 	// nothing, which is the arrangement to prefer (probe-findings #6).
-	Settle time.Duration
+	Settle time.Duration `json:"settle,omitempty"`
 }
 
 // Option is one numbered choice of the dialog on screen.

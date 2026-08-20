@@ -547,7 +547,12 @@ func (a *Agents) push(ctx context.Context, name string, live *session.Session) e
 	}
 	defer conn.CloseNow()
 
-	hello, _ := json.Marshal(map[string]any{"type": "screen", "cols": cols, "rows": rows})
+	// The markers travel with the screen they describe: this machine is the one
+	// that knows what kind of agent is drawing it, and a hub told the kind's name
+	// could only look it up in a table that has to agree with this one.
+	hello, _ := json.Marshal(map[string]any{
+		"type": "screen", "cols": cols, "rows": rows, "markers": live.Markers(),
+	})
 	if err := send(ctx, conn, hello); err != nil {
 		return err
 	}
