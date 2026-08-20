@@ -18,8 +18,9 @@ import (
 )
 
 // Reported to the hub, so a member running something ancient can be identified
-// rather than guessed at.
-const version = "dev"
+// rather than guessed at. A var rather than a const: the Makefile stamps the
+// build in with -ldflags, and a const cannot be written that way.
+var version = "dev"
 
 type command struct {
 	run   func([]string) error

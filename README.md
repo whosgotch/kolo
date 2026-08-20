@@ -45,10 +45,17 @@ browser, watches it work, sends it messages, answers the questions it asks,
 stops it when it is going wrong, and restarts it — with its conversation, or
 without — and the agents survive being killed and outlive the host restarting.
 
+Nothing is released yet, so running it is building it. `make install` puts
+`kolo` on your PATH from source and says what to do if the directory it went
+into is not on it:
+
 ```
-$ go build -o kolo ./cmd/kolo
+$ make install
 $ cd ~/work/api && kolo up
 ```
+
+`make run` starts it without installing anything, passing flags through as
+`ARGS`. `make test` is the suite.
 
 That is the whole of it. `kolo up` runs the hub and lends this machine to it,
 and makes what it needs on the way, all of it under `~/.kolo`: the org file,
@@ -95,8 +102,6 @@ hub.
 An earlier single-machine version — one agent, its host at the keyboard, a
 secret in a URL — has been removed rather than kept alongside. The screen model
 and the queue carry over; the shape around them did not.
-
-Run `go test ./...` for the test suite.
 
 > **Security:** an agent runs commands as the user who started it, so lending a
 > machine lends that user's whole account — not just the directories named. Run
