@@ -220,15 +220,19 @@ function drawChoices() {
   if (hosts.length === 0) say('.list', 'No machine is lending itself to this org right now.');
 }
 
+// options may be absent rather than empty: a host that lends nothing sends null
+// for it, and Go writes an empty slice as null besides. Reading it as [] keeps a
+// missing list from throwing halfway through drawing the form, which is how the
+// dir and command boxes came to be empty while the machine box was filled.
 function fill(select, options) {
   const chosen = select.value;
   select.replaceChildren();
-  for (const value of options) {
+  for (const value of options || []) {
     const option = document.createElement('option');
     option.value = option.textContent = value;
     select.append(option);
   }
-  if (options.includes(chosen)) select.value = chosen;
+  if ((options || []).includes(chosen)) select.value = chosen;
 }
 
 el('[name=host]').onchange = drawChoices;
