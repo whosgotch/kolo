@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/whosgotch/kolo/internal/adapter"
@@ -101,8 +102,13 @@ func upCmd(args []string) error {
 	// An invite rather than a member: whoever started this joins the same way
 	// everyone else does, so there is one way in rather than a founder's way and
 	// a joiner's way.
+	//
+	// Only when there is not one already. A host restarted three times before
+	// anybody joined used to hand out three live links, none of which the next
+	// one withdrew — and minting over a link already pasted somewhere is the
+	// other half of that, so a live one is named rather than replaced.
 	var invite string
-	if len(org.Members) == 0 {
+	if len(org.Members) == 0 && len(org.Live(time.Now())) == 0 {
 		var err error
 		if org, invite, err = hub.AddInvite(*orgPath, "team", time.Now().Add(inviteDays*24*time.Hour), defaultUses); err != nil {
 			return err
@@ -167,12 +173,15 @@ func upCmd(args []string) error {
 	}
 	fmt.Printf("\n%s is up at %s\n", org.Name, shown)
 	fmt.Printf("Lending %s, running %s.\n", strings.Join(dirs, " "), strings.Join(allow, " "))
+	if !created {
+		fmt.Printf("Org in %s, %s.\n", *orgPath, members(len(org.Members)))
+	}
 	if invite != "" {
 		fmt.Printf("\nSend your team this. Opening it is the whole of joining:\n\n    %s\n\n", hub.InviteURL(shown, invite))
 		fmt.Printf("%s.\n", bound(defaultUses, inviteDays))
 		fmt.Printf("Anyone holding the link can use it: kolo invite -off team withdraws it,\nand kolo who says who came through.\n")
 	} else {
-		fmt.Printf("\nAdd people:   kolo invite -org %s -hub %s\n", *orgPath, shown)
+		wayIn(org, *orgPath, shown)
 	}
 	if len(domains) == 0 && !onLoopback(*addr) {
 		fmt.Printf("\nThis hub serves plain http, so a member's token crosses the network where\n" +
@@ -333,4 +342,49 @@ func strayOrg(fs *flag.FlagSet) {
 	cwd, _ := os.Getwd()
 	fmt.Printf("Ignoring the org.json in %s. kolo keeps the org in %s now;\n"+
 		"pass -org org.json to use that one instead, or delete it.\n", cwd, config.Dir())
+}
+
+// wayIn is what an org that somebody has already joined needs on the screen:
+// either a link, or the one command that makes one.
+//
+// A hub nobody can reach is the failure this is for — the previous version
+// printed a kolo invite line with two flags in it, which is a thing to retype
+// rather than a way in. The link behind a live invite is a hash by now and
+// cannot be shown a second time, so the invites that are still out there are
+// named instead: minting another over one still in a channel is how a team ends
+// up locked out of a link they were using.
+func wayIn(org *hub.Org, orgPath, shown string) {
+	if live := org.Live(time.Now()); len(live) > 0 {
+		fmt.Printf("\nLinks that still work — none of them can be shown again:\n\n")
+		out := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		for _, v := range live {
+			fmt.Fprintf(out, "    %s\t%s\t%s\n", v.ID, usesLeft(v), "until "+v.Expires.Local().Format("Mon 2 Jan 15:04"))
+		}
+		out.Flush()
+	}
+	fmt.Printf("\nA link for anyone else:\n\n    %s\n", inviteLine(orgPath, shown))
+}
+
+// inviteLine is kolo invite with the flags this hub needs and none it does not,
+// so it can be typed off the screen rather than read as a template.
+func inviteLine(orgPath, shown string) string {
+	cmd := "kolo invite"
+	if orgPath != config.Path("org.json") {
+		cmd += " -org " + orgPath
+	}
+	if shown != defaultHubURL {
+		cmd += " -hub " + shown
+	}
+	return cmd
+}
+
+// members counts them the way somebody reads a line about their own org.
+func members(n int) string {
+	switch n {
+	case 0:
+		return "nobody in it yet"
+	case 1:
+		return "1 member"
+	}
+	return fmt.Sprintf("%d members", n)
 }
