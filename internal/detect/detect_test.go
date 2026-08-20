@@ -174,9 +174,6 @@ func TestAQuestionOverTheInputBoxIsStillAQuestion(t *testing.T) {
 	if got := claude.Of(autoModeScreen); got != detect.Dialog {
 		t.Errorf("Of(a question over the input box) = %s, want %s", got, detect.Dialog)
 	}
-	if got := claude.Options(autoModeScreen); len(got) != 3 {
-		t.Errorf("read %v off the question, want its three choices", got)
-	}
 }
 
 // hasAnyOf is the any-of match the detector does, for tests that assert about a
@@ -237,66 +234,6 @@ func TestBusyKeepsItsInputBox(t *testing.T) {
 	}
 }
 
-func TestOptions(t *testing.T) {
-	tests := []struct {
-		name   string
-		screen string
-		want   []detect.Option
-	}{
-		{"tool permission dialog", permissionScreen, []detect.Option{
-			{1, "Yes", true},
-			{2, "Yes, allow all edits during this session (shift+tab)", false},
-			{3, "No", false},
-		}},
-		{"workspace trust dialog", trustScreen, []detect.Option{
-			{1, "Yes, I trust this folder", true},
-			{2, "No, exit", false},
-		}},
-		// Nothing to answer means nothing to offer. An idle or busy screen must
-		// not produce choices, or a page would show a question that has gone.
-		{"idle at the prompt", idleScreen, nil},
-		{"running a shell command", busyScreen, nil},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := claude.Options(tt.screen)
-			if len(got) != len(tt.want) {
-				t.Fatalf("Options(%s) = %v, want %v", tt.name, got, tt.want)
-			}
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("option %d = %+v, want %+v", i+1, got[i], tt.want[i])
-				}
-			}
-		})
-	}
-}
-
-// TestOptionsIgnoresNumbersThatAreNotChoices is the sharp case: the permission
-// dialog shows a numbered diff, so the screen carries numbers that mean nothing.
-func TestOptionsIgnoresNumbersThatAreNotChoices(t *testing.T) {
-	for name, screen := range map[string]string{
-		"a numbered diff above the question": permissionScreen,
-		"prose that enumerates": `
- Do you want to proceed?
- It does 1. one thing, then 2. another.
-
- ❯ 1. Yes
-   2. No
-
- Esc to cancel
-`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			for _, o := range claude.Options(screen) {
-				if strings.Contains(o.Label, "hello") || strings.Contains(o.Label, "one thing") {
-					t.Errorf("offered %q as a choice", o.Label)
-				}
-			}
-		})
-	}
-}
-
 // TestAKindWithNoMarkersRecognisesNothing is what makes an agent kolo has no
 // adapter for watchable rather than drivable. An empty marker must match no
 // screen, not every screen.
@@ -311,9 +248,6 @@ func TestAKindWithNoMarkersRecognisesNothing(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if got := unknownKind.Of(screen); got != detect.Unknown {
 				t.Errorf("read another kind's %s screen as %s", name, got)
-			}
-			if got := unknownKind.Options(screen); got != nil {
-				t.Errorf("offered %v to answer on a screen it cannot read", got)
 			}
 		})
 	}

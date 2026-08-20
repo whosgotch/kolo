@@ -6,12 +6,14 @@
 // An empty marker matches nothing, so the zero Markers — a kind with no adapter
 // — reads every screen as Unknown.
 //
+// What it says is what the agent is doing, and nothing more: which choice a
+// question is offering is the agent's business and the business of whoever takes
+// its keyboard.
+//
 // See docs/architecture.md "Input" and docs/probe-findings.md #4 and #5.
 package detect
 
 import (
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -67,58 +69,6 @@ type Markers struct {
 // configured one must not be.
 func (m Markers) Blank() bool {
 	return len(m.Idle) == 0 && m.Busy == "" && m.DialogFooter == "" && m.DialogSelected == ""
-}
-
-// Option is one numbered choice of the dialog on screen.
-type Option struct {
-	Number   int    `json:"number"`
-	Label    string `json:"label"`
-	Selected bool   `json:"selected"`
-}
-
-var optionLine = regexp.MustCompile(`^(\d{1,2})\.\s+(\S.*)$`)
-
-// Options reads the choices out of the dialog on screen, so a member can be
-// offered the question in words.
-//
-// Nothing is returned unless the numbering runs 1, 2, 3 down consecutive lines:
-// prose and diffs contain numbers, and a list that is not there is how somebody
-// answers a question nobody asked.
-func (m Markers) Options(screen string) []Option {
-	if m.Of(screen) != Dialog {
-		return nil
-	}
-	var options []Option
-	prevLine := -2
-	for i, line := range strings.Split(screen, "\n") {
-		text := strings.TrimSpace(line)
-		selected := m.DialogSelected != "" && strings.HasPrefix(text, m.DialogSelected)
-		if selected {
-			text = strings.TrimSpace(strings.TrimPrefix(text, m.DialogSelected))
-		}
-		match := optionLine.FindStringSubmatch(text)
-		if match == nil {
-			continue
-		}
-		number, _ := strconv.Atoi(match[1])
-		option := Option{Number: number, Label: strings.TrimSpace(match[2]), Selected: selected}
-		switch {
-		case number == len(options)+1 && i == prevLine+1:
-			options = append(options, option)
-		case number == 1:
-			// The dialog is drawn at the bottom, so a list further down the
-			// screen replaces one found above it.
-			options = []Option{option}
-		default:
-			continue
-		}
-		prevLine = i
-	}
-	// A lone "1." is prose. A question offers something to choose between.
-	if len(options) < 2 {
-		return nil
-	}
-	return options
 }
 
 // OfSettled is Of, plus the answer a single screen cannot give: a kind that

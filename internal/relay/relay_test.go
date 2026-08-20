@@ -93,47 +93,6 @@ func TestAFloodIsNotAKeystroke(t *testing.T) {
 	}
 }
 
-func TestAnswerPressesTheNumber(t *testing.T) {
-	r, rec, _ := fixture(detect.Dialog)
-	if err := r.Answer(2, "No"); err != nil {
-		t.Fatal(err)
-	}
-	if len(rec.writes) != 1 || rec.writes[0] != "2" {
-		t.Errorf("writes = %q, want one write of %q", rec.writes, "2")
-	}
-}
-
-// TestAnswerNeedsTheQuestionItWasGiven is what makes answering without watching
-// safe — from the board, where the member is not looking at the screen at all.
-// Between the choices being read and the click, the dialog may have been
-// replaced by the next one: same numbers, different meaning.
-func TestAnswerNeedsTheQuestionItWasGiven(t *testing.T) {
-	tests := []struct {
-		name   string
-		state  detect.State
-		number int
-		label  string
-	}{
-		{"the label has changed", detect.Dialog, 1, "Yes, allow all edits during this session"},
-		{"the number is not offered", detect.Dialog, 3, "No"},
-		{"a number that is two keystrokes", detect.Dialog, 12, "No"},
-		{"the question has gone", detect.Idle, 1, "Yes"},
-		{"the agent is working", detect.Busy, 1, "Yes"},
-		{"the screen is unrecognised", detect.Unknown, 1, "Yes"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r, rec, _ := fixture(tt.state)
-			if err := r.Answer(tt.number, tt.label); err == nil {
-				t.Error("the answer was accepted")
-			}
-			if len(rec.writes) != 0 {
-				t.Errorf("wrote %q to the agent", rec.writes)
-			}
-		})
-	}
-}
-
 func TestInterruptOnlyWhileWorking(t *testing.T) {
 	for _, state := range []detect.State{detect.Idle, detect.Dialog, detect.Unknown} {
 		t.Run("refused when "+state.String(), func(t *testing.T) {
@@ -173,19 +132,6 @@ func TestTheInterruptKeyIsTheKindsOwn(t *testing.T) {
 	}
 	if len(rec.writes) != 1 || rec.writes[0] != "\x03" {
 		t.Errorf("writes = %q, want one Ctrl-C", rec.writes)
-	}
-}
-
-// TestOptionsAreOnlyOfferedForAQuestion keeps a page from showing choices for a
-// screen that has moved on.
-func TestOptionsAreOnlyOfferedForAQuestion(t *testing.T) {
-	if r, _, _ := fixture(detect.Dialog); len(r.Options()) != 2 {
-		t.Errorf("Options() = %v, want the two on screen", r.Options())
-	}
-	for _, state := range []detect.State{detect.Idle, detect.Busy, detect.Unknown} {
-		if r, _, _ := fixture(state); len(r.Options()) != 0 {
-			t.Errorf("Options() offered choices while %s", state)
-		}
 	}
 }
 

@@ -566,14 +566,13 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // catchUp is what a joining viewer is missing. The repaint gives it the screen,
-// but what may be done with that screen was announced before this browser
-// arrived — so an agent opened mid-question would offer no way to answer it.
+// but what the agent is doing was announced before this browser arrived — so an
+// agent opened while it is working would look like one sitting idle.
 func catchUp(live *session.Session) session.Message {
 	b, _ := json.Marshal(struct {
-		Type    string          `json:"type"`
-		State   string          `json:"state"`
-		Options []detect.Option `json:"options"`
-	}{"state", live.State().String(), live.Options()})
+		Type  string `json:"type"`
+		State string `json:"state"`
+	}{"state", live.State().String()})
 	return session.Message{Control: true, Data: b}
 }
 
@@ -588,10 +587,10 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 		if err != nil {
 			return
 		}
-		// The hub reads none of these beyond their name: what an answer means, and
-		// whether the agent can take it, is known on the machine with the screen.
-		// Who may type is the exception, because who a member is is known here and
-		// nowhere else.
+		// The hub reads none of these beyond their name: whether the agent can
+		// take what is being sent is known on the machine with the screen. Who may
+		// type is the exception, because who a member is is known here and nowhere
+		// else.
 		switch msg.Type {
 		case "take":
 			s.giveKeyboard(name, member, conn)
@@ -609,7 +608,7 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 			if !s.keyboards.holds(name, conn) || msg.Keys == "" {
 				continue
 			}
-		case "answer", "interrupt", "restart", "fresh":
+		case "interrupt", "restart", "fresh":
 		default:
 			continue
 		}
@@ -617,10 +616,7 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 		if !ok {
 			continue
 		}
-		send(toAgent{
-			Type: msg.Type, Name: name, From: member.Name,
-			Choice: msg.Choice, Label: msg.Label, Keys: msg.Keys,
-		})
+		send(toAgent{Type: msg.Type, Name: name, From: member.Name, Keys: msg.Keys})
 	}
 }
 
@@ -695,9 +691,7 @@ type hostHello struct {
 // member holding the keyboard: they are watching the screen those keys land on,
 // so Enter at a question is a decision rather than an accident.
 type viewerMessage struct {
-	Type   string `json:"type"`
-	Choice int    `json:"choice"`
-	Label  string `json:"label"`
+	Type string `json:"type"`
 	// Keys are raw terminal input, already encoded by the browser's terminal.
 	Keys string `json:"keys"`
 	// The size the browser can draw, for agreeing one everybody can see.
@@ -706,14 +700,12 @@ type viewerMessage struct {
 }
 
 type toAgent struct {
-	Type   string `json:"type"`
-	Name   string `json:"name"`
-	From   string `json:"from"`
-	Choice int    `json:"choice,omitempty"`
-	Label  string `json:"label,omitempty"`
-	Keys   string `json:"keys,omitempty"`
-	Cols   int    `json:"cols,omitempty"`
-	Rows   int    `json:"rows,omitempty"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+	From string `json:"from"`
+	Keys string `json:"keys,omitempty"`
+	Cols int    `json:"cols,omitempty"`
+	Rows int    `json:"rows,omitempty"`
 }
 
 type screenHello struct {

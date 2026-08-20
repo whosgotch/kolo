@@ -63,12 +63,6 @@
   #term .xterm { padding: 4px; }
   .doing { display: flex; gap: 8px; padding: 0 12px 12px; align-items: center; }
   .doing .spacer { flex: 1; }
-  /* The question the agent is asking, drawn as buttons rather than left for
-     somebody to steer through blind. */
-  .ask { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px 0; }
-  .ask button { text-align: left; }
-  .ask button.selected { border-color: var(--dim); }
-
   .typist { color: var(--dim); padding: 0 12px; }
   button.holding { border-color: var(--ok); color: var(--ok); }
   .note { min-height: 1.4em; padding: 6px 12px; color: var(--dim); }
@@ -121,7 +115,6 @@
 
   <section class="watch" hidden>
     <div id="term"></div>
-    <div class="ask" hidden></div>
     <p class="note"></p>
     <span class="typist"></span>
     <div class="doing">
@@ -359,7 +352,7 @@ function watch(name) {
 
 function close() {
   watching = null;
-  offer('unknown', []);
+  offer('unknown');
   if (socket) { const was = socket; socket = null; was.close(); }
 }
 
@@ -393,10 +386,7 @@ function connect(name) {
         fit();
         break;
       case 'state':
-        say('.watch', describe(shown(msg)));
-        break;
-      case 'answered':
-        say('.watch', `${msg.from} answered: ${msg.text}`);
+        say('.watch', describe(msg.state));
         break;
       case 'interrupted':
         say('.watch', `${msg.from} stopped the agent`);
@@ -421,8 +411,8 @@ function connect(name) {
         break;
     }
     // What can be done comes from the same events as what the agent is doing, so
-    // the buttons never offer something the screen has left behind.
-    if (msg.state) offer(msg.state, msg.options || []);
+    // stop is never offered for a screen the agent has left behind.
+    if (msg.state) offer(msg.state);
   };
 
   // Falling behind, an agent restarting, and one not started yet all end the
@@ -430,20 +420,13 @@ function connect(name) {
   ws.onclose = () => {
     if (ws !== socket) return;
     // Nothing may be offered about a screen this page is no longer being told
-    // about: the agent may be answering, restarting, or gone.
-    offer('unknown', []);
+    // about: the agent may be restarting, or gone.
+    offer('unknown');
     typist = null; mine = false; keyboardChanged();
     say('.watch', `${name} is not showing a screen — waiting`);
     setTimeout(() => { if (watching === name) connect(name); }, 1000);
   };
   ws.onerror = () => ws.close();
-}
-
-// shown separates the two kinds of dialog the page has to talk about: one with
-// choices to press, and one with nothing on it a member can answer.
-function shown(msg) {
-  if (msg.state === 'dialog' && !(msg.options || []).length) return 'panel';
-  return msg.state;
 }
 
 // The states come from the agent's own screen, so this says what is true rather
@@ -452,32 +435,19 @@ function describe(state) {
   switch (state) {
     case 'idle': return 'ready';
     case 'busy': return 'working';
-    case 'dialog': return 'asking the org a question — answer it below';
-    // A dialog kolo could read no choices off: a panel a slash command opened,
-    // or a question drawn in a way it does not understand. There is nothing for
-    // kolo to offer, and nothing it needs to — whoever takes the keyboard can
-    // read the screen and press what it says.
-    case 'panel': return 'showing something only the keyboard can answer';
+    // Kolo says that a question is up, never what it is: reading the question is
+    // what the screen in front of you is for, and answering it is what taking the
+    // keyboard is for.
+    case 'dialog': return 'waiting on a person — take the keyboard to answer it';
     default: return 'kolo does not recognise this screen, so nothing will be sent';
   }
 }
 
 
-// offer draws what a member may do to the agent as it stands. The buttons are
-// rebuilt from the screen every time rather than left up and reasoned about,
-// because the question they belong to can be answered by somebody else.
-function offer(state, options) {
-  const ask = el('.ask');
-  ask.replaceChildren();
-  ask.hidden = options.length === 0;
-  for (const option of options) {
-    const button = document.createElement('button');
-    // Set as text: this is a line off the screen of somebody else's machine.
-    button.textContent = `${option.number}. ${option.label}`;
-    button.classList.toggle('selected', option.selected);
-    button.onclick = () => tell({ type: 'answer', choice: option.number, label: option.label });
-    ask.append(button);
-  }
+// offer draws what a member may do to the agent as it stands. Stop is the only
+// one of them that depends on the screen, and it is read from the same events as
+// everything else so it is never offered for a screen the agent has left behind.
+function offer(state) {
   el('.interrupt').disabled = state !== 'busy';
 }
 

@@ -171,8 +171,8 @@ func (a *Agents) launch(name string) error {
 	}
 	kind := adapter.For(spec.Command)
 	live := session.New(cols, rows, kind.Markers)
-	// Input reads the same screen the hub is shown, so a member answering a
-	// question is answering the one everybody else is looking at.
+	// Input reads the same screen the hub is shown, so a member stopping the
+	// agent is stopping the one everybody else is looking at.
 	input := relay.New(started, live.Screen, kind)
 	screen, closeScreen := context.WithCancel(context.Background())
 	p.agent, p.started, p.live, p.input = started, time.Now(), live, input
@@ -183,23 +183,8 @@ func (a *Agents) launch(name string) error {
 	// it into the session is also what keeps the screen current.
 	go io.Copy(live, started)
 	go a.stream(screen, name, live)
-	go a.watch(screen, name, kind, input, live)
+	go a.watch(screen, name, kind, live)
 	go a.wait(name, started, closeScreen)
-	return nil
-}
-
-// Answer gives the agent a member's choice from the question on its screen. The
-// relay checks the choice against the screen as it stands, so an answer either
-// lands on the question the member saw or does not land at all.
-func (a *Agents) Answer(name, from string, choice int, label string) error {
-	v, err := a.reach(name)
-	if err != nil {
-		return err
-	}
-	if err := v.input.Answer(choice, label); err != nil {
-		return err
-	}
-	v.announce(event{Type: "answered", From: from, Text: label})
 	return nil
 }
 
@@ -303,19 +288,20 @@ func (a *Agents) reach(name string) (view, error) {
 // announce fills in what the agent looks like now, alongside the news itself.
 func (v view) announce(e event) {
 	e.State = v.live.State().String()
-	e.Options = v.input.Options()
 	v.live.Announce(e)
 }
 
 // watch tells everybody what the agent's screen has become, and takes down the
 // conversation it says it is in. Polling, because a screen arriving at a
 // particular arrangement has no event to subscribe to.
-func (a *Agents) watch(ctx context.Context, name string, kind adapter.Adapter, input *relay.Relay, live *session.Session) {
+//
+// What it says is that the agent is asking something, never what it is asking:
+// the question belongs to the agent, and to whoever takes its keyboard.
+func (a *Agents) watch(ctx context.Context, name string, kind adapter.Adapter, live *session.Session) {
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
 	was := detect.Unknown
-	var asked []detect.Option
 	for {
 		select {
 		case <-ctx.Done():
@@ -323,14 +309,10 @@ func (a *Agents) watch(ctx context.Context, name string, kind adapter.Adapter, i
 		case <-ticker.C:
 		}
 
-		// On change rather than every tick. The choices count as a change of
-		// their own: one question answered and replaced by the next never leaves
-		// the dialog state, and a page showing the old one would offer an answer
-		// to a question that has gone.
-		now, options := live.State(), input.Options()
-		if now != was || !slices.Equal(options, asked) {
-			was, asked = now, options
-			live.Announce(event{Type: "state", State: now.String(), Options: options})
+		// On change rather than every tick.
+		if now := live.State(); now != was {
+			was = now
+			live.Announce(event{Type: "state", State: now.String()})
 		}
 		if id := kind.SessionFrom(live.Text()); id != "" {
 			a.remember(name, id)
@@ -356,11 +338,10 @@ func (a *Agents) remember(name, id string) {
 // event is what a page is told about an agent. The screen shows what the agent
 // is doing; this is what kolo did to it, and who did it.
 type event struct {
-	Type    string          `json:"type"`
-	From    string          `json:"from,omitempty"`
-	Text    string          `json:"text,omitempty"`
-	State   string          `json:"state,omitempty"`
-	Options []detect.Option `json:"options,omitempty"`
+	Type  string `json:"type"`
+	From  string `json:"from,omitempty"`
+	Text  string `json:"text,omitempty"`
+	State string `json:"state,omitempty"`
 }
 
 // wait watches one agent and starts it again when it goes.

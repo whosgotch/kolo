@@ -272,9 +272,6 @@ func TestSendingToAnAgentThatIsNotHere(t *testing.T) {
 	if err := a.Type("nothing", "x"); err == nil {
 		t.Error("accepted keystrokes for an agent that is not running")
 	}
-	if err := a.Answer("nothing", "Artem", 1, "Yes"); err == nil {
-		t.Error("accepted an answer for an agent that is not running")
-	}
 	if err := a.Interrupt("nothing", "Artem"); err == nil {
 		t.Error("accepted an interrupt for an agent that is not running")
 	}
@@ -286,9 +283,11 @@ func TestSendingToAnAgentThatIsNotHere(t *testing.T) {
 	}
 }
 
-// TestAnAnswerReachesTheDialog: a member's choice arrives as the keystroke that
-// answers the question they were shown, and only while that question is up.
-func TestAnAnswerReachesTheDialog(t *testing.T) {
+// TestAQuestionIsAnsweredByTypingAtIt: kolo read the choices off the screen and
+// pressed one on a member's behalf once. It does not any more — the question is
+// the agent's, and the member holding the keyboard presses the key themselves,
+// looking at the screen it lands on.
+func TestAQuestionIsAnsweredByTypingAtIt(t *testing.T) {
 	dir := t.TempDir()
 	// Raw mode, because that is what an agent's TUI does and it is what makes a
 	// single keystroke arrive without an Enter behind it.
@@ -305,14 +304,11 @@ sleep 30
 		t.Fatal(err)
 	}
 	nextReport(t, a)
+	// The room is still told a question is up. What it is, and what to press, is
+	// on the screen everybody can see.
 	waitFor(t, func() bool { return screenOf(t, a, "checkups").State() == detect.Dialog })
 
-	// The label the member was shown is part of the answer: one that does not
-	// match belongs to a question that has been replaced.
-	if err := a.Answer("checkups", "Artem", 1, "Yes, allow all edits this session"); err == nil {
-		t.Error("answered a question the member was not looking at")
-	}
-	if err := a.Answer("checkups", "Artem", 2, "No"); err != nil {
+	if err := a.Type("checkups", "2"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "chose 2") })

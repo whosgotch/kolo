@@ -111,13 +111,8 @@ func (s *Session) noteChange() {
 	}
 }
 
-// Options are the choices of the question on screen, empty when there is none.
-// Read here as well as by the relay, so somebody joining mid-question is caught
-// up from the hub's own screen.
-func (s *Session) Options() []detect.Option { return s.markers.Options(s.Text()) }
-
 // Text is the agent's screen as it stands. It is what the relay reads before
-// writing anything: the state it may send in, and the choices it may answer.
+// writing anything: the state a key may be sent in.
 func (s *Session) Text() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

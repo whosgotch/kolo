@@ -140,10 +140,6 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			}
 		case "stop":
 			agents.Stop(c.Name)
-		case "answer":
-			if err := agents.Answer(c.Name, c.From, c.Choice, c.Label); err != nil {
-				agents.refuse(c.Name, err.Error())
-			}
 		case "keys":
 			// Silently: a keystroke that arrives a moment after the agent stopped
 			// is not worth a line on everybody's screen.
@@ -196,15 +192,13 @@ type welcome struct {
 }
 
 type command struct {
-	Type   string    `json:"type"`
-	Name   string    `json:"name"`
-	From   string    `json:"from"`
-	Choice int       `json:"choice"`
-	Label  string    `json:"label"`
-	Keys   string    `json:"keys"`
-	Cols   int       `json:"cols"`
-	Rows   int       `json:"rows"`
-	Agent  hub.Agent `json:"agent"`
+	Type  string    `json:"type"`
+	Name  string    `json:"name"`
+	From  string    `json:"from"`
+	Keys  string    `json:"keys"`
+	Cols  int       `json:"cols"`
+	Rows  int       `json:"rows"`
+	Agent hub.Agent `json:"agent"`
 }
 
 // wsURL turns a hub's base URL into a websocket one, so a hub reached over HTTPS

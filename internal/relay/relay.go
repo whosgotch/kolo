@@ -1,16 +1,15 @@
 // Package relay is the only thing that writes to an agent: two writers to one
 // terminal interleave, so every write goes through here.
 //
-// Keystrokes come from the member holding the keyboard. Answering and
-// interrupting are the two things kolo does on somebody's behalf, and both mean
-// the screen that is up at the moment they ask.
+// Keystrokes come from the member holding the keyboard. Interrupting is the one
+// thing kolo does on somebody's behalf, and it means the screen that is up at the
+// moment they ask.
 //
 // See docs/architecture.md "Input".
 package relay
 
 import (
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -31,9 +30,9 @@ type Sender interface {
 type Relay struct {
 	agent Sender
 	kind  adapter.Adapter
-	// Read fresh each time, and the picture rather than a verdict about it:
-	// answering needs the choices as well as the state, and both must come from
-	// the same screen.
+	// Read fresh each time, and the picture rather than a verdict about it: what
+	// may be sent is decided from the screen as it stands at the moment of asking,
+	// not from a reading taken earlier.
 	screen func() (string, time.Duration)
 
 	mu      sync.Mutex
@@ -46,44 +45,10 @@ func New(agent Sender, screen func() (string, time.Duration), kind adapter.Adapt
 
 func (r *Relay) state() detect.State { return r.kind.Markers.OfSettled(r.screen()) }
 
-// Options are the choices the agent is offering. Empty when there is no question.
-func (r *Relay) Options() []detect.Option {
-	screen, _ := r.screen()
-	return r.kind.Markers.Options(screen)
-}
-
-// Answer chooses one of the options on screen, by pressing its number.
-//
-// The number is checked against the label the member was shown, and both against
-// the screen the instant before the key is written: a dialog replaced by the next
-// question is a different question with the same numbers on it.
-//
-// The number rather than the arrows: a key the dialog does not understand is
-// discarded (probe-findings #5), so a wrong guess lands nothing — where a wrong
-// guess with arrows leaves another option highlighted and Enter still meaning yes.
-func (r *Relay) Answer(number int, label string) error {
-	// Two digits would be two keystrokes, and the first of them is an answer.
-	if number < 1 || number > 9 {
-		return fmt.Errorf("relay: %d is not a choice", number)
-	}
-	return r.exclusive(func() error {
-		screen, _ := r.screen()
-		if r.kind.Markers.Of(screen) != detect.Dialog {
-			return fmt.Errorf("relay: there is no question on screen")
-		}
-		for _, o := range r.kind.Markers.Options(screen) {
-			if o.Number == number && o.Label == label {
-				_, err := r.agent.Write([]byte(strconv.Itoa(number)))
-				return err
-			}
-		}
-		return fmt.Errorf("relay: the screen has moved on from that question")
-	})
-}
-
 // Type sends a member's keystrokes to the agent as they press them. Ungated:
 // the member is looking at the screen those keys land on. Through the same lock
-// as everything else, so they cannot land inside a half-written answer.
+// as everything else, so they cannot land inside the interrupt somebody else
+// just pressed.
 func (r *Relay) Type(keys string) error {
 	if keys == "" {
 		return nil

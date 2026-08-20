@@ -756,10 +756,11 @@ func TestKeysAreRefusedWithoutTheKeyboard(t *testing.T) {
 	}
 }
 
-// TestAJoinerIsToldWhatItMayDo: somebody opening an agent mid-question sees the
-// question repainted, and must be given the way to answer it — which the host
-// announced before this browser existed.
-func TestAJoinerIsToldWhatItMayDo(t *testing.T) {
+// TestAJoinerIsToldWhatTheAgentIsDoing: somebody opening an agent mid-question
+// sees the question repainted, and has to be told it is a question — which the
+// host announced before this browser existed. What the question says is on the
+// screen they were just repainted with.
+func TestAJoinerIsToldWhatTheAgentIsDoing(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, _, screen := withAgent(t, ctx)
 
@@ -774,9 +775,8 @@ func TestAJoinerIsToldWhatItMayDo(t *testing.T) {
 
 	viewer := watch(t, ctx, s, memberToken, "checkups")
 	var state struct {
-		Type    string          `json:"type"`
-		State   string          `json:"state"`
-		Options []detect.Option `json:"options"`
+		Type  string `json:"type"`
+		State string `json:"state"`
 	}
 	// Past the size and the repaint, which are the rest of catching up.
 	for state.Type != "state" {
@@ -791,11 +791,8 @@ func TestAJoinerIsToldWhatItMayDo(t *testing.T) {
 			t.Fatalf("unmarshal %s: %v", data, err)
 		}
 	}
-	if state.State != "dialog" || len(state.Options) != 2 {
+	if state.State != "dialog" {
 		t.Fatalf("a joiner was told %+v", state)
-	}
-	if state.Options[1].Label != "No" || !state.Options[0].Selected {
-		t.Errorf("the choices arrived as %+v", state.Options)
 	}
 }
 
@@ -830,14 +827,11 @@ func TestAnAgentKindWithNoMarkersClaimsNothing(t *testing.T) {
 	if state := live.State(); state != detect.Unknown {
 		t.Errorf("an unreadable screen was read as %s", state)
 	}
-	if options := live.Options(); len(options) != 0 {
-		t.Errorf("choices were offered off a screen nothing is known about: %+v", options)
-	}
 }
 
-// TestAnAnswerAndAnInterruptReachTheHost: the two things a member does that are
-// not words. The hub passes both on unread; the screen's machine decides.
-func TestAnAnswerAndAnInterruptReachTheHost(t *testing.T) {
+// TestAnInterruptReachesTheHost: the one thing a member does that is not words.
+// The hub passes it on unread; the screen's machine decides whether it lands.
+func TestAnInterruptReachesTheHost(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)
 	control := joinAsHost(t, ctx, s, hostToken)
@@ -850,24 +844,17 @@ func TestAnAnswerAndAnInterruptReachTheHost(t *testing.T) {
 
 	viewer := watch(t, ctx, s, memberToken, "checkups")
 	for _, send := range []string{
-		// Unrecognised first: it must be dropped rather than passed on, so the
-		// frames read below are the two that were meant.
-		`{"type":"keystroke","text":""}`,
+		// Both of these must be dropped rather than passed on, so the frame read
+		// below is the one that was meant. An answer is now one of them: kolo
+		// presses nothing on anybody's behalf but the interrupt, and a browser
+		// still asking for one is a browser to ignore.
+		`{"type":"keystroke","text":""}`,
 		`{"type":"answer","choice":2,"label":"No"}`,
 		`{"type":"interrupt"}`,
 	} {
 		if err := viewer.Write(ctx, websocket.MessageText, []byte(send)); err != nil {
 			t.Fatal(err)
 		}
-	}
-
-	var answer toAgent
-	readFrame(t, ctx, control, &answer)
-	if answer.Type != "answer" || answer.Choice != 2 || answer.Label != "No" {
-		t.Fatalf("the host was told %+v", answer)
-	}
-	if answer.From != "Artem" || answer.Name != "checkups" {
-		t.Errorf("answer arrived as %+v", answer)
 	}
 
 	var interrupt toAgent
