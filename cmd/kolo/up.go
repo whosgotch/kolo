@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/whosgotch/kolo/internal/adapter"
+	"github.com/whosgotch/kolo/internal/config"
 	"github.com/whosgotch/kolo/internal/host"
 	"github.com/whosgotch/kolo/internal/hub"
 )
@@ -32,13 +33,13 @@ func upCmd(args []string) error {
 	var dirs, allow list
 	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default the current directory)")
 	fs.Var(&allow, "allow", "an agent command the org may run (repeat, or comma-separated; default whichever kolo knows and finds installed)")
-	orgPath := fs.String("org", "org.json", "org file, created if it is not there")
+	orgPath := fs.String("org", config.Path("org.json"), "org file, created if it is not there")
 	name := fs.String("name", "", "org name, used only when creating the org file (default this directory's name)")
 	addr := fs.String("addr", "", "address the hub listens on (default 0.0.0.0:7300, or :443 with -tls-domain)")
 	tlsDomain := fs.String("tls-domain", "", "get and renew a certificate for this domain, and serve https")
 	tlsCache := fs.String("tls-cache", hub.DefaultCache(), "where to keep certificates between restarts")
 	tlsStaging := fs.Bool("tls-staging", false, "use Let's Encrypt's test service, whose certificates browsers do not trust")
-	state := fs.String("state", defaultState(), "where to record the agents running here")
+	state := fs.String("state", config.Path("agents.json"), "where to record the agents running here")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo up [-dir <path>...] [-allow <command>]")
 		fs.PrintDefaults()
@@ -52,6 +53,7 @@ func upCmd(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	strayOrg(fs)
 
 	// Both of these are refusals in kolo host, where the machine being lent is
 	// deliberate and saying so costs nothing. Here they are the common case, so
@@ -305,4 +307,30 @@ func onLoopback(addr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// strayOrg says something when the directory being lent has an org file in it
+// that kolo is about to ignore.
+//
+// Earlier versions kept the org beside whatever you were lending, so a machine
+// could end up with an org per directory and no way to tell which one it was
+// serving. It lives under ~/.kolo now. The old file is left alone rather than
+// moved or read: it may be somebody's real org, and picking it up silently is
+// the confusion this change is undoing.
+func strayOrg(fs *flag.FlagSet) {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "org" {
+			set = true
+		}
+	})
+	if set {
+		return
+	}
+	if _, err := os.Stat("org.json"); err != nil {
+		return
+	}
+	cwd, _ := os.Getwd()
+	fmt.Printf("Ignoring the org.json in %s. kolo keeps the org in %s now;\n"+
+		"pass -org org.json to use that one instead, or delete it.\n", cwd, config.Dir())
 }

@@ -51,10 +51,11 @@ $ cd ~/work/api && kolo up
 ```
 
 That is the whole of it. `kolo up` runs the hub and lends this machine to it,
-and makes what it needs on the way: the org file, this machine's credential, and
-an invite link to send the team — good for ten people over a week, withdrawable
-with one command. It lends the directory it was started in and runs
-whichever agents it finds installed, both of which `-dir` and `-allow` override.
+and makes what it needs on the way, all of it under `~/.kolo`: the org file,
+this machine's credential, and an invite link to send the team — good for ten
+people over a week, withdrawable with one command. It lends the directory it
+was started in and runs whichever agents it finds installed, both of which
+`-dir` and `-allow` override.
 
 `kolo help` is the rest of it: `invite` and `who` for letting people in and
 seeing who is in, and `serve`, `token` and `host` for an org whose hub lives

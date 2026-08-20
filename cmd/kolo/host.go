@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/whosgotch/kolo/internal/config"
 	"github.com/whosgotch/kolo/internal/host"
 	"github.com/whosgotch/kolo/internal/hub"
 )
@@ -25,7 +26,7 @@ func hostCmd(args []string) error {
 	join := fs.String("join", os.Getenv("KOLO_JOIN"), "the join string the hub printed for this machine; supplies both -hub and -token (default $KOLO_JOIN)")
 	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join, if not joining with -join (default $KOLO_HUB)")
 	token := fs.String("token", os.Getenv("KOLO_TOKEN"), "this machine's token, if not joining with -join (default $KOLO_TOKEN)")
-	state := fs.String("state", defaultState(), "where to record the agents running here")
+	state := fs.String("state", config.Path("agents.json"), "where to record the agents running here")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo host -dir <path> [-dir <path>...] -allow <command>")
 		fs.PrintDefaults()
@@ -130,16 +131,6 @@ func (l *list) Set(v string) error {
 		}
 	}
 	return nil
-}
-
-// defaultState is where a host records what it is running: the user's config
-// directory, because a host is started from wherever and must find it again.
-func defaultState() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(dir, "kolo", "agents.json")
 }
 
 // split reads a flag that may carry a comma-separated set.

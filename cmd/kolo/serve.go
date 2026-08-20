@@ -12,12 +12,13 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/whosgotch/kolo/internal/config"
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
 func serveCmd(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	orgPath := fs.String("org", "org.json", "org file listing members and their token hashes")
+	orgPath := fs.String("org", config.Path("org.json"), "org file listing members and their token hashes")
 	addr := fs.String("addr", "", "address to listen on (default 127.0.0.1:7300, or :443 with -tls-domain)")
 	tlsDomain := fs.String("tls-domain", "", "get and renew a certificate for this domain, and serve https (repeat, or comma-separated)")
 	tlsCache := fs.String("tls-cache", hub.DefaultCache(), "where to keep certificates between restarts")
@@ -102,7 +103,7 @@ func nextAddr(addr string) string {
 // so losing it means issuing another.
 func tokenCmd(args []string) error {
 	fs := flag.NewFlagSet("token", flag.ExitOnError)
-	orgPath := fs.String("org", "org.json", "org file to add them to")
+	orgPath := fs.String("org", config.Path("org.json"), "org file to add them to")
 	id := fs.String("id", "", "member or host id")
 	name := fs.String("name", "", "member's display name (defaults to the id)")
 	asHost := fs.Bool("host", false, "credentials for a machine that will run agents, not a person")

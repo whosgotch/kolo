@@ -10,7 +10,7 @@ When they are the same machine, one command is the whole of it:
 ```
 $ cd ~/work/api
 $ kolo up
-Created org.json for api.
+Created /Users/you/.kolo/org.json for api.
 
 api is up at http://192.168.1.24:7300
 Lending /Users/you/work/api, running claude.
@@ -26,6 +26,12 @@ every start and never written down; and, the first time, a member token for
 whoever ran it. It lends the directory it was started in and allows whichever
 agents kolo knows about and finds on `PATH`. `-dir` and `-allow` say otherwise,
 and repeat.
+
+Everything a machine remembers about kolo lives in `~/.kolo` — the org, the
+agents running here, the certificates it has been issued — so it is the same
+path on every machine, `kolo up` finds it from wherever you started, and
+deleting that directory is starting over. `$KOLO_HOME` moves it, and `-org`,
+`-state` and `-tls-cache` move one file each.
 
 It listens on every interface, so the org can reach it — over plain HTTP unless
 `-tls-domain` says otherwise. See [Being reachable from
@@ -88,7 +94,7 @@ already reach, and one or more machines lending themselves to it from elsewhere.
 An org file starts as its name. It is the only thing kolo cannot pick for you:
 
 ```
-$ echo '{"org": "acme"}' > org.json
+$ mkdir -p ~/.kolo && echo '{"org": "acme"}' > ~/.kolo/org.json
 ```
 
 Then mint credentials — one per member, and one for each machine that will run
@@ -97,7 +103,7 @@ else; losing one means issuing another.
 
 ```
 $ kolo token -id dana -name "Dana"
-Added Dana to org.json.
+Added Dana to /Users/you/.kolo/org.json.
 
 Send Dana these two, once. The token is stored nowhere:
 
@@ -107,7 +113,7 @@ Send Dana these two, once. The token is stored nowhere:
 
 ```
 $ kolo token -host -id devbox -hub https://hub.acme.com
-Added devbox to org.json.
+Added devbox to /Users/you/.kolo/org.json.
 
 Run this on devbox. It carries both the hub and the token, and is stored nowhere:
 
@@ -118,8 +124,8 @@ Run this on devbox. It carries both the hub and the token, and is stored nowhere
 `-hub` is where they will reach the hub, and it defaults to the address `kolo
 serve` listens on, so everything on one machine needs no flag at all.
 
-The file that results is small enough to read at a glance and belongs in version
-control — it holds hashes, never tokens:
+The file that results is small enough to read at a glance, and safe to keep in
+version control if you want the org reviewable — it holds hashes, never tokens:
 
 ```json
 {
@@ -147,7 +153,7 @@ nobody to be able to connect.
 Start it. It listens on localhost unless told otherwise:
 
 ```
-$ kolo serve -org org.json -addr 0.0.0.0:7300
+$ kolo serve -addr 0.0.0.0:7300
 kolo: hub for acme on 0.0.0.0:7300, 2 member(s)
 ```
 
@@ -162,7 +168,7 @@ Point a domain at the machine and let kolo get its own certificate:
 
 ```
 $ kolo up -tls-domain hub.acme.com
-$ kolo serve -org org.json -tls-domain hub.acme.com    # the hub on its own
+$ kolo serve -tls-domain hub.acme.com                  # the hub on its own
 ```
 
 Kolo asks Let's Encrypt for a certificate the first time somebody connects,
@@ -177,7 +183,7 @@ It needs two things of the network:
   org arrives. Anything else arriving on 80 is redirected to https, so somebody
   typing the bare name still ends up somewhere encrypted.
 
-Certificates are cached under your config directory, `-tls-cache` to move them.
+Certificates are cached in `~/.kolo/certs`, `-tls-cache` to move them.
 Keep that directory: losing it means asking for new certificates, and Let's
 Encrypt counts how often that happens. `-tls-staging` asks a test service whose
 certificates browsers do not trust and whose limits are generous — worth using

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -153,6 +154,11 @@ func Init(path, name string) (created bool, err error) {
 	}
 	org := &Org{Name: name}
 	if err := org.validate(); err != nil {
+		return false, fmt.Errorf("hub: %w", err)
+	}
+	// The org file is the first thing written under ~/.kolo, so the directory
+	// it lives in is usually not there yet.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return false, fmt.Errorf("hub: %w", err)
 	}
 	b, _ := json.MarshalIndent(org, "", "  ")

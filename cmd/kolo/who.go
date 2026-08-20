@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/whosgotch/kolo/internal/config"
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
@@ -17,7 +18,7 @@ import (
 // which link.
 func whoCmd(args []string) error {
 	fs := flag.NewFlagSet("who", flag.ExitOnError)
-	orgPath := fs.String("org", "org.json", "org file to read")
+	orgPath := fs.String("org", config.Path("org.json"), "org file to read")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo who [-org <path>]")
 		fs.PrintDefaults()

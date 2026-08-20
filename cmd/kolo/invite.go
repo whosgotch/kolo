@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/whosgotch/kolo/internal/config"
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
@@ -15,7 +16,7 @@ import (
 // An org has a channel it already talks in; this is the thing to paste there.
 func inviteCmd(args []string) error {
 	fs := flag.NewFlagSet("invite", flag.ExitOnError)
-	orgPath := fs.String("org", "org.json", "org file to record it in")
+	orgPath := fs.String("org", config.Path("org.json"), "org file to record it in")
 	hubURL := fs.String("hub", defaultHubURL, "where the people opening it will reach the hub")
 	id := fs.String("id", "team", "what this invite is called in the org file and the log")
 	days := fs.Int("days", 7, "how many days it works for")

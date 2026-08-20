@@ -7,9 +7,9 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/whosgotch/kolo/internal/config"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -43,11 +43,7 @@ type TLS struct {
 
 // DefaultCache is beside the rest of what a machine remembers about kolo.
 func DefaultCache() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "kolo-certs"
-	}
-	return filepath.Join(dir, "kolo", "certs")
+	return config.Path("certs")
 }
 
 // letsEncryptStaging issues untrusted certificates against generous limits.
