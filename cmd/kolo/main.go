@@ -6,6 +6,7 @@
 //	kolo serve     the hub an org connects to
 //	kolo token     mint credentials
 //	kolo host      lend this machine to the org
+//	kolo doctor    say what will and will not work on this machine
 //
 // Agents run on a machine somebody lends to the org; everyone else reaches them
 // through the hub, in a browser. See kolo help.
@@ -39,6 +40,7 @@ func init() {
 		"who":    {run: whoCmd, brief: "say who is in the org"},
 		"token":  {run: tokenCmd, brief: "mint credentials"},
 		"host":   {run: hostCmd, brief: "lend this machine to the org"},
+		"doctor": {run: doctorCmd, brief: "say what will and will not work on this machine"},
 		"help":   {run: helpCmd, brief: "explain kolo, or one of its commands"},
 	}
 }

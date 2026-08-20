@@ -15,7 +15,7 @@ import (
 // way of using kolo. A list that mixes them makes the common case look like a
 // choice between six things.
 var (
-	everyday   = []string{"up", "invite", "who"}
+	everyday   = []string{"up", "invite", "who", "doctor"}
 	separately = []string{"serve", "token", "host"}
 )
 
@@ -177,6 +177,29 @@ anyone in a channel can open.
 
 The token is printed once and stored nowhere. The hub keeps only its
 hash, so a lost one is replaced rather than recovered.
+
+`,
+
+	"doctor": `Says what this machine can and cannot do with the agents it lends.
+
+    kolo doctor
+
+Three things, and it changes none of them:
+
+  - whether each command the org may start is actually there
+  - what kolo knows about each of them: watching and typing work for
+    anything that draws a terminal, while stopping one from the browser
+    and resuming its conversation need kolo to know the agent kind
+  - what it has been making of each running agent's screen
+
+The last is the one worth running after an agent upgrades. Markers are
+strings off that agent's screen, and a CLI that moved one breaks nothing
+that says so — the stop button simply stops working. An agent whose
+screen has read as nothing kolo understands for three days is that,
+and this is the only place it shows up.
+
+It reads what the host wrote down, so it needs none of the flags kolo up
+was given, and works whether or not kolo is running.
 
 `,
 
