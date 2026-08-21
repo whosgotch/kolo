@@ -7,146 +7,208 @@
 <link rel="stylesheet" href="/assets/xterm.css">
 <style>
   :root {
-    --bg: #0b0b0b; --panel: #141414; --line: #262626;
-    --text: #ddd; --dim: #8a8f94; --warn: #e88; --ok: #7fb37f;
-    --mono: ui-monospace, Menlo, Consolas, monospace;
+    --bg: #0d0e10; --panel: #141619; --raised: #1b1e22; --line: #24272c;
+    --text: #e6e8ea; --dim: #8b929c; --faint: #5f666f;
+    --warn: #e88b8b; --ok: #7fc08a; --accent: #6f9dea;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --r: 8px;
   }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
-  body { display: flex; flex-direction: column; font: 13px var(--mono); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.5 var(--ui);
+         -webkit-font-smoothing: antialiased; }
   /* Every display rule below would otherwise outrank the browser's own rule for
      the hidden attribute, which is how the views are switched. */
   [hidden] { display: none !important; }
 
-  header {
-    display: flex; align-items: center; gap: 12px;
-    padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel);
-  }
-  header .org { font-weight: 600; }
-  header .spacer { flex: 1; }
-  header .who { color: var(--dim); }
-
   button, input, select {
-    background: #1b1b1b; color: var(--text); border: 1px solid var(--line);
-    border-radius: 4px; padding: 6px 8px; font: inherit;
+    background: var(--raised); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 10px; font: inherit;
   }
   button { cursor: pointer; }
-  button:hover:not(:disabled) { background: #232323; }
-  button:disabled { opacity: .5; cursor: default; }
+  button:hover:not(:disabled) { background: #23262b; border-color: #33373d; }
+  button:disabled { opacity: .4; cursor: default; }
   button.quiet { background: none; border-color: transparent; color: var(--dim); }
-  button.quiet:hover { color: var(--text); }
+  button.quiet:hover:not(:disabled) { background: var(--raised); color: var(--text); }
+  button.go { background: var(--accent); border-color: var(--accent); color: #0b0d10; font-weight: 600; }
+  button.go:hover:not(:disabled) { background: #83abee; border-color: #83abee; }
 
-  main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .pad { padding: 16px; overflow: auto; }
+  /* ---- the frame: agents down the side, one agent filling the rest -------- */
 
-  table { border-collapse: collapse; width: 100%; }
-  th { text-align: left; color: var(--dim); font-weight: normal; padding: 6px 10px; }
-  td { padding: 8px 10px; border-top: 1px solid var(--line); }
-  tr.agent:hover td { background: #151515; }
-  td.name button { background: none; border: none; padding: 0; color: var(--text); text-decoration: underline; }
-  td.dir { color: var(--dim); }
+  .app { display: grid; grid-template-columns: 248px 1fr; height: 100%; }
 
-  .status { display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); }
-  .status.running { color: var(--ok); }
-  .status.failed { color: var(--warn); }
-  .status.starting { color: var(--dim); }
+  .side { display: flex; flex-direction: column; min-height: 0;
+          background: var(--panel); border-right: 1px solid var(--line); }
+  .brand { display: flex; align-items: baseline; gap: 8px; padding: 14px 14px 10px; }
+  .brand b { font-size: 14px; letter-spacing: .2px; }
+  .brand .org { color: var(--faint); font-size: 12px; }
+  .side .heading { display: flex; align-items: center; padding: 6px 14px;
+                   color: var(--faint); font-size: 11px; text-transform: uppercase;
+                   letter-spacing: .8px; }
+  .side .heading .spacer { flex: 1; }
+  .agents { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 8px; }
+  .agents .empty { color: var(--faint); padding: 10px 6px; }
 
-  form.create { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 20px 0 0; }
-  form.create input[name=name] { width: 18ch; }
+  /* One agent in the side. The whole row is the button: a list of things to open
+     where only part of each row opens it is a list that feels broken. */
+  .agent { position: relative; display: block; width: 100%; text-align: left;
+           background: none; border: 1px solid transparent; border-radius: var(--r);
+           padding: 8px 10px; margin-bottom: 2px; color: var(--text); }
+  .agent:hover:not(:disabled) { background: var(--raised); border-color: transparent; }
+  .agent.on { background: var(--raised); border-color: var(--line); }
+  .agent .row { display: flex; align-items: center; gap: 7px; }
+  .agent .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent .dir { display: block; color: var(--faint); font: 11px var(--mono); margin-top: 2px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A dot rather than a word: the status of eight agents should be readable
+     without reading eight labels. */
+  .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--faint); flex: none; }
+  .dot.running { background: var(--ok); }
+  .dot.failed { background: var(--warn); }
+  .dot.starting { background: var(--accent); }
+  .agent .drop { position: absolute; right: 6px; top: 6px; padding: 2px 6px;
+                 opacity: 0; color: var(--dim); }
+  .agent:hover .drop { opacity: 1; }
 
-  /* The section has to be a column that fills main, or the terminal grows to
-     its content and pushes what can be done with it off the bottom of the page. */
+  .side .me { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+              border-top: 1px solid var(--line); color: var(--dim); }
+  .side .me .who { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side .me form { margin: 0; }
+
+  main { min-width: 0; display: flex; flex-direction: column; }
+
+  /* ---- one agent ---------------------------------------------------------- */
+
   .watch { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  /* The terminal is the page. It centres what it cannot fill, rather than
-     sitting in a corner of a window it was never told the size of. */
-  #term { flex: 1; min-height: 0; overflow: hidden; display: flex;
-          align-items: center; justify-content: center; }
-  #term .xterm { padding: 4px; }
-  .doing { display: flex; gap: 8px; padding: 0 12px 12px; align-items: center; }
-  .doing .spacer { flex: 1; }
-  .typist { color: var(--dim); padding: 0 12px; }
-  button.holding { border-color: var(--ok); color: var(--ok); }
-  .note { min-height: 1.4em; padding: 6px 12px; color: var(--dim); }
-  .note.problem { color: var(--warn); }
-  .empty { color: var(--dim); padding: 24px 0; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+  .bar .title { display: flex; align-items: center; gap: 8px; flex: none;
+                font-size: 14px; font-weight: 600; }
+  /* Buttons keep their words on one line; the directory is what gives way when
+     the window is too narrow for all of it. */
+  .bar button, .bar .typist { white-space: nowrap; }
+  .bar .where { color: var(--faint); font: 11px var(--mono); min-width: 0;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .spacer { flex: 1; min-width: 0; }
+  .bar .typist { color: var(--dim); }
+  button.holding { border-color: var(--ok); color: var(--ok); background: #16241a; }
 
-  .signin { max-width: 34em; margin: 12vh auto; padding: 0 16px; }
-  .signin p { color: var(--dim); line-height: 1.6; }
-  .signin form { display: flex; gap: 8px; }
-  .signin input { flex: 1; }
+  /* The agent's screen is drawn inside a frame of its own, so what the agent
+     wrote and what this page says about it are never mistaken for each other.
+     It fills everything the bar and the note leave. */
+  .screen { flex: 1; min-height: 0; margin: 0 14px; padding: 6px;
+            border: 1px solid var(--line); border-radius: 10px; background: #000;
+            display: flex; overflow: hidden; }
+  /* Whoever holds the keyboard holds this screen, so the frame says so — the
+     same green as the button, where the eyes already are. */
+  .screen.holding { border-color: #2f5c39; }
+  /* The terminal is sized to the grid the hub settled on, and centred in
+     whatever the frame has left over. */
+  #term { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+
+  /* One line, always: a note appearing and going must not resize the screen
+     above it, which would cost every watcher a repaint at a new size. */
+  .note { height: 30px; margin: 0; padding: 7px 15px; color: var(--dim);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .note.problem { color: var(--warn); }
+
+  /* ---- nothing open ------------------------------------------------------- */
+
+  .home { flex: 1; min-height: 0; overflow-y: auto; display: flex;
+          flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+  .home h1 { font-size: 17px; font-weight: 600; margin: 0; }
+  .home p { color: var(--dim); margin: 0 0 14px; }
+  form.create { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+                justify-content: center; background: var(--panel); padding: 14px;
+                border: 1px solid var(--line); border-radius: 10px; }
+  form.create input[name=name] { width: 16ch; }
+  form.create select { max-width: 26ch; }
+
+  /* ---- the door ----------------------------------------------------------- */
+
+  .signin { max-width: 30em; margin: 16vh auto; padding: 0 20px; }
+  .signin h1 { font-size: 20px; margin: 0 0 6px; }
+  .signin p { color: var(--dim); line-height: 1.7; }
+  .signin form { display: flex; gap: 8px; margin: 16px 0; }
+  .signin input { flex: 1; font-family: var(--mono); }
+  .signin .problem { color: var(--warn); }
 </style>
 </head>
 <body>
-<header hidden>
-  <span class="org"></span>
-  <button class="quiet back" hidden>← all agents</button>
-  <span class="spacer"></span>
-  <span class="who"></span>
-  <form method="post" action="/logout"><button class="quiet">sign out</button></form>
-</header>
 
-<main>
-  <section class="signin pad" hidden>
-    <h1>kolo</h1>
-    <p>Paste the token your org gave you. It is kept in a cookie this page cannot
-       read, so you only do this once.</p>
-    <form method="post" action="/login">
-      <input name="token" type="password" placeholder="kolo_…" autofocus required>
-      <button type="submit">sign in</button>
-    </form>
-    <p class="problem" hidden>That token is not one this hub knows.</p>
-  </section>
+<section class="signin" hidden>
+  <h1>kolo</h1>
+  <p>Paste the token your org gave you. It is kept in a cookie this page cannot
+     read, so you only do this once.</p>
+  <form method="post" action="/login">
+    <input name="token" type="password" placeholder="kolo_…" autofocus required>
+    <button type="submit" class="go">sign in</button>
+  </form>
+  <p class="problem" hidden>That token is not one this hub knows.</p>
+</section>
 
-  <section class="list pad" hidden>
-    <table>
-      <thead><tr><th>agent</th><th>status</th><th>where</th><th>asked for by</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <p class="empty" hidden>No agents yet. Make one below.</p>
-
-    <form class="create">
-      <input name="name" placeholder="name" maxlength="32" required>
-      <select name="host"></select>
-      <select name="dir"></select>
-      <select name="command"></select>
-      <button type="submit">create</button>
-    </form>
-    <p class="note"></p>
-  </section>
-
-  <section class="watch" hidden>
-    <div id="term"></div>
-    <p class="note"></p>
-    <span class="typist"></span>
-    <div class="doing">
-      <button type="button" class="keyboard">take the keyboard</button>
-      <span class="spacer"></span>
-      <button type="button" class="interrupt" disabled>interrupt</button>
-      <button type="button" class="restart">restart</button>
-      <button type="button" class="fresh">start fresh</button>
+<div class="app" hidden>
+  <aside class="side">
+    <div class="brand"><b>kolo</b><span class="org"></span></div>
+    <div class="heading"><span>agents</span><span class="spacer"></span>
+      <button class="quiet new" title="new agent">+</button>
     </div>
-  </section>
-</main>
+    <div class="agents">
+      <p class="empty" hidden>No agents yet.</p>
+    </div>
+    <div class="me">
+      <span class="who"></span>
+      <form method="post" action="/logout"><button class="quiet">sign out</button></form>
+    </div>
+  </aside>
+
+  <main>
+    <section class="home" hidden>
+      <h1>No agent open</h1>
+      <p>Pick one from the side, or start another.</p>
+      <form class="create">
+        <input name="name" placeholder="name" maxlength="32" required>
+        <select name="host"></select>
+        <select name="dir"></select>
+        <select name="command"></select>
+        <button type="submit" class="go">create</button>
+      </form>
+      <p class="note"></p>
+    </section>
+
+    <section class="watch" hidden>
+      <div class="bar">
+        <div class="title"><span class="dot"></span><span class="agent-name"></span></div>
+        <span class="where"></span>
+        <span class="spacer"></span>
+        <span class="typist"></span>
+        <button type="button" class="keyboard">take the keyboard</button>
+        <button type="button" class="interrupt" disabled>interrupt</button>
+        <button type="button" class="quiet restart">restart</button>
+        <button type="button" class="quiet fresh">start fresh</button>
+      </div>
+      <div class="screen"><div id="term"></div></div>
+      <p class="note"></p>
+    </section>
+  </main>
+</div>
 
 <script src="/assets/xterm.js"></script>
 <script src="/assets/addon-canvas.js"></script>
 <script>
-// One page, two views. Which is showing comes from the URL, so opening an agent
-// and reloading lands back on that agent.
+// One page, two views: the door, and the org's agents. Which agent is open comes
+// from the URL, so opening one and reloading lands back on it.
 const el = (sel) => document.querySelector(sel);
-const header = el('header');
-const views = { signin: el('.signin'), list: el('.list'), watch: el('.watch') };
+const views = { signin: el('.signin'), app: el('.app') };
 
 function show(name) {
   for (const [key, node] of Object.entries(views)) node.hidden = key !== name;
-  header.hidden = name === 'signin';
-  el('.back').hidden = name !== 'watch';
 }
 
 function agentInURL() {
   const m = location.hash.match(/^#\/agent\/([a-z0-9-]+)$/);
   return m && m[1];
 }
-
 
 let hosts = [];
 let signedIn = false;
@@ -160,8 +222,9 @@ async function refresh() {
     return null;
   }
   const data = await resp.json();
-  el('header .org').textContent = data.org;
-  el('header .who').textContent = data.you.name;
+  show('app');
+  el('.brand .org').textContent = data.org;
+  el('.me .who').textContent = data.you.name;
   me = data.you;
   hosts = data.hosts;
   drawAgents(data.agents || []);
@@ -169,37 +232,48 @@ async function refresh() {
   return data;
 }
 
+// drawAgents redraws the side. Which one is open is read from the URL rather
+// than remembered from the click that opened it, so a reload and somebody else's
+// agent appearing land in the same place.
 function drawAgents(agents) {
-  const body = el('.list tbody');
-  body.replaceChildren();
-  el('.list .empty').hidden = agents.length > 0;
+  const list = el('.agents');
+  const open = agentInURL();
+  for (const node of list.querySelectorAll('.agent')) node.remove();
+  el('.agents .empty').hidden = agents.length > 0;
 
   for (const a of agents) {
-    const row = document.createElement('tr');
-    row.className = 'agent';
+    const row = document.createElement('button');
+    row.className = 'agent' + (a.name === open ? ' on' : '');
     row.innerHTML = `
-      <td class="name"><button></button></td>
-      <td><span class="status"></span></td>
-      <td class="dir"></td>
-      <td></td>
-      <td><button class="quiet stop">stop</button></td>`;
-    // Text rather than interpolated: a directory is a path off somebody's disk
-    // and goes on the page as-is.
-    row.querySelector('.name button').textContent = a.name;
-    const status = row.querySelector('.status');
-    status.textContent = a.error ? `${a.status} — ${a.error}` : a.status;
-    status.classList.add(a.status);
+      <span class="row"><span class="dot"></span><span class="name"></span></span>
+      <span class="dir"></span>
+      <span class="quiet drop" title="stop">✕</span>`;
+    // Text rather than interpolated: a name and a directory are somebody's, and
+    // they go on the page as-is.
+    row.querySelector('.name').textContent = a.name;
+    row.querySelector('.dot').classList.add(a.status);
     row.querySelector('.dir').textContent = `${a.host}:${a.dir}`;
-    row.children[3].textContent = a.created_by.name;
+    row.title = a.error ? `${a.status} — ${a.error}` : a.status;
 
-    row.querySelector('.name button').onclick = () => { location.hash = `#/agent/${a.name}`; };
-    row.querySelector('.stop').onclick = () => stop(a.name);
-    body.append(row);
+    row.onclick = () => { location.hash = `#/agent/${a.name}`; };
+    row.querySelector('.drop').onclick = (ev) => { ev.stopPropagation(); stop(a.name); };
+    list.append(row);
+    if (a.name === open) drawTitle(a);
   }
 }
 
-// The choices are the host's own terms, so nothing can be picked that will only
-// be refused a moment later.
+// drawTitle says which agent this screen belongs to, above the screen.
+function drawTitle(a) {
+  el('.bar .agent-name').textContent = a.name;
+  el('.bar .where').textContent = `${a.host}:${a.dir}`;
+  const dot = el('.bar .dot');
+  dot.className = 'dot ' + a.status;
+  dot.title = a.error ? `${a.status} — ${a.error}` : a.status;
+}
+
+// drawChoices fills the create form with what the hosts are lending. The
+// choices are the host's own terms, so nothing can be picked that will only be
+// refused a moment later.
 function drawChoices() {
   const hostSel = el('[name=host]'), dirSel = el('[name=dir]'), cmdSel = el('[name=command]');
   const chosen = hostSel.value;
@@ -209,8 +283,8 @@ function drawChoices() {
   const host = hosts.find((h) => h.id === hostSel.value);
   fill(dirSel, host ? host.dirs : []);
   fill(cmdSel, host ? host.allow : []);
-  el('.create button').disabled = hosts.length === 0;
-  if (hosts.length === 0) say('.list', 'No machine is lending itself to this org right now.');
+  el('form.create button').disabled = hosts.length === 0;
+  if (hosts.length === 0) say('.home', 'No machine is lending itself to this org right now.');
 }
 
 // options may be absent rather than empty: a host that lends nothing sends null
@@ -228,30 +302,35 @@ function fill(select, options) {
   if ((options || []).includes(chosen)) select.value = chosen;
 }
 
-el('[name=host]').onchange = drawChoices;
+el('select[name=host]').onchange = drawChoices;
+el('.side .new').onclick = () => { location.hash = ''; el('input[name=name]').focus(); };
 
-el('.create').onsubmit = async (ev) => {
+el('form.create').onsubmit = async (ev) => {
   ev.preventDefault();
   const form = new FormData(ev.target);
+  const body = JSON.stringify({
+    name: form.get('name'), host: form.get('host'),
+    dir: form.get('dir'), command: form.get('command'),
+  });
   const resp = await fetch('/v1/agents', {
-    method: 'POST',
-    body: JSON.stringify(Object.fromEntries(form)),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
   });
   if (!resp.ok) {
-    say('.list', (await resp.text()).trim(), true);
+    say('.home', (await resp.text()).trim(), true);
     return;
   }
-  ev.target.querySelector('[name=name]').value = '';
-  say('.list', '');
-  refresh();
+  ev.target.reset();
+  say('.home', '');
+  const made = await resp.json();
+  await refresh();
+  location.hash = `#/agent/${made.name}`;
 };
 
 async function stop(name) {
-  // Everyone has the same power over every agent, including this one, and
-  // somebody may be in the middle of using it.
-  if (!confirm(`Stop ${name}? Anyone watching loses it, including mid-task.`)) return;
+  if (!confirm(`Stop ${name}? Its conversation goes with it.`)) return;
   const resp = await fetch(`/v1/agents/${name}`, { method: 'DELETE' });
-  if (!resp.ok) say('.list', (await resp.text()).trim(), true);
+  if (!resp.ok) say('.home', (await resp.text()).trim(), true);
+  if (agentInURL() === name) location.hash = '';
   refresh();
 }
 
@@ -262,16 +341,23 @@ function say(view, message, problem) {
 }
 
 
+// The terminal is drawn at one size and never scaled to fill the window. The
+// grid is the agent's, shared by everybody watching, and the hub already keeps
+// it inside the smallest of their windows — so a window with room to spare shows
+// the same screen with black around it rather than the same screen blown up.
+const fontSize = 13;
+
 const term = new Terminal({
   // Keystrokes reach the agent, but only from whoever has taken the keyboard —
   // see onData below. One typist at a time, because two people typing into one
   // terminal interleave inside a word.
   disableStdin: false,
   cursorBlink: true,
-  fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
-  fontSize: 13,
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  fontSize: fontSize,
   customGlyphs: true,
-  theme: { background: '#0b0b0b' },
+  scrollback: 5000,
+  theme: { background: '#000000' },
 });
 term.open(el('#term'));
 
@@ -305,44 +391,46 @@ let me = {};
 // watching, so this follows rather than leads.
 let grid = { cols: 120, rows: 40 };
 
-// The font size this window would like to read at. What it can actually show at
-// that size is what gets proposed to the hub.
-const preferredFont = 13;
+// room is what the frame has left to draw a terminal in.
+function room() {
+  const box = el('#term').getBoundingClientRect();
+  return { w: Math.floor(box.width), h: Math.floor(box.height) };
+}
 
-// cell measures one character at a font size, which is what turns a window in
-// pixels into a terminal in columns and back.
-function cell(fontSize) {
-  const ctx = cell.ctx || (cell.ctx = document.createElement('canvas').getContext('2d'));
-  ctx.font = `${fontSize}px ui-monospace, Menlo, Consolas, monospace`;
-  return { w: ctx.measureText('M').width, h: Math.ceil(fontSize * 1.2) };
+// cell is what one character measures, read back off the terminal rather than
+// guessed at with a canvas: xterm decides its own line height and letter
+// spacing, and a guess a pixel out puts a column over the edge.
+//
+// Measured once. It is the same for every character at a size that never
+// changes, and measuring it again while a resize is still being drawn reads the
+// old screen against the new grid — which is how a terminal ends up scaled to
+// twice the window.
+let measured = null;
+function cell() {
+  if (measured) return measured;
+  const drawn = term.element && term.element.querySelector('.xterm-screen');
+  if (!drawn || !drawn.offsetWidth || !term.cols || !term.rows) return null;
+  measured = { w: drawn.offsetWidth / term.cols, h: drawn.offsetHeight / term.rows };
+  return measured;
 }
 
 // propose tells the hub what this window can draw. Everyone watching sends this
 // and the smallest wins, so nobody is shown a screen the agent has drawn wider
 // than their window.
 function propose() {
-  const box = el('#term').getBoundingClientRect();
-  const c = cell(preferredFont);
-  const cols = Math.max(20, Math.floor((box.width - 8) / c.w));
-  const rows = Math.max(6, Math.floor((box.height - 8) / c.h));
-  tell({ type: 'size', cols, rows });
+  const box = room(), c = cell();
+  // A view that is not on screen measures zero, and the smallest proposal wins:
+  // sizing the agent's terminal from a window nobody is looking at would shrink
+  // it for everybody who is.
+  if (!c || !box.w || !box.h) return;
+  tell({
+    type: 'size',
+    cols: Math.max(20, Math.floor(box.w / c.w)),
+    rows: Math.max(6, Math.floor(box.h / c.h)),
+  });
 }
 
-// fit fills the window with the grid the hub settled on, by choosing the largest
-// font that still fits. The agent's screen is one shape; this is the biggest it
-// can be drawn here without cutting anything off.
-function fit() {
-  const box = el('#term').getBoundingClientRect();
-  if (!box.width || !box.height) return;
-  const unit = cell(100);
-  const size = Math.floor(Math.min(
-    (box.width - 8) / (grid.cols * unit.w / 100),
-    (box.height - 8) / (grid.rows * unit.h / 100),
-  ));
-  term.options.fontSize = Math.max(6, Math.min(size, 28));
-}
-
-addEventListener('resize', () => { propose(); fit(); });
+addEventListener('resize', propose);
 
 function watch(name) {
   close();
@@ -353,6 +441,11 @@ function watch(name) {
 function close() {
   watching = null;
   offer('unknown');
+  // The keyboard is held by a connection, not by a member: leaving this agent
+  // drops it even though the same person comes back. Forgetting it here is what
+  // stops the returning page from offering to hand back a keyboard the hub has
+  // already taken, and swallowing everything typed into it.
+  typist = null; mine = false; keyboardChanged();
   if (socket) { const was = socket; socket = null; was.close(); }
 }
 
@@ -383,7 +476,6 @@ function connect(name) {
       case 'size':
         grid = { cols: msg.cols, rows: msg.rows };
         term.resize(msg.cols, msg.rows);
-        fit();
         break;
       case 'state':
         say('.watch', describe(msg.state));
@@ -443,7 +535,6 @@ function describe(state) {
   }
 }
 
-
 // offer draws what a member may do to the agent as it stands. Stop is the only
 // one of them that depends on the screen, and it is read from the same events as
 // everything else so it is never offered for a screen the agent has left behind.
@@ -466,7 +557,8 @@ function keyboardChanged(was) {
   const button = el('.keyboard');
   button.textContent = mine ? 'hand back the keyboard' : 'take the keyboard';
   button.classList.toggle('holding', mine);
-  el('.typist').textContent = typist ? (mine ? 'you are typing' : `${typist} is typing`) : '';
+  el('.screen').classList.toggle('holding', mine);
+  el('.bar .typist').textContent = typist ? (mine ? 'you are typing' : `${typist} is typing`) : '';
   if (mine) {
     term.focus();
     say('.watch', was ? `you took the keyboard from ${was}` : 'you have the keyboard');
@@ -504,28 +596,26 @@ function tell(what) {
 
 // ---- routing -----------------------------------------------------------
 
-el('.back').onclick = () => { location.hash = ''; };
-
 async function route() {
-  const data = await refresh();
-  if (!data) return;
-
   const name = agentInURL();
-  if (!name) {
+  // The screen is put up before the list is fetched, so opening an agent does
+  // not wait on a round trip that has nothing to do with it.
+  el('.watch').hidden = !name;
+  el('.home').hidden = !!name;
+  if (name) {
+    if (watching !== name) watch(name);
+  } else {
     close();
     term.reset();
-    show('list');
-    return;
   }
-  show('watch');
-  if (watching !== name) watch(name);
+  await refresh();
 }
 
 addEventListener('hashchange', route);
 route();
 // The list is a live thing: agents appear when somebody else makes one, and
 // change status on their own.
-setInterval(() => { if (signedIn && !agentInURL()) refresh(); }, 3000);
+setInterval(() => { if (signedIn) refresh(); }, 3000);
 </script>
 </body>
 </html>
