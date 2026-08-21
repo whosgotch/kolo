@@ -15,7 +15,7 @@ endif
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-.PHONY: install run test vet fmt clean
+.PHONY: install run test vet fmt clean brand
 
 # The one to use. Puts kolo on PATH from source, so every other command in the
 # docs is the command in the docs.
@@ -48,3 +48,8 @@ fmt:
 
 clean:
 	rm -f $(BIN)
+
+# Regenerates the icons and the token stylesheet the page serves, from
+# docs/brand. See docs/brand/kolo-brand.md.
+brand:
+	node scripts/brand.mjs

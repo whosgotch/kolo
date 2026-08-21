@@ -7,14 +7,22 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="256x256" href="/assets/icon.png">
 <link rel="apple-touch-icon" href="/assets/icon-180.png">
+<link rel="stylesheet" href="/assets/tokens.css">
 <link rel="stylesheet" href="/assets/xterm.css">
 <style>
+  /* Every colour and face is the brand's, read from /assets/tokens.css — see
+     docs/brand/kolo-brand.md. Nothing below invents one. */
   :root {
-    --bg: #0d0e10; --panel: #141619; --raised: #1b1e22; --line: #24272c;
-    --text: #e6e8ea; --dim: #8b929c; --faint: #5f666f;
-    --warn: #e88b8b; --ok: #7fc08a; --accent: #6f9dea;
-    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --bg: var(--kolo-bg);
+    --panel: var(--kolo-bg-raised);
+    --raised: var(--kolo-bg-raised);
+    --line: color-mix(in srgb, var(--kolo-slate) 30%, transparent);
+    --text: var(--kolo-fg);
+    --dim: var(--kolo-fg-muted);
+    --faint: color-mix(in srgb, var(--kolo-fg-muted) 75%, transparent);
+    --structure: var(--kolo-accent);
+    --ui: var(--kolo-sans);
+    --mono: var(--kolo-mono);
     --r: 8px;
   }
   * { box-sizing: border-box; }
@@ -30,12 +38,14 @@
     border-radius: 6px; padding: 6px 10px; font: inherit;
   }
   button { cursor: pointer; }
-  button:hover:not(:disabled) { background: #23262b; border-color: #33373d; }
+  button:hover:not(:disabled) { background: color-mix(in srgb, var(--kolo-chalk) 8%, var(--raised));
+                                border-color: color-mix(in srgb, var(--kolo-slate) 55%, transparent); }
   button:disabled { opacity: .4; cursor: default; }
   button.quiet { background: none; border-color: transparent; color: var(--dim); }
   button.quiet:hover:not(:disabled) { background: var(--raised); color: var(--text); }
-  button.go { background: var(--accent); border-color: var(--accent); color: #0b0d10; font-weight: 600; }
-  button.go:hover:not(:disabled) { background: #83abee; border-color: #83abee; }
+  button.go { background: var(--structure); border-color: var(--structure);
+              color: var(--kolo-chalk); font-weight: 500; }
+  button.go:hover:not(:disabled) { filter: brightness(1.15); }
 
   /* ---- the frame: agents down the side, one agent filling the rest -------- */
 
@@ -48,7 +58,10 @@
      characters, and a browser scaling it down turns them to mush. */
   .mark { width: 20px; height: 20px; border-radius: 5px; }
   .mark.big { width: 56px; height: 56px; border-radius: 13px; margin-bottom: 10px; }
-  .brand b { font-size: 14px; letter-spacing: .2px; }
+  .brand b { font: 500 14px var(--mono); letter-spacing: var(--kolo-wordmark-tracking);
+             text-transform: lowercase; }
+  /* Without something between them the pair reads as "okolo". */
+  .brand .rule { width: 1px; height: 15px; background: var(--kolo-slate); }
   .brand .org { color: var(--faint); font-size: 12px; }
   .side .heading { display: flex; align-items: center; padding: 6px 14px;
                    color: var(--faint); font-size: 11px; text-transform: uppercase;
@@ -65,15 +78,17 @@
   .agent:hover:not(:disabled) { background: var(--raised); border-color: transparent; }
   .agent.on { background: var(--raised); border-color: var(--line); }
   .agent .row { display: flex; align-items: center; gap: 7px; }
-  .agent .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent .name { font: 500 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .agent .dir { display: block; color: var(--faint); font: 11px var(--mono); margin-top: 2px;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* A dot rather than a word: the status of eight agents should be readable
      without reading eight labels. */
-  .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--faint); flex: none; }
-  .dot.running { background: var(--ok); }
-  .dot.failed { background: var(--warn); }
-  .dot.starting { background: var(--accent); }
+  .dot { width: 7px; height: 7px; border-radius: 999px; flex: none;
+         background: var(--kolo-state-idle); }
+  /* Brass is not decoration: it means this agent is working right now, which
+     the hub only says about the screen being watched. */
+  .dot.busy { background: var(--kolo-state-running); }
+  .dot.failed { background: var(--kolo-state-failed); }
   .agent .drop { position: absolute; right: 6px; top: 6px; padding: 2px 6px;
                  opacity: 0; color: var(--dim); }
   .agent:hover .drop { opacity: 1; }
@@ -90,7 +105,7 @@
   .watch { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
   .bar .title { display: flex; align-items: center; gap: 8px; flex: none;
-                font-size: 14px; font-weight: 600; }
+                font: 500 14px var(--mono); }
   /* Buttons keep their words on one line; the directory is what gives way when
      the window is too narrow for all of it. */
   .bar button, .bar .typist { white-space: nowrap; }
@@ -98,17 +113,20 @@
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bar .spacer { flex: 1; min-width: 0; }
   .bar .typist { color: var(--dim); }
-  button.holding { border-color: var(--ok); color: var(--ok); background: #16241a; }
+  /* Holding the keyboard is a selection, not a state of the agent: structure
+     rather than signal. */
+  button.holding { border-color: var(--structure); color: var(--kolo-chalk);
+                   background: color-mix(in srgb, var(--structure) 35%, transparent); }
 
   /* The agent's screen is drawn inside a frame of its own, so what the agent
      wrote and what this page says about it are never mistaken for each other.
      It fills everything the bar and the note leave. */
   .screen { flex: 1; min-height: 0; margin: 0 14px; padding: 6px;
-            border: 1px solid var(--line); border-radius: 10px; background: #000;
+            border: 1px solid var(--line); border-radius: 10px; background: var(--kolo-void);
             display: flex; overflow: hidden; }
   /* Whoever holds the keyboard holds this screen, so the frame says so — the
      same green as the button, where the eyes already are. */
-  .screen.holding { border-color: #2f5c39; }
+  .screen.holding { border-color: var(--structure); }
   /* The terminal is sized to the grid the hub settled on, and centred in
      whatever the frame has left over. */
   #term { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
@@ -117,7 +135,7 @@
      above it, which would cost every watcher a repaint at a new size. */
   .note { height: 30px; margin: 0; padding: 7px 15px; color: var(--dim);
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .note.problem { color: var(--warn); }
+  .note.problem { color: var(--kolo-state-failed); }
 
   /* ---- nothing open ------------------------------------------------------- */
 
@@ -138,7 +156,7 @@
   .signin p { color: var(--dim); line-height: 1.7; }
   .signin form { display: flex; gap: 8px; margin: 16px 0; }
   .signin input { flex: 1; font-family: var(--mono); }
-  .signin .problem { color: var(--warn); }
+  .signin .problem { color: var(--kolo-state-failed); }
 </style>
 </head>
 <body>
@@ -157,7 +175,7 @@
 
 <div class="app" hidden>
   <aside class="side">
-    <div class="brand"><img class="mark" src="/assets/icon.png" alt=""><b>kolo</b><span class="org"></span></div>
+    <div class="brand"><img class="mark" src="/assets/icon.png" alt=""><b>kolo</b><span class="rule"></span><span class="org"></span></div>
     <div class="heading"><span>agents</span><span class="spacer"></span>
       <button class="quiet new" title="new agent">+</button>
     </div>
@@ -259,7 +277,8 @@ function drawAgents(agents) {
     // Text rather than interpolated: a name and a directory are somebody's, and
     // they go on the page as-is.
     row.querySelector('.name').textContent = a.name;
-    row.querySelector('.dot').classList.add(a.status);
+    row.querySelector('.dot').classList.toggle('failed', a.status === 'failed');
+    if (a.name === open && doing === 'busy') row.querySelector('.dot').classList.add('busy');
     row.querySelector('.dir').textContent = `${a.host}:${a.dir}`;
     row.title = a.error ? `${a.status} — ${a.error}` : a.status;
 
@@ -275,7 +294,9 @@ function drawTitle(a) {
   el('.bar .agent-name').textContent = a.name;
   el('.bar .where').textContent = `${a.host}:${a.dir}`;
   const dot = el('.bar .dot');
-  dot.className = 'dot ' + a.status;
+  dot.className = 'dot';
+  dot.classList.toggle('failed', a.status === 'failed');
+  dot.classList.toggle('busy', doing === 'busy');
   dot.title = a.error ? `${a.status} — ${a.error}` : a.status;
 }
 
@@ -365,7 +386,8 @@ const term = new Terminal({
   fontSize: fontSize,
   customGlyphs: true,
   scrollback: 5000,
-  theme: { background: '#000000' },
+  theme: { background: '#101314', foreground: '#E7E9E4',
+           cursor: '#2C6F62', selectionBackground: '#2C6F62' },
 });
 term.open(el('#term'));
 
@@ -377,6 +399,10 @@ try {
 } catch (e) {
   console.warn('canvas renderer unavailable, falling back to the DOM', e);
 }
+
+// What the open agent's screen is doing, which is the only place brass is
+// earned: the hub says this about the screen being watched and no other.
+let doing = null;
 
 // Who is typing at the agent being watched, and whether it is us.
 let typist = null;
@@ -547,7 +573,10 @@ function describe(state) {
 // one of them that depends on the screen, and it is read from the same events as
 // everything else so it is never offered for a screen the agent has left behind.
 function offer(state) {
+  doing = state;
   el('.interrupt').disabled = state !== 'busy';
+  const dot = el('.bar .dot');
+  if (dot) dot.classList.toggle('busy', state === 'busy');
 }
 
 // Taking it needs nobody's permission and cannot be refused: the agent belongs

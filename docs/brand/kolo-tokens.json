@@ -1,0 +1,32 @@
+{
+  "$schema": "https://design-tokens.org/schema.json",
+  "color": {
+    "void":       { "value": "#101314", "role": "ground, ink on light" },
+    "graphite":   { "value": "#1C2123", "role": "raised surface" },
+    "slate":      { "value": "#6E7673", "role": "secondary text, idle" },
+    "chalk":      { "value": "#E7E9E4", "role": "surface, ink on dark" },
+    "patina":     { "value": "#2C6F62", "role": "structure: links, focus, selection" },
+    "brass":      { "value": "#D9A441", "role": "signal: active agent, ramp top" },
+    "brassInk":   { "value": "#9C6C15", "role": "brass as text on light surfaces" },
+    "fail":       { "value": "#A63D2E", "role": "failed state only" }
+  },
+  "state": { "idle": "slate", "running": "brass", "done": "patina", "failed": "fail" },
+  "type": {
+    "mono": { "family": "JetBrains Mono", "weights": [400, 500, 700], "use": "wordmark, labels, numbers, status, data" },
+    "sans": { "family": "Archivo", "weights": [400, 500, 600], "use": "prose" },
+    "wordmark": { "family": "JetBrains Mono", "weight": 500, "tracking": "0.06em", "case": "lower" }
+  },
+  "mark": {
+    "innerRadius": 0.71,
+    "innerOffset": 0.1824,
+    "restPhase": -0.7853981633974483,
+    "clearSpace": 0.25,
+    "minVectorPx": 16,
+    "minAsciiRows": 12,
+    "ramp": " .:-=+*#%@",
+    "accentChars": ["%", "@"],
+    "cellAspect": 0.5146,
+    "floor": 0.42,
+    "gamma": 0.85
+  }
+}
