@@ -355,7 +355,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		// Anything unrecognised is ignored, so a newer host can talk to an older
 		// hub without either breaking.
 		if report.Type == "status" {
-			s.registry.SetStatus(report.Name, report.Status, label(report.Error))
+			s.registry.SetStatus(report.Name, report.Status, label(report.Error, maxLabel))
 		}
 	}
 }
