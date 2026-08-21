@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>kolo</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
+<link rel="icon" type="image/png" sizes="256x256" href="/assets/icon.png">
+<link rel="apple-touch-icon" href="/assets/icon-180.png">
 <link rel="stylesheet" href="/assets/xterm.css">
 <style>
   :root {
@@ -40,7 +43,11 @@
 
   .side { display: flex; flex-direction: column; min-height: 0;
           background: var(--panel); border-right: 1px solid var(--line); }
-  .brand { display: flex; align-items: baseline; gap: 8px; padding: 14px 14px 10px; }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; }
+  /* The mark is drawn at the size it is shown at: it is a screenful of
+     characters, and a browser scaling it down turns them to mush. */
+  .mark { width: 20px; height: 20px; border-radius: 5px; }
+  .mark.big { width: 56px; height: 56px; border-radius: 13px; margin-bottom: 10px; }
   .brand b { font-size: 14px; letter-spacing: .2px; }
   .brand .org { color: var(--faint); font-size: 12px; }
   .side .heading { display: flex; align-items: center; padding: 6px 14px;
@@ -137,6 +144,7 @@
 <body>
 
 <section class="signin" hidden>
+  <img class="mark big" src="/assets/icon.png" alt="">
   <h1>kolo</h1>
   <p>Paste the token your org gave you. It is kept in a cookie this page cannot
      read, so you only do this once.</p>
@@ -149,7 +157,7 @@
 
 <div class="app" hidden>
   <aside class="side">
-    <div class="brand"><b>kolo</b><span class="org"></span></div>
+    <div class="brand"><img class="mark" src="/assets/icon.png" alt=""><b>kolo</b><span class="org"></span></div>
     <div class="heading"><span>agents</span><span class="spacer"></span>
       <button class="quiet new" title="new agent">+</button>
     </div>
