@@ -84,11 +84,27 @@ What is left of this step is the proof — a second kind kolo ships with,
 arrived at by recording a real one, and if shipping it needs a code change
 then the seam was in the wrong place.
 
+## 7. The log
+
+Who asked for what, when, who stopped it — durable across restarts. Enough to
+open an agent in the morning and know what happened overnight. It is also what
+stands in for roles, so it is not optional for long.
+
+The record is built: entries on the hub, beside the org file, surviving a
+restart, with `GET /v1/log` to read them back. What is left is the reading —
+what the agent's own screen was doing, and putting it in front of somebody: a
+panel on the agent, and a last-activity line on the list, so the front door
+answers "what is our machine doing" rather than listing names.
+
+*Demo: stop the hub mid-conversation, start it again, and read back who said
+what.*
+
 ## Then
 
-The log — who asked for what, when, who stopped it — durable across restarts.
-Enough to open an agent in the morning and know what happened overnight. It is
-also what stands in for roles, so it is not optional for long.
+Telling somebody. An agent that stops at a permission dialog at eleven at night
+waits until somebody happens to look, which makes "the host is never needed"
+true only while somebody is watching. The state is already known; nothing
+carries it to a person who is not there.
 
 ## Already built
 
