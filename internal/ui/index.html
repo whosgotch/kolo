@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="256x256" href="/assets/icon.png">
 <link rel="apple-touch-icon" href="/assets/icon-180.png">
+<link rel="stylesheet" href="/assets/fonts.css">
 <link rel="stylesheet" href="/assets/tokens.css">
 <link rel="stylesheet" href="/assets/xterm.css">
 <style>
@@ -382,7 +383,9 @@ const term = new Terminal({
   // terminal interleave inside a word.
   disableStdin: false,
   cursorBlink: true,
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  // What the agent says is what the machine says, so it is said in the
+  // brand's mono. The stack behind it is what draws until the file arrives.
+  fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
   fontSize: fontSize,
   customGlyphs: true,
   scrollback: 5000,
@@ -465,6 +468,13 @@ function propose() {
 }
 
 addEventListener('resize', propose);
+
+// A cell measured in the fallback face is the wrong width, and it is cached: the
+// grid would be proposed from it for as long as the page is open. Measured again
+// once the real face has arrived, and the hub told what changed.
+if (document.fonts) {
+  document.fonts.ready.then(() => { measured = null; propose(); });
+}
 
 function watch(name) {
   close();
