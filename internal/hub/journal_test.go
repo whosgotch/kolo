@@ -1,11 +1,15 @@
 package hub
 
 import (
+	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 func journalFixture(t *testing.T) (*journal, string) {
@@ -169,5 +173,105 @@ func TestTypedForgotten(t *testing.T) {
 
 	if got := j.tail("checkups", 10); len(got) != 0 {
 		t.Fatalf("recorded %+v", got)
+	}
+}
+
+func TestJournalRecordsWhatMembersDo(t *testing.T) {
+	s, memberToken, hostToken := hubFixture(t)
+	ctx := testContext(t)
+	joinAsHost(t, ctx, s, hostToken)
+
+	body := `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`
+	if resp := create(t, s, memberToken, body); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create: %s", resp.Status)
+	}
+	if resp := call(t, s, "DELETE", "/v1/agents/checkups", memberToken, ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete: %s", resp.Status)
+	}
+
+	resp := call(t, s, "GET", "/v1/log?agent=checkups", memberToken, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("log: %s", resp.Status)
+	}
+	var got logResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Entries) != 2 {
+		t.Fatalf("entries = %+v", got.Entries)
+	}
+	if got.Entries[0].What != WhatCreated || got.Entries[0].Who.ID != "artem" {
+		t.Errorf("created = %+v", got.Entries[0])
+	}
+	if got.Entries[0].Text != "/work/api — claude" {
+		t.Errorf("created text = %q", got.Entries[0].Text)
+	}
+	if got.Entries[1].What != WhatStopped {
+		t.Errorf("stopped = %+v", got.Entries[1])
+	}
+}
+
+func TestLogNeedsAMember(t *testing.T) {
+	s, _, _ := hubFixture(t)
+	if resp := call(t, s, "GET", "/v1/log", "", ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("log without a token: %s", resp.Status)
+	}
+}
+
+// What a member sends is recorded as the line they sent, attributed to who the
+// hub says they are rather than to anything the browser claimed.
+func TestJournalRecordsWhatWasSaid(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken := hubFixture(t)
+	control := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, control, &cmd)
+	openScreen(t, ctx, s, hostToken, "checkups")
+	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	if err := viewer.Write(ctx, websocket.MessageText, []byte(`{"type":"take"}`)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { _, held := s.keyboards.holder("checkups"); return held })
+
+	send := `{"type":"keys","keys":"run the migrations\r","from":"Somebody Else"}`
+	if err := viewer.Write(ctx, websocket.MessageText, []byte(send)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return len(s.journal.tail("checkups", 10)) == 3 })
+
+	got := s.journal.tail("checkups", 10)
+	if got[1].What != WhatKeyboard || got[1].Who.Name != "Artem" {
+		t.Errorf("taking the keyboard = %+v", got[1])
+	}
+	if got[2].What != WhatSaid || got[2].Text != "run the migrations" {
+		t.Errorf("said = %+v", got[2])
+	}
+	if got[2].Who.Name != "Artem" {
+		t.Errorf("attributed to %q, want Artem", got[2].Who.Name)
+	}
+}
+
+// An agent nobody can reach any more is news, and the half typed line at it is
+// not going to be sent by anybody.
+func TestJournalRecordsAHostLeaving(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken := hubFixture(t)
+	control := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, control, &cmd)
+
+	control.CloseNow()
+	waitFor(t, func() bool {
+		got := s.journal.tail("checkups", 10)
+		return len(got) == 2 && got[1].What == WhatGone
+	})
+	if got := s.journal.tail("checkups", 10); got[1].Who != (Person{}) {
+		t.Errorf("attributed to %+v, want nobody", got[1].Who)
 	}
 }
