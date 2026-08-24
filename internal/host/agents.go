@@ -191,18 +191,20 @@ func (a *Agents) reserve(spec hub.Agent, fresh bool, session string) error {
 		a.mu.Unlock()
 		return fmt.Errorf("%s is already running here", spec.Name)
 	}
-	// One agent to a directory, unless both kinds name their conversations:
-	// the same rule the hub checks, from the machine that actually knows.
+	// One agent of each kind to a directory: the same rule the hub checks,
+	// from the machine that actually knows. Two of one kind that ask for "the
+	// last conversation here" would come back as each other; different kinds
+	// never read one another's history.
 	for _, p := range a.running {
 		if p.spec.Dir != spec.Dir {
 			continue
 		}
-		if resumesByName(spec.Command) && resumesByName(p.spec.Command) {
-			continue
+		sameKind := baseOf(spec.Command) == baseOf(p.spec.Command)
+		if sameKind && !(resumesByName(spec.Command) && resumesByName(p.spec.Command)) {
+			a.mu.Unlock()
+			return fmt.Errorf("one %s to a directory: two of them asking for \"the last conversation here\" would come back as each other. A second checkout is how the same repo runs in parallel",
+				baseOf(spec.Command))
 		}
-		a.mu.Unlock()
-		return fmt.Errorf("one agent to a directory: %s and %s cannot both tell their conversations apart on a restart. A second checkout is how the same repo runs in parallel",
-			baseOf(spec.Command), baseOf(p.spec.Command))
 	}
 	// Reserved before the process exists, so two spawns arriving together cannot
 	// both find the name free.

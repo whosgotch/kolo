@@ -86,7 +86,7 @@ func TestStartRefuses(t *testing.T) {
 		{"a directory not lent", "other", "/etc", "cat", "does not lend"},
 		{"a command not allowed", "other", dir, "rm", "does not run"},
 		{"a name already running", "checkups", dir, "cat", "already running"},
-		{"a directory in use", "other", dir, "cat", "one agent to a directory"},
+		{"a directory in use", "other", dir, "cat", "one cat to a directory"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := a.Start(spec(tc.agent, tc.dir, tc.command))
@@ -712,4 +712,29 @@ sleep 30
 	if got := sessionOf(t, a, "two"); got != second {
 		t.Errorf("a restart changed two's identity: %s became %s", second, got)
 	}
+}
+
+// TestDifferentKindsShareADirectory: a claude and an opencode in one directory
+// cannot come back as each other — each kind's "last conversation here" is
+// read from a store the other never writes to.
+func TestDifferentKindsShareADirectory(t *testing.T) {
+	dir := t.TempDir()
+	claude := fakeAgentNamed(t, dir, "claude", `printf '? for shortcuts\r\n'
+sleep 30
+`)
+	robo(t)
+	opencode := fakeAgentNamed(t, dir, "robo", `printf 'session: 9f3c\r\ntype a message\r\n'
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{claude, opencode}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, claude)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	if err := a.Start(spec("reviews", dir, opencode)); err != nil {
+		t.Fatalf("a different kind was refused a shared directory: %v", err)
+	}
+	nextReport(t, a)
 }

@@ -321,10 +321,13 @@ just cleared. Starting fresh from the browser drops the id along with the
 conversation.
 
 Because such an agent always knows which conversation is its own, two of them
-may share one directory — the usual one-agent-to-a-directory rule is for kinds
-that would come back from a restart as their neighbour. The host tells the hub
-which of its lent commands resume by name; nothing is taken on faith from the
-browser. Sharing a directory still means sharing its files.
+may share one directory. The usual rule is narrower than "one agent": it is
+one agent **of each kind**, because a kind that asks for "the last
+conversation here" reads that from its own store, which another kind's agents
+never write to. Two of the same kind are the dangerous pair — unless they
+name or pin their conversations, which is what the host vouches for; nothing
+is taken on faith from the browser. Sharing a directory still means sharing
+its files.
 
 An agent that never says one restarts fresh and says so, which is the same thing
 that happens when the agent itself refuses a resume. Both halves are checked at

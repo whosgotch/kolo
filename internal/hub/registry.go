@@ -238,21 +238,24 @@ func (r *Registry) Add(a Agent) (Sender, error) {
 		}
 		return nil, fmt.Errorf("%s does not run %s", a.Host, a.Command)
 	}
-	// One agent to a directory, unless every agent in it can prove which
-	// conversation is its own: resuming is how an agent comes back from a
-	// restart, and a kind that asks for "the last conversation here" beside
-	// another would come back as that other. A kind that names its
-	// conversation instead keeps its own context to itself, so it may share.
+	// One agent of each kind to a directory. Resuming is how an agent comes
+	// back from a restart, and a kind that asks for "the last conversation
+	// here" reads that from its own store of conversations — so two of the
+	// same kind would come back as each other, while different kinds never
+	// see one another's history at all. A kind that proves which conversation
+	// is its own, by naming or pinning one, may keep company with itself.
 	//
 	// Two agents editing one working tree still collide; that is the org's
-	// judgment rather than kolo's, and the refusal says so where it applies.
+	// judgment rather than kolo's, and the create form says so where it
+	// applies.
 	for _, other := range h.agents {
 		if other.Dir != a.Dir {
 			continue
 		}
-		if !h.resumesByName(a.Command) || !h.resumesByName(other.Command) {
-			return nil, fmt.Errorf("one agent to a directory: %s and %s cannot both tell their conversations apart on a restart. A second checkout is how the same repo runs in parallel",
-				filepath.Base(Program(a.Command)), filepath.Base(Program(other.Command)))
+		sameKind := filepath.Base(Program(a.Command)) == filepath.Base(Program(other.Command))
+		if sameKind && !(h.resumesByName(a.Command) && h.resumesByName(other.Command)) {
+			return nil, fmt.Errorf("one %s to a directory: two of them asking for \"the last conversation here\" would come back as each other. A second checkout is how the same repo runs in parallel",
+				filepath.Base(Program(a.Command)))
 		}
 	}
 

@@ -27,17 +27,20 @@ Only hosts install kolo. Members open a link.
 An agent is a name, a directory on the host, and a command. Anyone in the org
 creates one from the browser and the host spawns it.
 
-**One agent to a directory**, with one exception of its own. Resuming is how
-an agent comes back from a restart, and most kinds ask for "the last
-conversation in this directory" — beside another agent, a restart would come
-back as that other one, wearing somebody else's context. So creating a second
-agent in an occupied directory is refused. The rule bends when each agent can
-prove which conversation is its own: either the kind names its conversation
-where kolo can read it, or — claude's way — the kind accepts an id at birth,
-and kolo mints one per agent and pins the conversation to it. The host
-vouches for which of its lent commands can do this, because what a kind does
-on restart is the host machine's to know. Working on the same repo in
-parallel otherwise means a second checkout.
+**One agent of each kind to a directory**, with one exception of its own.
+Resuming is how an agent comes back from a restart, and most kinds ask for
+"the last conversation in this directory", read from their own store of
+conversations. Two of the same kind sharing a directory would therefore come
+back as each other — so that pair is refused. A different kind beside them is
+safe without any arrangement: its history is a store the first kind never
+reads. And a kind that proves which conversation is its own — naming it where
+kolo can read it, or taking one kolo mints at birth — may keep company with
+itself. The host vouches for which of its lent commands can do this, because
+what a kind does on restart is the host machine's to know.
+
+Two agents editing one working tree still collide whatever their kinds. Kolo
+does not referee that; it is the org's judgment, made where the agents are
+being created.
 
 Sharing a directory still means sharing its files. Two agents editing one
 working tree collide, and kolo does not referee that; it is the org's judgment,

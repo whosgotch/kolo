@@ -48,7 +48,7 @@ func TestAddRefuses(t *testing.T) {
 		want  string
 	}{
 		{"a name already in use", agentFixture("checkups", "/work/web"), "already exists"},
-		{"a directory already worked in", agentFixture("other", "/work/api"), "one agent to a directory"},
+		{"a directory already worked in", agentFixture("other", "/work/api"), "one claude to a directory"},
 		{"a directory not lent", agentFixture("other", "/etc"), "does not lend"},
 		{"a command not allowed", Agent{Name: "other", Host: "devbox", Dir: "/work/web", Command: "rm"}, "does not run"},
 		{"a host not connected", Agent{Name: "other", Host: "laptop", Dir: "/work/web", Command: "claude"}, "no host"},
@@ -188,8 +188,8 @@ func TestLendingAnyIsNotTheDefault(t *testing.T) {
 	}
 }
 
-// TestAgentsThatNameTheirConversationsShareADirectory: the one-agent rule bends
-// only where the host vouches for both kinds, and its word is the only thing
+// TestAgentsThatNameTheirConversationsShareADirectory: the per-directory rule
+// bends where the host vouches for both kinds, and its word is the only thing
 // that bends it — the hub has no kinds of its own to ask.
 func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
 	r := NewRegistry()
@@ -210,26 +210,25 @@ func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
 		t.Fatalf("a second agent that names its conversation was refused: %v", err)
 	}
 
-	mixed := agentFixture("three", "/work/api")
-	mixed.Command = "claude"
-	if _, err := r.Add(mixed); err == nil || !strings.Contains(err.Error(), "one agent to a directory") {
-		t.Error("a kind the host does not vouch for joined a shared directory")
+	// Different kinds never read one another's conversation stores, so a
+	// claude beside a robo cannot come back as it however either resumes.
+	third := agentFixture("three", "/work/api")
+	third.Command = "claude"
+	if _, err := r.Add(third); err != nil {
+		t.Errorf("a different kind was refused a shared directory: %v", err)
 	}
 
-	// And vouching is per command: an allow entry without a by-name twin does
-	// not bend the rule.
+	// Two of the SAME kind are the dangerous pair, and vouching decides.
 	r2 := NewRegistry()
-	if err := r2.Join("devbox", []string{"/work/api"}, []string{"robo"}, nil, nil, nil, func(any) error { return nil }); err != nil {
+	if err := r2.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, nil, nil, func(any) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	a := agentFixture("one", "/work/api")
-	a.Command = "robo"
+	b := agentFixture("two", "/work/api")
 	if _, err := r2.Add(a); err != nil {
 		t.Fatal(err)
 	}
-	b := agentFixture("two", "/work/api")
-	b.Command = "robo"
-	if _, err := r2.Add(b); err == nil {
-		t.Error("an unvouched command shared a directory")
+	if _, err := r2.Add(b); err == nil || !strings.Contains(err.Error(), "one claude to a directory") {
+		t.Errorf("two unvouched claudes shared a directory: %v", err)
 	}
 }
