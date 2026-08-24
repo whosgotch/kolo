@@ -1,0 +1,63 @@
+/* Kolo design tokens. See kolo-brand.md for the rules these encode. */
+
+:root {
+  /* surfaces + ink */
+  --kolo-void: #101314;
+  --kolo-graphite: #1C2123;
+  --kolo-slate: #6E7673;
+  --kolo-chalk: #E7E9E4;
+
+  /* hues — patina is structural, brass is a signal */
+  --kolo-patina: #2C6F62;
+  --kolo-brass: #D9A441;
+  --kolo-brass-ink: #9C6C15; /* brass as text on light surfaces */
+  --kolo-fail: #A63D2E;
+
+  /* state vocabulary — exactly four, do not extend */
+  --kolo-state-idle: var(--kolo-slate);
+  --kolo-state-running: var(--kolo-brass);
+  --kolo-state-done: var(--kolo-patina);
+  --kolo-state-failed: var(--kolo-fail);
+
+  /* semantic, dark ground is the default */
+  --kolo-bg: var(--kolo-void);
+  --kolo-bg-raised: var(--kolo-graphite);
+  --kolo-fg: var(--kolo-chalk);
+  --kolo-fg-muted: var(--kolo-slate);
+  --kolo-accent: var(--kolo-patina);
+  --kolo-focus: var(--kolo-patina);
+
+  /* type */
+  --kolo-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --kolo-sans: "Archivo", system-ui, sans-serif;
+  --kolo-mono-line: 1.17;   /* ASCII grid depends on this exact value */
+  --kolo-cell-aspect: 0.5146;
+  --kolo-wordmark-tracking: 0.06em;
+}
+
+[data-theme="light"] {
+  --kolo-bg: var(--kolo-chalk);
+  --kolo-bg-raised: #F1F2EE;
+  --kolo-fg: var(--kolo-void);
+  --kolo-fg-muted: var(--kolo-slate);
+  --kolo-state-running: var(--kolo-brass-ink);
+}
+
+/* The mark, wherever it is rendered as text. */
+.kolo-ascii {
+  font-family: var(--kolo-mono);
+  font-weight: 700;
+  line-height: var(--kolo-mono-line);
+  letter-spacing: 0;
+  white-space: pre;
+  color: var(--kolo-fg);
+}
+/* Accent rule: only the top two ramp steps. */
+.kolo-ascii .hot { color: var(--kolo-state-running); }
+
+.kolo-wordmark {
+  font-family: var(--kolo-mono);
+  font-weight: 500;
+  letter-spacing: var(--kolo-wordmark-tracking);
+  text-transform: lowercase;
+}

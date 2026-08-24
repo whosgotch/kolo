@@ -3,6 +3,7 @@ package hub
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -99,10 +100,19 @@ func (r *Registry) Join(id string, dirs, allow []string, running []Agent, send S
 	return nil
 }
 
-func (r *Registry) Leave(id string) {
+// Leave drops a host and reports the agents that went out of reach with it, which
+// is news the org is owed: they may still be running, but nothing here can watch
+// or stop them.
+func (r *Registry) Leave(id string) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	h, ok := r.hosts[id]
+	if !ok {
+		return nil
+	}
 	delete(r.hosts, id)
+	return slices.Sorted(maps.Keys(h.agents))
 }
 
 func (r *Registry) Hosts() []HostInfo {
@@ -241,8 +251,9 @@ func ValidName(s string) bool {
 }
 
 // label reduces a string a client chose for itself to something safe to print: a
-// control character here is an escape sequence in somebody else's terminal.
-func label(s string) string {
+// control character here is an escape sequence in somebody else's terminal. The
+// bound is the caller's, because a name and a sentence are not the same length.
+func label(s string, max int) string {
 	var b strings.Builder
 	for _, r := range strings.ToValidUTF8(s, "") {
 		switch {
@@ -255,7 +266,7 @@ func label(s string) string {
 		}
 	}
 	out := strings.Join(strings.Fields(b.String()), " ")
-	for len(out) > maxLabel {
+	for len(out) > max {
 		_, size := utf8.DecodeLastRuneInString(out)
 		out = out[:len(out)-size]
 	}

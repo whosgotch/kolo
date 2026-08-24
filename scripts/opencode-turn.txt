@@ -1,0 +1,19 @@
+# OpenCode through one turn: what the screen says when it is idle, and what it
+# says while it works. The status bar under the input box carries both states'
+# hints — "ctrl+p commands" is always there, and a working turn swaps the left
+# half of the bar for "esc interrupt". Re-record against a new release before
+# trusting the markers in internal/adapter.
+#
+# Recorded in a directory with no opencode.json: the default build agent edits
+# freely here, which keeps the turn free of dialogs. The permission dialog has
+# its own script.
+waitfor 60s Ask anything
+wait 3s
+dump idle
+send count slowly from one to ten, one number per line, with a short remark about each
+wait 2s
+dump t02
+wait 4s
+dump t06
+wait 12s
+dump done

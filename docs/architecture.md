@@ -64,6 +64,30 @@ removing their line.
 Tokens carry a `kolo_` prefix so one is recognisable on sight and by secret
 scanners, and travel in the `Authorization` header rather than a URL.
 
+## The log
+
+Every action a member takes is written down: who created an agent, what they
+sent it, who interrupted, restarted or stopped it, and when the host it was
+running on went away. It lives on the hub, beside the org file, as a line of JSON
+per entry — the hub is the only party that knows who anyone is, and a record kept
+on the host would leave with the machine that lent itself.
+
+It is what stands in for roles. Everyone may do everything, which is workable
+only because everyone can also see who did.
+
+`GET /v1/log` reads it back, for one agent or for the org.
+
+**What a member types is part of the record.** The hub sees keystrokes rather
+than messages, so a line is put back together as it is typed and written down
+when it is sent — never before, so a line abandoned half typed is never
+recorded. It is a reconstruction: a paste, a completion the agent filled in, or a
+choice made with the arrow keys will not read back exactly. Nothing an agent
+prints is kept, only what people asked it for.
+
+Anything anyone sends an agent is therefore readable by every member of the org,
+which follows from agents being communal, and is worth knowing before typing a
+password into one.
+
 ## Input
 
 Members type at the agent themselves. One holds its keyboard at a time; anybody
@@ -129,7 +153,8 @@ is working is never sent while it means something else. It was Esc for every kin
 there was until kinds kolo does not ship could be described, and an agent that
 stops on Ctrl-C was being sent the key that clears its input.
 
-Claude Code is the one kolo ships. A host adds others in `~/.kolo/kinds.json`,
+Claude Code and OpenCode are the ones kolo ships. A host adds others in
+`~/.kolo/kinds.json`,
 which replaces a shipped kind of the same name, so an org runs an agent kolo has
 never heard of — or fixes one whose footer moved between releases — without
 waiting for a release of kolo. See [hub.md](hub.md#which-agents).

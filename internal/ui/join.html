@@ -4,29 +4,43 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>join kolo</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
+<link rel="icon" type="image/png" sizes="256x256" href="/assets/icon.png">
+<link rel="apple-touch-icon" href="/assets/icon-180.png">
+<link rel="stylesheet" href="/assets/fonts.css">
+<link rel="stylesheet" href="/assets/tokens.css">
 <style>
+  /* The brand's colours and faces, from /assets/tokens.css. Prose is sans, and
+     what the machine says — the org's name, the token — is mono. */
   :root {
-    --bg: #0b0b0b; --panel: #141414; --line: #262626;
-    --text: #ddd; --dim: #8a8f94; --warn: #e88;
-    --mono: ui-monospace, Menlo, Consolas, monospace;
+    --bg: var(--kolo-bg); --panel: var(--kolo-bg-raised);
+    --line: color-mix(in srgb, var(--kolo-slate) 30%, transparent);
+    --text: var(--kolo-fg); --dim: var(--kolo-fg-muted);
+    --mono: var(--kolo-mono); --ui: var(--kolo-sans);
   }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
-  body { display: flex; font: 13px var(--mono); align-items: center; justify-content: center; }
+  body { display: flex; font: 13px/1.5 var(--ui); align-items: center; justify-content: center; }
   [hidden] { display: none !important; }
   main { max-width: 34em; padding: 16px; }
-  h1 { font-size: 15px; margin: 0 0 12px; }
-  p { color: var(--dim); line-height: 1.5; }
+  .mark { width: 44px; height: 44px; border-radius: 10px; margin-bottom: 12px; }
+  h1 { font: 500 15px var(--mono); letter-spacing: var(--kolo-wordmark-tracking);
+       text-transform: lowercase; margin: 0 0 12px; }
+  p { color: var(--dim); line-height: 1.6; }
+  .org { font-family: var(--mono); }
   button, input {
-    background: #1b1b1b; color: var(--text); border: 1px solid var(--line);
-    border-radius: 4px; padding: 6px 8px; font: inherit;
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 10px; font: inherit;
   }
-  button { cursor: pointer; }
-  button:hover { background: #232323; }
-  .problem { color: var(--warn); }
+  input { font-family: var(--mono); }
+  button { cursor: pointer; background: var(--kolo-accent);
+           border-color: var(--kolo-accent); color: var(--kolo-chalk); }
+  button:hover { filter: brightness(1.15); }
+  .problem { color: var(--kolo-state-failed); }
 </style>
 </head>
 <body data-org="{{.Org}}">
 <main>
+  <img class="mark" src="/assets/icon.png" alt="">
   <h1>join <span class="org"></span></h1>
 
   <section class="ask" hidden>

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,7 @@ type Server struct {
 	registry  *Registry
 	screens   *screens
 	keyboards *keyboards
+	journal   *journal
 	// Held across any read-modify-write of the org file: two people opening the
 	// same invite together would otherwise become one member, and a reload
 	// landing between a claim's read and its write would undo it.
@@ -79,11 +81,20 @@ func Listen(org *Org, addr string) (*Server, error) {
 		keyboards: newKeyboards(), conns: newConns(), ln: ln, ctx: ctx, cancel: cancel,
 	}
 
+	// Beside the org file, because the record is the org's rather than the
+	// machine's — moving one moves the other. An org with no file behind it keeps
+	// its journal in memory, which is what a test has and nothing else does.
+	s.journal, err = openJournal(journalPath(org.path))
+	if err != nil {
+		log.Printf("hub: %v — this run is not being written down", err)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/host", s.handleHost)
 	mux.HandleFunc("GET /v1/agents", s.handleList)
 	mux.HandleFunc("POST /v1/agents", s.handleCreate)
 	mux.HandleFunc("DELETE /v1/agents/{name}", s.handleDelete)
+	mux.HandleFunc("GET /v1/log", s.handleLog)
 	mux.HandleFunc("GET /v1/agent/{name}", s.handleScreen)
 	mux.HandleFunc("GET /v1/watch/{name}", s.handleWatch)
 	mux.HandleFunc("GET /join", s.handleJoinPage)
@@ -167,6 +178,7 @@ func (s *Server) Close() error {
 	for _, ln := range s.extra {
 		ln.Close()
 	}
+	s.journal.Close()
 	return s.srv.Close()
 }
 
@@ -341,7 +353,12 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		conn.Close(websocket.StatusPolicyViolation, err.Error())
 		return
 	}
-	defer s.registry.Leave(h.ID)
+	defer func() {
+		for _, name := range s.registry.Leave(h.ID) {
+			s.journal.add(Entry{Agent: name, What: WhatGone, Text: h.ID + " disconnected"})
+			s.journal.forget(name)
+		}
+	}()
 
 	if err := write(ctx, conn, hostWelcome{Type: "welcome", Org: s.orgName(), Host: h.ID}); err != nil {
 		return
@@ -355,7 +372,10 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		// Anything unrecognised is ignored, so a newer host can talk to an older
 		// hub without either breaking.
 		if report.Type == "status" {
-			s.registry.SetStatus(report.Name, report.Status, label(report.Error))
+			s.registry.SetStatus(report.Name, report.Status, label(report.Error, maxLabel))
+			if report.Status == StatusFailed {
+				s.journal.add(Entry{Agent: report.Name, What: WhatFailed, Text: report.Error})
+			}
 		}
 	}
 }
@@ -371,6 +391,25 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		You:    member.Person(),
 		Hosts:  s.registry.Hosts(),
 		Agents: s.registry.Agents(),
+	})
+}
+
+// handleLog is the record of who asked for what: an agent's own history, or the
+// whole org's when no agent is named.
+//
+// It is what stands in for roles. Every member may do everything, which is only
+// workable because every member can also see who did.
+func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authenticate(r); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	limit := defaultEntries
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil {
+		limit = min(max(n, 0), keepEntries)
+	}
+	writeJSON(w, http.StatusOK, logResponse{
+		Entries: s.journal.tail(r.URL.Query().Get("agent"), limit),
 	})
 }
 
@@ -405,10 +444,15 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, _ := s.registry.Agent(agent.Name)
+	s.journal.add(Entry{
+		Agent: created.Name, What: WhatCreated, Who: member.Person(),
+		Text: created.Dir + " — " + created.Command,
+	})
 	if err := send(spawn{Type: "spawn", Agent: created}); err != nil {
 		// The host went away between being chosen and being asked. Leaving the
 		// agent listed would be listing something nobody ever started.
 		s.registry.Remove(agent.Name)
+		s.journal.add(Entry{Agent: agent.Name, What: WhatFailed, Text: "the host went away"})
 		http.Error(w, "the host went away", http.StatusServiceUnavailable)
 		return
 	}
@@ -416,7 +460,8 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authenticate(r); !ok {
+	member, ok := s.authenticate(r)
+	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -426,6 +471,8 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no agent called "+name, http.StatusNotFound)
 		return
 	}
+	s.journal.add(Entry{Agent: name, What: WhatStopped, Who: member.Person()})
+	s.journal.forget(name)
 	// A failed send means the host is already gone, which is the state the caller
 	// was asking for.
 	send(stop{Type: "stop", Name: name})
@@ -608,7 +655,11 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 			if !s.keyboards.holds(name, conn) || msg.Keys == "" {
 				continue
 			}
+			s.journal.typed(name, member.Person(), msg.Keys)
 		case "interrupt", "restart", "fresh":
+			// Whatever was half typed is not going to be sent now.
+			s.journal.add(Entry{Agent: name, What: done(msg.Type), Who: member.Person()})
+			s.journal.forget(name)
 		default:
 			continue
 		}
@@ -620,6 +671,19 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 	}
 }
 
+// done names a member's action the way the journal reads it back: what somebody
+// asked for is a command, what the journal holds is a thing that happened.
+func done(action string) string {
+	switch action {
+	case "interrupt":
+		return WhatInterrupted
+	case "restart":
+		return WhatRestarted
+	default:
+		return WhatFresh
+	}
+}
+
 // giveKeyboard hands one agent's keyboard to a member and tells everybody
 // watching. Nobody is asked and nobody can refuse: the agent belongs to the org,
 // and taking the keyboard in front of everyone is the whole of the protocol.
@@ -628,6 +692,9 @@ func (s *Server) giveKeyboard(name string, member Member, at any) {
 	if !taken {
 		return
 	}
+	// Only taking it is written down. Letting go is a browser closing as often as
+	// it is a decision, and a journal of both is mostly hands.
+	s.journal.add(Entry{Agent: name, What: WhatKeyboard, Who: member.Person()})
 	s.sayKeyboard(name, member.Person(), was)
 }
 
@@ -754,6 +821,14 @@ type listResponse struct {
 	You    Person     `json:"you"`
 	Hosts  []HostInfo `json:"hosts"`
 	Agents []Agent    `json:"agents"`
+}
+
+// defaultEntries is enough for a page to open on, without a browser that asked
+// for nothing being sent a month.
+const defaultEntries = 100
+
+type logResponse struct {
+	Entries []Entry `json:"entries"`
 }
 
 // read takes one JSON text frame. A timeout of zero waits as long as the context
