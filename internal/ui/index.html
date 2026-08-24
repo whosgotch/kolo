@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>kolo</title>
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32-light.png" media="(prefers-color-scheme: light)">
 <link rel="icon" type="image/png" sizes="256x256" href="/assets/icon.png">
+<link rel="icon" type="image/png" sizes="256x256" href="/assets/icon-light.png" media="(prefers-color-scheme: light)">
 <link rel="apple-touch-icon" href="/assets/icon-180.png">
 <link rel="stylesheet" href="/assets/fonts.css">
 <link rel="stylesheet" href="/assets/tokens.css">
@@ -54,15 +56,12 @@
 
   .side { display: flex; flex-direction: column; min-height: 0;
           background: var(--panel); border-right: 1px solid var(--line); }
-  .brand { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 16px 14px 12px; }
   /* The mark is drawn at the size it is shown at: it is a screenful of
-     characters, and a browser scaling it down turns them to mush. */
-  .mark { width: 20px; height: 20px; border-radius: 5px; }
-  .mark.big { width: 56px; height: 56px; border-radius: 13px; margin-bottom: 10px; }
-  .brand b { font: 500 14px var(--mono); letter-spacing: var(--kolo-wordmark-tracking);
-             text-transform: lowercase; }
-  /* Without something between them the pair reads as "okolo". */
-  .brand .rule { width: 1px; height: 15px; background: var(--kolo-slate); }
+     characters, and a browser scaling it down turns them to mush. Every size
+     below is its own asset — see docs/brand/kolo-brand.md#icons. */
+  .mark { width: 28px; height: 28px; }
+  .mark.big { width: 160px; height: 160px; margin-bottom: 24px; }
   .brand .org { color: var(--faint); font-size: 12px; }
   .side .heading { display: flex; align-items: center; padding: 6px 14px;
                    color: var(--faint); font-size: 11px; text-transform: uppercase;
@@ -148,22 +147,23 @@
                 justify-content: center; background: var(--panel); padding: 14px;
                 border: 1px solid var(--line); border-radius: 10px; }
   form.create input[name=name] { width: 16ch; }
-  form.create select { max-width: 26ch; }
+  form.create select, form.create input[name=command] { max-width: 26ch; }
 
   /* ---- the door ----------------------------------------------------------- */
 
-  .signin { max-width: 30em; margin: 16vh auto; padding: 0 20px; }
-  .signin h1 { font-size: 20px; margin: 0 0 6px; }
-  .signin p { color: var(--dim); line-height: 1.7; }
-  .signin form { display: flex; gap: 8px; margin: 16px 0; }
-  .signin input { flex: 1; font-family: var(--mono); }
+  .signin { height: 100%; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; text-align: center; padding: 0 20px; }
+  .signin h1 { font-size: 22px; margin: 0 0 8px; }
+  .signin p { color: var(--dim); line-height: 1.7; max-width: 34em; }
+  .signin form { display: flex; gap: 8px; margin: 20px 0 8px; }
+  .signin input { width: 26ch; font-family: var(--mono); }
   .signin .problem { color: var(--kolo-state-failed); }
 </style>
 </head>
 <body>
 
 <section class="signin" hidden>
-  <img class="mark big" src="/assets/icon.png" alt="">
+  <img class="mark big" src="/assets/icon-160.png" alt="">
   <h1>kolo</h1>
   <p>Paste the token your org gave you. It is kept in a cookie this page cannot
      read, so you only do this once.</p>
@@ -176,7 +176,7 @@
 
 <div class="app" hidden>
   <aside class="side">
-    <div class="brand"><img class="mark" src="/assets/icon.png" alt=""><b>kolo</b><span class="rule"></span><span class="org"></span></div>
+    <div class="brand"><img class="mark" src="/assets/icon-28.png" alt="kolo" title="kolo"><span class="org"></span></div>
     <div class="heading"><span>agents</span><span class="spacer"></span>
       <button class="quiet new" title="new agent">+</button>
     </div>
@@ -198,6 +198,8 @@
         <select name="host"></select>
         <select name="dir"></select>
         <select name="command"></select>
+        <input name="command" list="known-commands" placeholder="any command — claude --model opus" hidden disabled>
+        <datalist id="known-commands"></datalist>
         <button type="submit" class="go">create</button>
       </form>
       <p class="note"></p>
@@ -303,16 +305,31 @@ function drawTitle(a) {
 
 // drawChoices fills the create form with what the hosts are lending. The
 // choices are the host's own terms, so nothing can be picked that will only be
-// refused a moment later.
+// refused a moment later — unless the host lent any command, in which case the
+// command box opens up and the host's installed agents are offered as
+// suggestions beside it.
 function drawChoices() {
-  const hostSel = el('[name=host]'), dirSel = el('[name=dir]'), cmdSel = el('[name=command]');
+  const hostSel = el('[name=host]'), dirSel = el('[name=dir]'), cmdSel = el('select[name=command]');
+  const cmdInput = el('input[name=command]'), known = el('#known-commands');
   const chosen = hostSel.value;
   fill(hostSel, hosts.map((h) => h.id));
   if (chosen) hostSel.value = chosen;
 
   const host = hosts.find((h) => h.id === hostSel.value);
   fill(dirSel, host ? host.dirs : []);
-  fill(cmdSel, host ? host.allow : []);
+  const lendingAny = !!host && (host.allow || []).includes('*');
+  cmdSel.hidden = cmdSel.disabled = lendingAny;
+  cmdInput.hidden = cmdInput.disabled = !lendingAny;
+  known.replaceChildren();
+  if (lendingAny) {
+    for (const name of new Set([...(host.allow || []).filter((c) => c !== '*'), ...(host.found || [])])) {
+      const option = document.createElement('option');
+      option.value = name;
+      known.append(option);
+    }
+  } else {
+    fill(cmdSel, host ? host.allow : []);
+  }
   el('form.create button').disabled = hosts.length === 0;
   if (hosts.length === 0) say('.home', 'No machine is lending itself to this org right now.');
 }
