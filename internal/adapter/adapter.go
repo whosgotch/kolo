@@ -282,6 +282,18 @@ func Discovered() []string {
 	return found
 }
 
+// ResumesByName says whether a restart of this kind comes back as itself even
+// beside another agent in the same directory: it names its conversation
+// (--resume <id>) rather than asking for whatever ran there last (--continue),
+// and the id is its own, read off its own screen.
+//
+// It is the condition two agents sharing a directory live by. A kind that
+// cannot tell one conversation from another would come back from a restart as
+// its neighbour, wearing somebody else's context and calling it its own.
+func (a Adapter) ResumesByName() bool {
+	return a.Session != "" && slices.Contains(a.Resume, SessionPlaceholder)
+}
+
 // validate refuses a kind that would fail later, at a restart somebody was
 // counting on, with nothing on screen to point at.
 func (a Adapter) validate() error {

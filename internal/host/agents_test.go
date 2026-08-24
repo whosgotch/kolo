@@ -85,7 +85,7 @@ func TestStartRefuses(t *testing.T) {
 		{"a directory not lent", "other", "/etc", "cat", "does not lend"},
 		{"a command not allowed", "other", dir, "rm", "does not run"},
 		{"a name already running", "checkups", dir, "cat", "already running"},
-		{"a directory in use", "other", dir, "cat", "already working in"},
+		{"a directory in use", "other", dir, "cat", "one agent to a directory"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := a.Start(spec(tc.agent, tc.dir, tc.command))
@@ -638,4 +638,25 @@ func TestAHostThatLendsAnyCommandRunsWhatsOnItsPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAgentsThatNameTheirConversationsShareADirectory: the same rule the hub
+// checks, from the machine that actually knows the kinds. Two agents of a kind
+// that names its conversations work one directory; a kind that asks for "the
+// last conversation here" does not join them.
+func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
+	robo(t)
+	dir := t.TempDir()
+	program := fakeAgentNamed(t, dir, "robo", `printf 'session: 1111-2222\n'; sleep 30`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{program}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("one", dir, program)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	if err := a.Start(spec("two", dir, program)); err != nil {
+		t.Fatalf("a second agent that names its conversation was refused: %v", err)
+	}
+	nextReport(t, a)
 }

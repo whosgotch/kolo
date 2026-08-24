@@ -27,10 +27,19 @@ Only hosts install kolo. Members open a link.
 An agent is a name, a directory on the host, and a command. Anyone in the org
 creates one from the browser and the host spawns it.
 
-**One agent per directory.** Resuming a conversation is directory-scoped, and two
-agents editing the same files would collide, so creating a second agent in a
-directory that already has one is refused. Working on the same repo in parallel
-means a second checkout.
+**One agent to a directory**, with one exception of its own. Resuming is how
+an agent comes back from a restart, and most kinds ask for "the last
+conversation in this directory" — beside another agent, a restart would come
+back as that other one, wearing somebody else's context. So creating a second
+agent in an occupied directory is refused. A kind that instead names its
+conversation (`--resume <id>`, read off its own screen) keeps its context to
+itself, so agents of such kinds may share; the host vouches for which commands
+those are, because what a kind does on restart is the host machine's to know.
+Working on the same repo in parallel otherwise means a second checkout.
+
+Sharing a directory still means sharing its files. Two agents editing one
+working tree collide, and kolo does not referee that; it is the org's judgment,
+made where the agents are being created.
 
 Agents are communal. Anyone may watch, send to, interrupt, restart or stop any of
 them. There are no roles; every action is attributed instead, which is what makes

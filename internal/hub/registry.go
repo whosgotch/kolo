@@ -61,6 +61,13 @@ func Program(command string) string {
 	return fields[0]
 }
 
+// resumesByName reports whether this host lent this command as one that names
+// its conversation on restart. Only commands from ByName qualify, and ByName
+// is the host's word: the hub has no kinds to ask.
+func (h *host) resumesByName(command string) bool {
+	return slices.Contains(h.info.ByName, command)
+}
+
 // Agent is one agent the org has asked a host to run. The name is the
 // identifier: there is no second id underneath it, and reusing a name means
 // stopping the agent that has it.
@@ -84,8 +91,14 @@ type HostInfo struct {
 	// Found is which of the agent kinds kolo has heard of this machine has
 	// installed, offered as suggestions when the host lends any command.
 	// Suggestion is all it is: nothing here decides what may start.
-	Found []string  `json:"found,omitempty"`
-	Since time.Time `json:"since"`
+	Found []string `json:"found,omitempty"`
+	// ByName is which of the lent commands resume by naming their
+	// conversation rather than asking for the last one. The host's word, not
+	// looked up here: what a kind does on restart is its machine's to know,
+	// and this is only carried so the one-agent-per-directory rule can bend
+	// where it is safe.
+	ByName []string  `json:"by_name,omitempty"`
+	Since  time.Time `json:"since"`
 }
 
 // Sender delivers one command to a host.
@@ -119,7 +132,7 @@ func NewRegistry() *Registry {
 // The running set is the host's word — it is the machine with the processes, and
 // after a dropped connection the only party that knows. A name another host has
 // claimed is skipped.
-func (r *Registry) Join(id string, dirs, allow, found []string, running []Agent, send Sender) error {
+func (r *Registry) Join(id string, dirs, allow, found, byName []string, running []Agent, send Sender) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -127,7 +140,7 @@ func (r *Registry) Join(id string, dirs, allow, found []string, running []Agent,
 		return fmt.Errorf("hub: %s is already connected", id)
 	}
 	h := &host{
-		info:   HostInfo{ID: id, Dirs: dirs, Allow: allow, Found: found, Since: r.now()},
+		info:   HostInfo{ID: id, Dirs: dirs, Allow: allow, Found: found, ByName: byName, Since: r.now()},
 		send:   send,
 		agents: map[string]*Agent{},
 	}
@@ -225,11 +238,21 @@ func (r *Registry) Add(a Agent) (Sender, error) {
 		}
 		return nil, fmt.Errorf("%s does not run %s", a.Host, a.Command)
 	}
-	// One agent per directory: resuming is directory-scoped, and two agents
-	// editing the same files would collide.
+	// One agent to a directory, unless every agent in it can prove which
+	// conversation is its own: resuming is how an agent comes back from a
+	// restart, and a kind that asks for "the last conversation here" beside
+	// another would come back as that other. A kind that names its
+	// conversation instead keeps its own context to itself, so it may share.
+	//
+	// Two agents editing one working tree still collide; that is the org's
+	// judgment rather than kolo's, and the refusal says so where it applies.
 	for _, other := range h.agents {
-		if other.Dir == a.Dir {
-			return nil, fmt.Errorf("%s is already working in %s", other.Name, a.Dir)
+		if other.Dir != a.Dir {
+			continue
+		}
+		if !h.resumesByName(a.Command) || !h.resumesByName(other.Command) {
+			return nil, fmt.Errorf("one agent to a directory: %s and %s cannot both tell their conversations apart on a restart. A second checkout is how the same repo runs in parallel",
+				filepath.Base(Program(a.Command)), filepath.Base(Program(other.Command)))
 		}
 	}
 

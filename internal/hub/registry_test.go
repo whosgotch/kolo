@@ -8,7 +8,7 @@ import (
 func registryFixture(t *testing.T) *Registry {
 	t.Helper()
 	r := NewRegistry()
-	err := r.Join("devbox", []string{"/work/api", "/work/web"}, []string{"claude"}, nil, nil, func(any) error { return nil })
+	err := r.Join("devbox", []string{"/work/api", "/work/web"}, []string{"claude"}, nil, nil, nil, func(any) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestAddRefuses(t *testing.T) {
 		want  string
 	}{
 		{"a name already in use", agentFixture("checkups", "/work/web"), "already exists"},
-		{"a directory already worked in", agentFixture("other", "/work/api"), "already working in"},
+		{"a directory already worked in", agentFixture("other", "/work/api"), "one agent to a directory"},
 		{"a directory not lent", agentFixture("other", "/etc"), "does not lend"},
 		{"a command not allowed", Agent{Name: "other", Host: "devbox", Dir: "/work/web", Command: "rm"}, "does not run"},
 		{"a host not connected", Agent{Name: "other", Host: "laptop", Dir: "/work/web", Command: "claude"}, "no host"},
@@ -84,7 +84,7 @@ func TestLeavingTakesTheAgentsWithIt(t *testing.T) {
 
 func TestOneConnectionPerHost(t *testing.T) {
 	r := registryFixture(t)
-	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, nil, func(any) error { return nil })
+	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, nil, nil, func(any) error { return nil })
 	if err == nil {
 		t.Fatal("a second connection claimed the same host")
 	}
@@ -131,7 +131,7 @@ func TestJoinRestoresWhatTheHostIsRunning(t *testing.T) {
 	r.Leave("devbox")
 
 	was.Status = StatusRunning
-	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, []Agent{was}, func(any) error { return nil })
+	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, nil, []Agent{was}, func(any) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestJoinRestoresWhatTheHostIsRunning(t *testing.T) {
 // name passes, a path does not, and without '*' nothing changes.
 func TestAHostThatLendsAnyCommand(t *testing.T) {
 	r := NewRegistry()
-	err := r.Join("devbox", []string{"/work/api"}, []string{AllowAny}, nil, nil, func(any) error { return nil })
+	err := r.Join("devbox", []string{"/work/api"}, []string{AllowAny}, nil, nil, nil, func(any) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,5 +185,51 @@ func TestLendingAnyIsNotTheDefault(t *testing.T) {
 	a.Command = "aider"
 	if _, err := r.Add(a); err == nil {
 		t.Error("an unlisted command started on a host that lends a list")
+	}
+}
+
+// TestAgentsThatNameTheirConversationsShareADirectory: the one-agent rule bends
+// only where the host vouches for both kinds, and its word is the only thing
+// that bends it — the hub has no kinds of its own to ask.
+func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
+	r := NewRegistry()
+	err := r.Join("devbox", []string{"/work/api"}, []string{"robo", "claude"}, nil,
+		[]string{"robo"}, nil, func(any) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := agentFixture("one", "/work/api")
+	first.Command = "robo"
+	if _, err := r.Add(first); err != nil {
+		t.Fatal(err)
+	}
+	second := agentFixture("two", "/work/api")
+	second.Command = "robo"
+	if _, err := r.Add(second); err != nil {
+		t.Fatalf("a second agent that names its conversation was refused: %v", err)
+	}
+
+	mixed := agentFixture("three", "/work/api")
+	mixed.Command = "claude"
+	if _, err := r.Add(mixed); err == nil || !strings.Contains(err.Error(), "one agent to a directory") {
+		t.Error("a kind the host does not vouch for joined a shared directory")
+	}
+
+	// And vouching is per command: an allow entry without a by-name twin does
+	// not bend the rule.
+	r2 := NewRegistry()
+	if err := r2.Join("devbox", []string{"/work/api"}, []string{"robo"}, nil, nil, nil, func(any) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	a := agentFixture("one", "/work/api")
+	a.Command = "robo"
+	if _, err := r2.Add(a); err != nil {
+		t.Fatal(err)
+	}
+	b := agentFixture("two", "/work/api")
+	b.Command = "robo"
+	if _, err := r2.Add(b); err == nil {
+		t.Error("an unvouched command shared a directory")
 	}
 }

@@ -312,6 +312,12 @@ the same screen, and resuming the one before it would bring back what somebody
 just cleared. Starting fresh from the browser drops the id along with the
 conversation.
 
+Because such an agent always knows which conversation is its own, two of them
+may share one directory — the usual one-agent-to-a-directory rule is for kinds
+that would come back from a restart as their neighbour. The host tells the hub
+which of its lent commands resume by name; nothing is taken on faith from the
+browser. Sharing a directory still means sharing its files.
+
 An agent that never says one restarts fresh and says so, which is the same thing
 that happens when the agent itself refuses a resume. Both halves are checked at
 startup: a `{session}` nothing knows how to fill, a pattern nothing uses, a

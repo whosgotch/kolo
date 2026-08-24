@@ -126,6 +126,21 @@ func (a *Agents) runs(command string) bool {
 	return err == nil
 }
 
+// resumesByName says whether this kind names its conversation on restart, and
+// so may share a directory with its own kind of caution.
+func resumesByName(command string) bool {
+	return adapter.For(command).ResumesByName()
+}
+
+// baseOf is the program a command runs, for speaking about it to people. An
+// empty command has no program, but it never gets this far.
+func baseOf(command string) string {
+	if argv := adapter.Argv(command); len(argv) > 0 {
+		return filepath.Base(argv[0])
+	}
+	return command
+}
+
 // start records an agent and launches it. session is the conversation it is to
 // come back to, which only a machine restoring what it was running has.
 func (a *Agents) start(spec hub.Agent, fresh bool, session string) error {
@@ -142,11 +157,18 @@ func (a *Agents) start(spec hub.Agent, fresh bool, session string) error {
 		a.mu.Unlock()
 		return fmt.Errorf("%s is already running here", spec.Name)
 	}
-	for other, p := range a.running {
-		if p.spec.Dir == spec.Dir {
-			a.mu.Unlock()
-			return fmt.Errorf("%s is already working in %s", other, spec.Dir)
+	// One agent to a directory, unless both kinds name their conversations:
+	// the same rule the hub checks, from the machine that actually knows.
+	for _, p := range a.running {
+		if p.spec.Dir != spec.Dir {
+			continue
 		}
+		if resumesByName(spec.Command) && resumesByName(p.spec.Command) {
+			continue
+		}
+		a.mu.Unlock()
+		return fmt.Errorf("one agent to a directory: %s and %s cannot both tell their conversations apart on a restart. A second checkout is how the same repo runs in parallel",
+			baseOf(spec.Command), baseOf(p.spec.Command))
 	}
 	// Reserved before the process exists, so two spawns arriving together cannot
 	// both find the name free.
