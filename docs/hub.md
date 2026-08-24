@@ -218,10 +218,18 @@ An `-allow` entry is a whole command line, so the flags an agent needs are part
 of what the org may start rather than something somebody types at it once it is
 up: `-allow "claude --model opus"`.
 
+`-allow '*'` lends every command found on this machine's PATH, named rather
+than enumerated, so the org can start an agent kolo has no opinion about
+without restarting the host for each one. A command still has to be named like
+one on PATH — no directories; put those on PATH instead. The create form opens
+into a free-text box when a host lends anything, suggesting what it found
+installed. It says what it is: `-allow` never bounded what a running agent
+could reach, only what could be started, and this hands both over at once.
+
 That bounds what can be **started**, not what a running agent can **reach**: it
 has the host user's account, so `~/.ssh` and every other repo on the disk are
-open to whoever is driving it. Run the host as a user that owns only what the org
-should have — a dedicated account, or a machine that holds nothing else.
+open to whoever is driving it. Run the host as a user that owns only what the
+org should have — a dedicated account, or a machine that holds nothing else.
 
 The host dials out, so there is no port to open. An unreachable hub is reported
 and retried; agents keep running and say what they are when it comes back.
