@@ -2,6 +2,7 @@ package host
 
 import (
 	"context"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -105,7 +106,12 @@ func NewAgents(cfg Config, state string) *Agents {
 
 // Start runs an agent, after checking it is one this machine agreed to run. A
 // new agent starts fresh: a conversation left in its directory is not its own.
-func (a *Agents) Start(spec hub.Agent) error { return a.start(spec, true, "") }
+func (a *Agents) Start(spec hub.Agent) error {
+	if err := a.reserve(spec, true, ""); err != nil {
+		return err
+	}
+	return a.begin(spec.Name)
+}
 
 // runs reports whether the org may start command here: one of the command lines
 // lent with -allow, or anything on PATH when the host lent '*'. The hub checks
@@ -132,6 +138,33 @@ func resumesByName(command string) bool {
 	return adapter.For(command).ResumesByName()
 }
 
+// soleIn reports whether name is this machine's only agent working in dir. It
+// is consulted while deciding what an agent may be asked for: "the last
+// conversation in this directory" names something only when there is one
+// agent here to own it. The caller holds the lock.
+func (a *Agents) soleIn(dir, name string) bool {
+	for other, p := range a.running {
+		if other != name && p.spec.Dir == dir {
+			return false
+		}
+	}
+	return true
+}
+
+// newSessionID mints a conversation identity: a random v4 UUID, because that
+// is the shape agents expect an id to arrive in.
+func newSessionID() string {
+	var b [16]byte
+	if _, err := crand.Read(b[:]); err != nil {
+		// crypto/rand never fails on Linux, but an identity is not worth a
+		// panic; an agent without one starts fresh and says so.
+		return ""
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
 // baseOf is the program a command runs, for speaking about it to people. An
 // empty command has no program, but it never gets this far.
 func baseOf(command string) string {
@@ -141,9 +174,10 @@ func baseOf(command string) string {
 	return command
 }
 
-// start records an agent and launches it. session is the conversation it is to
-// come back to, which only a machine restoring what it was running has.
-func (a *Agents) start(spec hub.Agent, fresh bool, session string) error {
+// reserve checks the rules and takes the name, before any process exists.
+// Launching waits until every agent being brought back has claimed its place,
+// so one restored beside another knows it is not alone in its directory.
+func (a *Agents) reserve(spec hub.Agent, fresh bool, session string) error {
 	spec.Dir = filepath.Clean(spec.Dir)
 	if !slices.Contains(a.cfg.Dirs, spec.Dir) {
 		return fmt.Errorf("this machine does not lend %s", spec.Dir)
@@ -174,13 +208,18 @@ func (a *Agents) start(spec hub.Agent, fresh bool, session string) error {
 	// both find the name free.
 	a.running[spec.Name] = &process{spec: spec, fresh: fresh, session: session}
 	a.mu.Unlock()
+	return nil
+}
 
-	if err := a.launch(spec.Name); err != nil {
-		a.forget(spec.Name)
+// begin launches an agent already reserved, and says so. A launch that failed
+// releases the name again.
+func (a *Agents) begin(name string) error {
+	if err := a.launch(name); err != nil {
+		a.forget(name)
 		return err
 	}
 	a.save()
-	a.report(spec.Name, hub.StatusRunning, "")
+	a.report(name, hub.StatusRunning, "")
 	return nil
 }
 
@@ -193,12 +232,30 @@ func (a *Agents) launch(name string) error {
 		return fmt.Errorf("%s is no longer wanted", name)
 	}
 	spec, was := p.spec, p.session
+	kind := adapter.For(spec.Command)
 	// The resume flag goes after the arguments the host lent the command with,
 	// so an agent comes back the way it was started rather than the way kolo
 	// would have started it.
 	argv, resumed := adapter.Argv(spec.Command), false
-	if r, ok := adapter.For(spec.Command).ResumeArgs(was); ok && !p.fresh {
-		argv, resumed = append(argv, r...), true
+	switch {
+	case p.fresh && len(kind.Pin) > 0:
+		// A first start of a kind kolo pins: mint the identity here, so this
+		// conversation belongs to this agent whatever else runs beside it.
+		id := newSessionID()
+		if args, ok := kind.PinArgs(id); ok {
+			p.session = id
+			argv = append(argv, args...)
+		}
+	case !p.fresh:
+		if r, ok := kind.ResumeArgs(was); ok {
+			argv, resumed = append(argv, r...), true
+		} else if len(kind.Continue) > 0 && a.soleIn(spec.Dir, name) {
+			// No id names this agent's conversation — it predates identities,
+			// or the state went missing. "The last conversation here" is only
+			// safe to ask for while nobody else works here; beside a neighbour
+			// it would come back as that neighbour.
+			argv = append(argv, kind.Continue...)
+		}
 	}
 	a.mu.Unlock()
 
@@ -216,7 +273,6 @@ func (a *Agents) launch(name string) error {
 		started.Close()
 		return fmt.Errorf("%s is no longer wanted", name)
 	}
-	kind := adapter.For(spec.Command)
 	live := session.New(cols, rows, kind.Markers)
 	// Input reads the same screen the hub is shown, so a member stopping the
 	// agent is stopping the one everybody else is looking at.
@@ -584,8 +640,14 @@ func (a *Agents) Restore() error {
 	}
 	for _, rec := range state.Agents {
 		// One failing to come back does not stop the others. These agents were
-		// mid-life when the machine went, so they resume rather than start fresh.
-		if err := a.start(rec.Spec, false, rec.Session); err != nil {
+		// mid-life when the machine went, so they resume rather than start
+		// fresh. All of them claim their place before any of them launches.
+		if err := a.reserve(rec.Spec, false, rec.Session); err != nil {
+			a.report(rec.Spec.Name, hub.StatusFailed, err.Error())
+		}
+	}
+	for _, rec := range state.Agents {
+		if err := a.begin(rec.Spec.Name); err != nil {
 			a.report(rec.Spec.Name, hub.StatusFailed, err.Error())
 		}
 	}

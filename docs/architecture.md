@@ -31,11 +31,13 @@ creates one from the browser and the host spawns it.
 an agent comes back from a restart, and most kinds ask for "the last
 conversation in this directory" — beside another agent, a restart would come
 back as that other one, wearing somebody else's context. So creating a second
-agent in an occupied directory is refused. A kind that instead names its
-conversation (`--resume <id>`, read off its own screen) keeps its context to
-itself, so agents of such kinds may share; the host vouches for which commands
-those are, because what a kind does on restart is the host machine's to know.
-Working on the same repo in parallel otherwise means a second checkout.
+agent in an occupied directory is refused. The rule bends when each agent can
+prove which conversation is its own: either the kind names its conversation
+where kolo can read it, or — claude's way — the kind accepts an id at birth,
+and kolo mints one per agent and pins the conversation to it. The host
+vouches for which of its lent commands can do this, because what a kind does
+on restart is the host machine's to know. Working on the same repo in
+parallel otherwise means a second checkout.
 
 Sharing a directory still means sharing its files. Two agents editing one
 working tree collide, and kolo does not referee that; it is the org's judgment,
@@ -190,10 +192,13 @@ Agents are supervised, and resume on restart. When resume fails — killed
 mid-tool-call, CLI upgraded, state gone — the agent starts clean and the log says
 so. Silent context loss is worse than visible context loss.
 
-How to resume is the kind's, and comes in two shapes: an agent that asks for its
-last conversation (`--continue`), and one that names a particular conversation
-(`--resume <id>`). The id for the second is read off the agent's own screen, kept
-by the host, and put back on the command line at the next launch — the same
+How to resume is the kind's, and comes in two shapes: an agent that asks for
+its last conversation (`--continue`), and one that names a particular
+conversation (`--resume <id>`). The id for the second is read off the agent's
+own screen where the agent says it — or, when the kind takes an id at birth,
+minted by the host and pinned on it, so nothing has to be said on screen at
+all. Either way it is kept by the host and put back on the command line at
+the next launch — the same
 principle as everything else here, which is that what is known about an agent is
 what the agent said, next to the screen it said it on. An agent that has never
 named a conversation is not resumed; a fresh start that says so beats a command

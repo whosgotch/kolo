@@ -2,6 +2,7 @@ package host
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -365,10 +366,10 @@ sleep 30
 	}
 	nextReport(t, a)
 	waitFor(t, func() bool {
-		return strings.Contains(screenOf(t, a, "checkups").Text(), "args [--model opus]")
+		return strings.Contains(screenOf(t, a, "checkups").Text(), "args [--model opus --session-id")
 	})
 
-	bounce(t, a, "checkups", a.Restart, "args [--model opus --continue]")
+	bounce(t, a, "checkups", a.Restart, fmt.Sprintf("args [--model opus --resume %s]", sessionOf(t, a, "checkups")))
 }
 
 // TestRestartResumesAndFreshDoesNot is the difference between the two actions.
@@ -388,11 +389,21 @@ sleep 30
 		t.Fatal(err)
 	}
 	nextReport(t, a)
-	// A new agent starts clean; see Agents.Start.
-	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "args []") })
+	// A new agent of a pinned kind starts with an identity kolo minted for it,
+	// not with nothing.
+	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "args [--session-id") })
+	minted := sessionOf(t, a, "checkups")
 
-	bounce(t, a, "checkups", a.Restart, "args [--continue]")
-	bounce(t, a, "checkups", a.Fresh, "args []")
+	bounce(t, a, "checkups", a.Restart, "args [--resume "+minted+"]")
+	if got := sessionOf(t, a, "checkups"); got != minted {
+		t.Errorf("a restart changed the identity: %s became %s", minted, got)
+	}
+	// Starting fresh drops the conversation, and mints the next one — so what
+	// comes back is new, rather than whatever ran here last.
+	bounce(t, a, "checkups", a.Fresh, "args [--session-id")
+	if got := sessionOf(t, a, "checkups"); got == "" || got == minted {
+		t.Errorf("a fresh start did not mint a new identity: %q", got)
+	}
 }
 
 // bounce asks for a restart of one kind and waits for the process it brings
@@ -439,7 +450,7 @@ func TestRestartingIsNotAFailure(t *testing.T) {
 func TestAFailedResumeStartsFresh(t *testing.T) {
 	defer quickRestarts()()
 	dir := t.TempDir()
-	script := fakeAgentNamed(t, dir, "claude", `case "$*" in *--continue*) exit 1 ;; esac
+	script := fakeAgentNamed(t, dir, "claude", `case "$*" in *--resume*) exit 1 ;; esac
 printf '? for shortcuts\r\n'
 sleep 30
 `)
@@ -659,4 +670,46 @@ func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
 		t.Fatalf("a second agent that names its conversation was refused: %v", err)
 	}
 	nextReport(t, a)
+}
+
+// TestTwoAgentsOfAPinnedKindShareADirectory: claude's arrangement, rehearsed
+// with a fake. Each agent is given its own identity at birth and comes back to
+// it at a restart — so neither can ever come back as the other.
+func TestTwoAgentsOfAPinnedKindShareADirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kinds.json")
+	body := `{"pind": {"markers": {"busy": "working"},
+		"pin": ["--session-id", "{session}"], "resume": ["--resume", "{session}"]}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.Load(path); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	program := fakeAgentNamed(t, dir, "pind", `printf 'args [%s]\r\nworking\r\n' "$*"
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{program}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("one", dir, program)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	if err := a.Start(spec("two", dir, program)); err != nil {
+		t.Fatalf("a second agent of a pinned kind was refused: %v", err)
+	}
+	nextReport(t, a)
+
+	waitFor(t, func() bool { return sessionOf(t, a, "one") != "" && sessionOf(t, a, "two") != "" })
+	first, second := sessionOf(t, a, "one"), sessionOf(t, a, "two")
+	if first == second {
+		t.Fatalf("both agents were handed the same conversation: %s", first)
+	}
+
+	bounce(t, a, "two", a.Restart, "args [--resume "+second+"]")
+	if got := sessionOf(t, a, "two"); got != second {
+		t.Errorf("a restart changed two's identity: %s became %s", second, got)
+	}
 }

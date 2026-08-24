@@ -282,6 +282,8 @@ that knows what it is running, and the hub is told rather than configured:
 | `dialogFooter` | what a question's footer says |
 | `dialogSelected` | the sigil in front of the highlighted choice. Used to recognise a question, never to answer one |
 | `resume` | what to append to the command line to continue the last conversation |
+| `pin` | for an agent that takes a session id at start: appended on an agent's first launch with an id kolo mints itself, so the conversation belongs to that agent from birth and no screen has to say so. The same id goes back in `resume` at a restart |
+| `continue` | what to append when a restart would like the last conversation but no id names it. Used only while the agent is alone in its directory — beside another, the answer is a fresh start that says so |
 | `interrupt` | the key that stops this agent working: `esc`, `ctrl+c`, or a single character. Left out it is `esc`, which is what most of them use |
 | `session` | for an agent that resumes by naming a conversation rather than asking for the last one: a pattern whose one capture is the id, read off the agent's own screen. `resume` then carries `{session}` where the id goes |
 | `settle` | for an agent that says nothing while it waits: how long the screen must be unchanged to read as idle. Prefer leaving it out — see `docs/probe-findings.md` #6 |
@@ -291,9 +293,15 @@ that moved its footer between releases is fixed here without one of kolo.
 
 ### Agents that resume by name
 
-`--continue` is the easy shape. An agent that instead wants `--resume <id>` says
-which conversation it is in on its own screen, usually once at startup, and that
-is where kolo reads it:
+`--continue` is the easy shape. An agent that instead wants `--resume <id>`
+says which conversation it is in on its own screen, usually once at startup,
+and that is where kolo reads it — unless the kind also declares `pin`, in
+which case kolo skips the reading altogether: it mints an id per agent and
+hands it over on the first launch. Claude works this way out of the box, via
+its `--session-id`, so two of them share one directory without any
+configuration: each restart reattaches the conversation that was pinned to
+that agent, never a neighbour's. An agent that only *prints* its id, without
+taking one, is described the way robo is:
 
 ```json
 {

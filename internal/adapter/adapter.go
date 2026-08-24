@@ -27,8 +27,26 @@ type Adapter struct {
 	// Empty means the kind cannot be resumed, so every restart of one is fresh.
 	//
 	// An agent that resumes by naming a particular conversation carries
-	// {session} in one of these, and Session says where to read that name.
+	// {session} in one of these, and the id comes from Session or Pin below.
 	Resume []string `json:"resume,omitempty"`
+	// Pin is appended on an agent's first start to bind its conversation to
+	// an id kolo mints itself, so the two belong to each other from birth
+	// regardless of what appears on screen. It carries {session}, and the
+	// same id goes back in Resume at a restart.
+	//
+	// A kind with Pin needs no session pattern: the host named the
+	// conversation before the agent could say anything. An agent that honours
+	// it — claude's --session-id — is resumed by identity rather than by
+	// asking for whatever ran in that directory last, which is what lets two
+	// of them share one directory safely.
+	Pin []string `json:"pin,omitempty"`
+	// Continue is what to append when a restart would like the last
+	// conversation but no id names it: an agent started before kolo recorded
+	// identities, or whose state went missing. Used only while this agent is
+	// alone in its directory, where "the last conversation here" can only be
+	// its own; beside another agent the answer is a fresh start that says so,
+	// because coming back as somebody else is not continuity.
+	Continue []string `json:"continue,omitempty"`
 	// Session is a pattern whose first capture is the id this kind's resume
 	// command needs, matched against the agent's own screen — the same screen
 	// everything else about the agent is read off, because the id is something
@@ -104,17 +122,34 @@ func (a Adapter) ResumeArgs(session string) ([]string, bool) {
 	if len(a.Resume) == 0 {
 		return nil, false
 	}
-	if a.Session == "" {
+	if !slices.Contains(a.Resume, SessionPlaceholder) {
+		// Nothing to fill: the resume asks for whatever ran here last.
 		return slices.Clone(a.Resume), true
 	}
 	if session == "" {
+		// The command line wants an id and nobody has one to give it.
 		return nil, false
 	}
-	out := make([]string, len(a.Resume))
-	for i, arg := range a.Resume {
+	return withID(a.Resume, session), true
+}
+
+// PinArgs is what to append on a first start to give the conversation the id
+// kolo minted for it. False for a kind that does not pin.
+func (a Adapter) PinArgs(session string) ([]string, bool) {
+	if len(a.Pin) == 0 || session == "" {
+		return nil, false
+	}
+	return withID(a.Pin, session), true
+}
+
+// withID fills {session} in every argument. The placeholder is braces because
+// an agent's own flags do not use them.
+func withID(args []string, session string) []string {
+	out := make([]string, len(args))
+	for i, arg := range args {
 		out[i] = strings.ReplaceAll(arg, SessionPlaceholder, session)
 	}
-	return out, true
+	return out
 }
 
 // SessionFrom reads this agent's session id off its screen, or returns empty
@@ -181,7 +216,9 @@ var kinds = map[string]Adapter{
 			DialogFooter:   "Esc to cancel",
 			DialogSelected: "❯",
 		},
-		Resume:    []string{"--continue"},
+		Resume:    []string{"--resume", SessionPlaceholder},
+		Pin:       []string{"--session-id", SessionPlaceholder},
+		Continue:  []string{"--continue"},
 		Interrupt: "esc",
 	},
 	"opencode": {
@@ -283,15 +320,17 @@ func Discovered() []string {
 }
 
 // ResumesByName says whether a restart of this kind comes back as itself even
-// beside another agent in the same directory: it names its conversation
-// (--resume <id>) rather than asking for whatever ran there last (--continue),
-// and the id is its own, read off its own screen.
-//
-// It is the condition two agents sharing a directory live by. A kind that
-// cannot tell one conversation from another would come back from a restart as
-// its neighbour, wearing somebody else's context and calling it its own.
+// beside another agent in the same directory. Two shapes qualify: the kind
+// names its conversation on screen and kolo reads it (Session), or the host
+// named the conversation at birth and the agent honoured it (Pin). What never
+// qualifies is a kind that asks for "the last conversation in this directory"
+// — beside a neighbour, a restart would come back wearing somebody else's
+// context and calling it its own.
 func (a Adapter) ResumesByName() bool {
-	return a.Session != "" && slices.Contains(a.Resume, SessionPlaceholder)
+	if !slices.Contains(a.Resume, SessionPlaceholder) {
+		return false
+	}
+	return a.Session != "" || len(a.Pin) > 0
 }
 
 // validate refuses a kind that would fail later, at a restart somebody was
@@ -300,12 +339,16 @@ func (a Adapter) validate() error {
 	wants := slices.ContainsFunc(a.Resume, func(arg string) bool {
 		return strings.Contains(arg, SessionPlaceholder)
 	})
+	pinned := len(a.Pin) > 0
 	if _, ok := parseKey(a.Interrupt); !ok {
 		return fmt.Errorf("interrupt: %q is not a key — try esc, ctrl+c, or a single character", a.Interrupt)
 	}
+	if pinned && !slices.Contains(a.Pin, SessionPlaceholder) {
+		return fmt.Errorf("pin must carry %s — it stands for the id kolo minted for this conversation", SessionPlaceholder)
+	}
 	switch {
-	case a.Session == "" && wants:
-		return fmt.Errorf("resume asks for %s, but nothing says where to read it off the screen", SessionPlaceholder)
+	case a.Session == "" && !pinned && wants:
+		return fmt.Errorf("resume asks for %s, but nothing says where the id comes from — describe session, or pin one at birth", SessionPlaceholder)
 	case a.Session != "" && !wants:
 		return fmt.Errorf("session says how to read an id that resume never uses; put %s in it", SessionPlaceholder)
 	case a.Session == "":

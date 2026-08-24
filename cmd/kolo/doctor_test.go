@@ -60,7 +60,7 @@ func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
 		t.Errorf("a machine with nothing wrong reported a fault:\n%s", out)
 	}
 	for _, want := range []string{
-		"claude", "--continue",
+		"claude", "--resume {session}",
 		// An agent kolo knows nothing about runs, and the report says what that
 		// costs rather than calling it unsupported.
 		"sh runs and is shared, but kolo cannot read its screen",
