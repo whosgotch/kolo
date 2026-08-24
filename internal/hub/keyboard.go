@@ -1,63 +1,32 @@
 package hub
 
-import (
-	"sync"
-	"time"
-)
+import "sync"
 
-type keyboards struct {
+// typists remembers who typed at an agent last, so watchers joining mid-word
+// know whose keys are moving the screen.
+type typists struct {
 	mu sync.Mutex
-	m  map[string]keyboard
+	m  map[string]Person
 }
 
-// keyboard is one agent's typist; at identifies the connection, not the member.
-type keyboard struct {
-	who   Person
-	at    any
-	since time.Time
-}
+func newTypists() *typists { return &typists{m: map[string]Person{}} }
 
-func newKeyboards() *keyboards { return &keyboards{m: map[string]keyboard{}} }
+// set records who typed last and reports who had it before, if that changed.
+func (t *typists) set(agent string, who Person) (was Person, changed bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-func (k *keyboards) take(agent string, who Person, at any) (was Person, taken bool) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-
-	previous := k.m[agent]
-	if previous.at == at {
+	previous, ok := t.m[agent]
+	if ok && previous == who {
 		return Person{}, false
 	}
-	k.m[agent] = keyboard{who: who, at: at, since: time.Now()}
-	return previous.who, true
+	t.m[agent] = who
+	return previous, true
 }
 
-func (k *keyboards) release(agent string, at any) bool {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-
-	if held, ok := k.m[agent]; !ok || held.at != at {
-		return false
-	}
-	delete(k.m, agent)
-	return true
-}
-
-func (k *keyboards) holds(agent string, at any) bool {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	held, ok := k.m[agent]
-	return ok && held.at == at
-}
-
-func (k *keyboards) holder(agent string) (Person, bool) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	held, ok := k.m[agent]
-	return held.who, ok
-}
-
-func (k *keyboards) forget(agent string) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	delete(k.m, agent)
+func (t *typists) get(agent string) (Person, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	who, ok := t.m[agent]
+	return who, ok
 }

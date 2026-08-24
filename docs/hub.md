@@ -245,9 +245,9 @@ nothing the org does with an agent should ever require them.
 
 ## Which agents
 
-Any command that draws a terminal will run. The org can watch it, take its
-keyboard, type at it, stop it and restart it, and none of that depends on kolo
-knowing what the command is.
+Any command that draws a terminal will run. The org can watch it, type at it,
+stop it and restart it, and none of that depends on kolo knowing what the
+command is.
 
 Two things do, and both are read off the agent's own screen:
 
@@ -345,7 +345,7 @@ cancelling.
 
 Nothing here describes a question's choices, and nothing needs to. Kolo says an
 agent is asking something; the question is on the screen, and answering it means
-taking the keyboard.
+typing at it.
 
 These are strings from that agent's screen, not from its source, and getting one
 subtly wrong is worse than leaving it out: an agent that reads as idle while it
@@ -399,7 +399,7 @@ Open the invite link and say what to call you. Failing that — an org that mint
 one token per person with `kolo token` — open the hub and paste the token that
 was sent to you. The agent
 list is the front door: create one, join one someone else is already using, send
-it work, take its keyboard to answer what it asks, restart it, stop it.
+it work, type at it to answer what it asks, restart it, stop it.
 
 ## Revoking a member
 

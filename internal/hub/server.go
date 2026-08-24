@@ -30,12 +30,12 @@ const (
 // Server is the hub: one org, its hosts, and the agents running on them.
 type Server struct {
 	// Replaced wholesale on claim or reload; read under the lock.
-	orgMu     sync.RWMutex
-	org       *Org
-	registry  *Registry
-	screens   *screens
-	keyboards *keyboards
-	journal   *journal
+	orgMu    sync.RWMutex
+	org      *Org
+	registry *Registry
+	screens  *screens
+	typists  *typists
+	journal  *journal
 	// Held across any read-modify-write of the org file.
 	orgFile sync.Mutex
 	// Open connections, so revocation reaches streams, not just next requests.
@@ -64,7 +64,7 @@ func Listen(org *Org, addr string) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		org: org, registry: NewRegistry(), screens: newScreens(),
-		keyboards: newKeyboards(), conns: newConns(), ln: ln, ctx: ctx, cancel: cancel,
+		typists: newTypists(), conns: newConns(), ln: ln, ctx: ctx, cancel: cancel,
 	}
 
 	// Beside the org file, because the record is the org's rather than the
@@ -518,8 +518,6 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 
 	backlog, updates, unsubscribe := live.Subscribe()
 	defer unsubscribe()
-	// A closed browser lets go of the keyboard.
-	defer s.dropKeyboard(name, member, conn)
 	defer s.resize(name, conn, 0, 0)
 
 	for _, m := range backlog {
@@ -530,8 +528,8 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	if err := session.Send(ctx, conn, catchUp(live)); err != nil {
 		return
 	}
-	// Joiners must learn who holds the keyboard, or two can take it at once.
-	if who, held := s.keyboards.holder(name); held {
+	// Joiners learn who typed last.
+	if who, typed := s.typists.get(name); typed {
 		live.Announce(struct {
 			Type string `json:"type"`
 			Who  string `json:"who"`
@@ -571,19 +569,16 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 			return
 		}
 		switch msg.Type {
-		case "take":
-			s.giveKeyboard(name, member, conn)
-			continue
-		case "release":
-			s.dropKeyboard(name, member, conn)
-			continue
 		case "size":
 			s.resize(name, conn, msg.Cols, msg.Rows)
 			continue
 		case "keys":
-			// Per keystroke, not once: the keyboard can change hands mid-word.
-			if !s.keyboards.holds(name, conn) || msg.Keys == "" {
+			if msg.Keys == "" {
 				continue
+			}
+			// Typing is claiming: whoever's keys arrive last is the typist.
+			if was, changed := s.typists.set(name, member.Person()); changed {
+				s.sayKeyboard(name, member.Person(), was)
 			}
 			s.journal.typed(name, member.Person(), msg.Keys)
 		case "interrupt", "restart", "fresh":
@@ -612,23 +607,6 @@ func done(action string) string {
 	}
 }
 
-func (s *Server) giveKeyboard(name string, member Member, at any) {
-	was, taken := s.keyboards.take(name, member.Person(), at)
-	if !taken {
-		return
-	}
-	s.journal.add(Entry{Agent: name, What: WhatKeyboard, Who: member.Person()})
-	s.sayKeyboard(name, member.Person(), was)
-}
-
-func (s *Server) dropKeyboard(name string, member Member, at any) {
-	if !s.keyboards.release(name, at) {
-		return
-	}
-	s.sayKeyboard(name, Person{}, member.Person())
-}
-
-// sayKeyboard announces through the agent's screen, interleaved with its output.
 func (s *Server) sayKeyboard(name string, who, was Person) {
 	live, ok := s.screens.get(name)
 	if !ok {

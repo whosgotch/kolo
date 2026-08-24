@@ -22,7 +22,6 @@ const (
 	WhatInterrupted = "interrupted"
 	WhatRestarted   = "restarted"
 	WhatFresh       = "fresh"
-	WhatKeyboard    = "keyboard"
 	WhatStopped     = "stopped"
 	WhatFailed      = "failed"
 	WhatGone        = "gone"

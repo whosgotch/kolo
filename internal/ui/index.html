@@ -113,10 +113,6 @@
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bar .spacer { flex: 1; min-width: 0; }
   .bar .typist { color: var(--dim); }
-  /* Holding the keyboard is a selection, not a state of the agent: structure
-     rather than signal. */
-  button.holding { border-color: var(--structure); color: var(--kolo-chalk);
-                   background: color-mix(in srgb, var(--structure) 35%, transparent); }
 
   /* The agent's screen is drawn inside a frame of its own, so what the agent
      wrote and what this page says about it are never mistaken for each other.
@@ -124,9 +120,6 @@
   .screen { flex: 1; min-height: 0; margin: 0 14px; padding: 6px;
             border: 1px solid var(--line); border-radius: 10px; background: var(--kolo-void);
             display: flex; overflow: hidden; }
-  /* Whoever holds the keyboard holds this screen, so the frame says so — the
-     same green as the button, where the eyes already are. */
-  .screen.holding { border-color: var(--structure); }
   /* The terminal is sized to the grid the hub settled on, and centred in
      whatever the frame has left over. */
   #term { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
@@ -211,7 +204,6 @@
         <span class="where"></span>
         <span class="spacer"></span>
         <span class="typist"></span>
-        <button type="button" class="keyboard">take the keyboard</button>
         <button type="button" class="interrupt" disabled>interrupt</button>
         <button type="button" class="quiet restart">restart</button>
         <button type="button" class="quiet fresh">start fresh</button>
@@ -395,9 +387,8 @@ function say(view, message, problem) {
 const fontSize = 13;
 
 const term = new Terminal({
-  // Keystrokes reach the agent, but only from whoever has taken the keyboard —
-  // see onData below. One typist at a time, because two people typing into one
-  // terminal interleave inside a word.
+  // Keystrokes go to the agent as they are pressed — see onData below. Whoever
+  // types last is the typist the others see.
   disableStdin: false,
   cursorBlink: true,
   // What the agent says is what the machine says, so it is said in the
@@ -424,15 +415,14 @@ try {
 // earned: the hub says this about the screen being watched and no other.
 let doing = null;
 
-// Who is typing at the agent being watched, and whether it is us.
+// Who typed at the agent being watched last.
 let typist = null;
-let mine = false;
 
 // Keystrokes go up as they are pressed. Nothing is interpreted here: what the
 // agent does with an Escape or an arrow is the agent's business, and the browser
 // terminal has already encoded it the way a real one would.
 term.onData((keys) => {
-  if (!mine || !socket) return;
+  if (!socket) return;
   tell({ type: 'keys', keys });
 });
 
@@ -502,11 +492,7 @@ function watch(name) {
 function close() {
   watching = null;
   offer('unknown');
-  // The keyboard is held by a connection, not by a member: leaving this agent
-  // drops it even though the same person comes back. Forgetting it here is what
-  // stops the returning page from offering to hand back a keyboard the hub has
-  // already taken, and swallowing everything typed into it.
-  typist = null; mine = false; keyboardChanged();
+  typist = null; keyboardChanged();
   if (socket) { const was = socket; socket = null; was.close(); }
 }
 
@@ -544,12 +530,11 @@ function connect(name) {
       case 'interrupted':
         say('.watch', `${msg.from} stopped the agent`);
         break;
-      // Who has the keyboard, and who just lost it. Announced on the screen
-      // everybody is watching, so it arrives in step with what the agent does.
+      // Who typed last. Announced on the screen everybody is watching, so it
+      // arrives in step with what the agent does.
       case 'keyboard':
         typist = msg.who || null;
-        mine = !!msg.who && msg.id === me.id;
-        keyboardChanged(msg.was);
+        keyboardChanged();
         break;
       // Both arrive just before the screen goes, so they are the last thing
       // anyone watching is told about the process they were watching.
@@ -575,7 +560,7 @@ function connect(name) {
     // Nothing may be offered about a screen this page is no longer being told
     // about: the agent may be restarting, or gone.
     offer('unknown');
-    typist = null; mine = false; keyboardChanged();
+    typist = null; keyboardChanged();
     say('.watch', `${name} is not showing a screen — waiting`);
     setTimeout(() => { if (watching === name) connect(name); }, 1000);
   };
@@ -589,9 +574,9 @@ function describe(state) {
     case 'idle': return 'ready';
     case 'busy': return 'working';
     // Kolo says that a question is up, never what it is: reading the question is
-    // what the screen in front of you is for, and answering it is what taking the
-    // keyboard is for.
-    case 'dialog': return 'waiting on a person — take the keyboard to answer it';
+    // what the screen in front of you is for, and answering it is what typing
+    // is for.
+    case 'dialog': return 'waiting on a person — type to answer it';
     default: return 'kolo does not recognise this screen, so nothing will be sent';
   }
 }
@@ -606,29 +591,11 @@ function offer(state) {
   if (dot) dot.classList.toggle('busy', state === 'busy');
 }
 
-// Taking it needs nobody's permission and cannot be refused: the agent belongs
-// to the org, and taking the keyboard in front of everybody is the whole of the
-// protocol. Handing it back is the same button, so there is one thing to press.
-el('.keyboard').onclick = () => {
-  tell({ type: mine ? 'release' : 'take' });
-  if (!mine) term.focus();
-};
-
-// keyboardChanged redraws who is typing. Said out loud when it changes hands,
-// because a member watching the screen move under them should know whose hands
-// are on it.
-function keyboardChanged(was) {
-  const button = el('.keyboard');
-  button.textContent = mine ? 'hand back the keyboard' : 'take the keyboard';
-  button.classList.toggle('holding', mine);
-  el('.screen').classList.toggle('holding', mine);
-  el('.bar .typist').textContent = typist ? (mine ? 'you are typing' : `${typist} is typing`) : '';
-  if (mine) {
-    term.focus();
-    say('.watch', was ? `you took the keyboard from ${was}` : 'you have the keyboard');
-  } else if (typist) {
-    say('.watch', `${typist} took the keyboard${was && was === me.name ? ' from you' : ''}`);
-  }
+// keyboardChanged redraws who typed last.
+function keyboardChanged() {
+  el('.bar .typist').textContent = typist
+    ? (typist === me.name ? 'you are typing' : `${typist} is typing`)
+    : '';
 }
 
 el('.interrupt').onclick = () => tell({ type: 'interrupt' });

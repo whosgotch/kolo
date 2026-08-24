@@ -232,26 +232,19 @@ func TestJournalRecordsWhatWasSaid(t *testing.T) {
 	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
 
 	viewer := watch(t, ctx, s, memberToken, "checkups")
-	if err := viewer.Write(ctx, websocket.MessageText, []byte(`{"type":"take"}`)); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, func() bool { _, held := s.keyboards.holder("checkups"); return held })
 
 	send := `{"type":"keys","keys":"run the migrations\r","from":"Somebody Else"}`
 	if err := viewer.Write(ctx, websocket.MessageText, []byte(send)); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return len(s.journal.tail("checkups", 10)) == 3 })
+	waitFor(t, func() bool { return len(s.journal.tail("checkups", 10)) == 2 })
 
 	got := s.journal.tail("checkups", 10)
-	if got[1].What != WhatKeyboard || got[1].Who.Name != "Artem" {
-		t.Errorf("taking the keyboard = %+v", got[1])
+	if got[1].What != WhatSaid || got[1].Text != "run the migrations" {
+		t.Errorf("said = %+v", got[1])
 	}
-	if got[2].What != WhatSaid || got[2].Text != "run the migrations" {
-		t.Errorf("said = %+v", got[2])
-	}
-	if got[2].Who.Name != "Artem" {
-		t.Errorf("attributed to %q, want Artem", got[2].Who.Name)
+	if got[1].Who.Name != "Artem" {
+		t.Errorf("attributed to %q, want Artem", got[1].Who.Name)
 	}
 }
 

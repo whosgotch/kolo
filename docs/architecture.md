@@ -104,11 +104,12 @@ password into one.
 
 ## Input
 
-Members type at the agent themselves. One holds its keyboard at a time; anybody
-may take it from anybody, and everybody watching is told who has it — the same
-thing that stops two people typing at one keyboard in a room. Nothing is gated,
-because the member can see the screen their keys land on: an Enter at a question
-is a decision rather than an accident.
+Members type at the agent themselves. There is nothing to take and nobody to
+ask: whoever's keys arrive last is the typist, and everybody watching is told
+who that is. Two people typing at once interleave keystrokes, which everybody
+can see happening — the same as two people reaching for one keyboard in a room.
+Nothing is gated, because the member can see the screen their keys land on: an
+Enter at a question is a decision rather than an accident.
 
 That is what makes the agent's own interface reachable — a panel with keys of its
 own (`d to day · w to week`), a filter box, a mode the footer offers. None of it

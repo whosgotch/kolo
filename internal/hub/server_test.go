@@ -666,10 +666,6 @@ func TestKeysReachTheHost(t *testing.T) {
 	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
 
 	viewer := watch(t, ctx, s, memberToken, "checkups")
-	if err := viewer.Write(ctx, websocket.MessageText, []byte(`{"type":"take"}`)); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, func() bool { _, held := s.keyboards.holder("checkups"); return held })
 
 	send := `{"type":"keys","keys":"ls\r","from":"Somebody Else"}`
 	if err := viewer.Write(ctx, websocket.MessageText, []byte(send)); err != nil {
@@ -683,32 +679,6 @@ func TestKeysReachTheHost(t *testing.T) {
 	}
 	if got.From != "Artem" {
 		t.Errorf("attributed to %q, want Artem", got.From)
-	}
-}
-
-func TestKeysAreRefusedWithoutTheKeyboard(t *testing.T) {
-	ctx := testContext(t)
-	s, memberToken, hostToken := hubFixture(t)
-	control := joinAsHost(t, ctx, s, hostToken)
-	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
-	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
-	var cmd spawn
-	readFrame(t, ctx, control, &cmd)
-	openScreen(t, ctx, s, hostToken, "checkups")
-	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
-
-	viewer := watch(t, ctx, s, memberToken, "checkups")
-	if err := viewer.Write(ctx, websocket.MessageText, []byte(`{"type":"keys","keys":"rm -rf /"}`)); err != nil {
-		t.Fatal(err)
-	}
-	if err := viewer.Write(ctx, websocket.MessageText, []byte(`{"type":"interrupt"}`)); err != nil {
-		t.Fatal(err)
-	}
-
-	var got toAgent
-	readFrame(t, ctx, control, &got)
-	if got.Type != "interrupt" {
-		t.Fatalf("the host was told %+v; keys went through without the keyboard", got)
 	}
 }
 
@@ -832,15 +802,16 @@ func TestARestartAndAStartFreshReachTheHost(t *testing.T) {
 	}
 }
 
-func TestTheKeyboardIsVisibleToWatchers(t *testing.T) {
+func TestWatchersSeeWhoIsTyping(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, _, screen := withAgent(t, ctx)
 
 	viewer := watch(t, ctx, s, memberToken, "checkups")
 	readUntilBytes(t, ctx, viewer)
 
-	taker := watch(t, ctx, s, memberToken, "checkups")
-	if err := taker.Write(ctx, websocket.MessageText, []byte(`{"type":"take"}`)); err != nil {
+	typer := watch(t, ctx, s, memberToken, "checkups")
+	readUntilBytes(t, ctx, typer)
+	if err := typer.Write(ctx, websocket.MessageText, []byte(`{"type":"keys","keys":"ls"}`)); err != nil {
 		t.Fatal(err)
 	}
 	_ = screen
@@ -850,7 +821,7 @@ func TestTheKeyboardIsVisibleToWatchers(t *testing.T) {
 	for {
 		kind, data, err := viewer.Read(deadline)
 		if err != nil {
-			t.Fatalf("never saw the keyboard change hands: %v", err)
+			t.Fatalf("never saw who is typing: %v", err)
 		}
 		if kind != websocket.MessageText {
 			continue
