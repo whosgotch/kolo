@@ -16,6 +16,10 @@ import (
 // screens nobody draws any more.
 var claude = adapter.For("claude").Markers
 
+// The same for opencode: the real markers, so a release that moves its status
+// bar is a failure here rather than a kind that quietly reads as unknown.
+var opencode = adapter.For("opencode").Markers
+
 // Reconstructions of the three states, written out rather than recorded: a real
 // recording carries somebody's email and paths, which is not a thing to commit.
 // What the detector reads is the arrangement, and that is reproduced here.
@@ -137,6 +141,44 @@ const (
 
  Enter to confirm · Esc to cancel
 `
+
+	// OpenCode's three states, reconstructed from recordings the same way —
+	// the real ones carry provider names and paths. Its idle and busy both
+	// live in the status bar, and the busy bar carries the idle hints too.
+	ocIdleScreen = `
+  ┃
+  ┃  Ask anything... "What is the tech stack of this project?"
+  ┃
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   tab agents  ctrl+p commands
+`
+
+	// After a turn the tab hint gives way to the directory and its context.
+	ocIdleAfterTurn = `
+  ┃  Build · model · max
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ~/work/api                                              8.4K (1%)  ctrl+p commands
+`
+
+	ocBusyScreen = `
+  ┃  count slowly from one to ten, one per line
+  ┃
+     1. The loneliest number.
+     2. Even the first prime.
+
+  ┃  Build · model · max
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ⬝⬝⬝⬝■■■■  esc interrupt    tab agents  ctrl+p commands
+`
+
+	// A question draws its own box over the status bar. The selected choice is
+	// colour alone, which is why no sigil is looked for here.
+	ocDialogScreen = `
+  ┃  △ Permission required
+  ┃    → Edit note.txt
+  ┃
+  ┃   Allow once   Allow always   Reject          ctrl+f fullscreen  ⇆ select  enter confirm
+`
 )
 
 func TestOf(t *testing.T) {
@@ -212,6 +254,56 @@ func TestDialogWinsOverIdle(t *testing.T) {
 	both := "Do you want to create note.txt?\n ❯ 1. Yes\n Esc to cancel\n ? for shortcuts\n"
 	if got := claude.Of(both); got != detect.Dialog {
 		t.Errorf("Of(both) = %s, want %s", got, detect.Dialog)
+	}
+}
+
+// TestOpencodeStates pins the kind against reconstructions of its three states.
+func TestOpencodeStates(t *testing.T) {
+	tests := []struct {
+		name   string
+		screen string
+		want   detect.State
+	}{
+		{"fresh at the input box", ocIdleScreen, detect.Idle},
+		{"idle after a turn", ocIdleAfterTurn, detect.Idle},
+		{"running a turn", ocBusyScreen, detect.Busy},
+		{"permission dialog", ocDialogScreen, detect.Dialog},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := opencode.Of(tt.screen); got != tt.want {
+				t.Errorf("Of(%s) = %s, want %s", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestOpencodeReadsBusyWhileTheIdleHintsAreUp pins why the reading order
+// matters for this kind: the working status bar carries the idle hints too,
+// and only busy being read first keeps it from passing as idle.
+func TestOpencodeReadsBusyWhileTheIdleHintsAreUp(t *testing.T) {
+	if !hasAnyOf(ocBusyScreen, opencode.Idle) {
+		t.Fatal("fixture no longer carries the idle hints; it is the point of this test")
+	}
+	if got := opencode.Of(ocBusyScreen); got != detect.Busy {
+		t.Errorf("Of(a working bar) = %s, want %s", got, detect.Busy)
+	}
+}
+
+// TestOpencodeUnrecognisedScreensHold: another tool's screen says nothing to
+// this kind, and neither does a screen of its own missing the bar.
+func TestOpencodeUnrecognisedScreensHold(t *testing.T) {
+	screens := map[string]string{
+		"another agent":  "$ some other tool\n> waiting for input\n",
+		"output only":    "Here is the answer to your question.\n",
+		"bar half drawn": "   tab agents\n",
+	}
+	for name, screen := range screens {
+		t.Run(name, func(t *testing.T) {
+			if got := opencode.Of(screen); got != detect.Unknown {
+				t.Errorf("Of(%s) = %s, want it unrecognised", name, got)
+			}
+		})
 	}
 }
 

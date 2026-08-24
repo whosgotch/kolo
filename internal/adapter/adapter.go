@@ -183,6 +183,24 @@ var kinds = map[string]Adapter{
 		Resume:    []string{"--continue"},
 		Interrupt: "esc",
 	},
+	"opencode": {
+		Markers: detect.Markers{
+			// Both states live in the status bar under the input box. Idle,
+			// the right half reads "tab agents ctrl+p commands"; working, the
+			// left half becomes "esc interrupt" and the rest stays — which is
+			// why Of reads busy before idle. After a turn the tab hint gives
+			// way to the directory and its context, so the command hint is
+			// the one that is always there to be read.
+			Idle: []string{"ctrl+p commands"},
+			Busy: "esc interrupt",
+			// A question draws its own box over the bar, and the last line of
+			// it carries these hints. Which choice is selected is drawn in
+			// colour alone and never reaches the text kolo reads, so there is
+			// no sigil here to mistake for one.
+			DialogFooter: "enter confirm",
+		},
+		Resume: []string{"--continue"},
+	},
 }
 
 // Argv splits a command line into the program and its arguments.

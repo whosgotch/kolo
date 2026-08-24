@@ -1,0 +1,18 @@
+# An OpenCode permission dialog is on screen and Enter would answer it.
+# Recorded with edit set to ask, without which the agent writes the file and
+# no dialog ever comes. Put this in the directory before recording:
+#
+#     {
+#       "$schema": "https://opencode.ai/config.json",
+#       "permission": { "edit": "ask" }
+#     }
+#
+# The choice the user has selected is drawn in colour alone, so nothing of it
+# survives in the text kolo reads — which is why the kind declares no
+# dialogSelected and the footer carries the state instead.
+waitfor 60s Ask anything
+wait 3s
+send create a file called note.txt containing exactly hello
+waitfor 60s Permission required
+wait 2s
+dump dialog
