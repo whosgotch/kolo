@@ -1,7 +1,7 @@
 // Package relay is the sole writer to an agent's PTY: interleaved writers
 // garble a terminal.
 //
-// See docs/architecture.md "Input".
+// See docs/reference.md, "Input model".
 package relay
 
 import (

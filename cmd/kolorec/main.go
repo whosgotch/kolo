@@ -154,7 +154,7 @@ func do(a *agent.Agent, screen *term.Screen, out, name string, i int, s step) er
 
 	case "send":
 		// Text and Enter as separate writes: bundled they read as a paste and
-		// never submit (probe-findings #3).
+		// never submit.
 		log.Printf("  [%02d] send %q", i, s.arg)
 		if _, err := a.Write([]byte(s.arg)); err != nil {
 			return err

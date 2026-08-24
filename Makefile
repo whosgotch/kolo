@@ -50,6 +50,6 @@ clean:
 	rm -f $(BIN)
 
 # Regenerates the icons and the token stylesheet the page serves, from
-# docs/brand. See docs/brand/kolo-brand.md.
+# docs/brand.
 brand:
 	node scripts/brand.mjs

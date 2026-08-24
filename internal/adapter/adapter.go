@@ -18,7 +18,7 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// See docs/architecture.md "What kolo knows about each agent kind".
+// See docs/reference.md, "Agents".
 type Adapter struct {
 	Markers detect.Markers `json:"markers"`
 	// Appended to the command to resume the last conversation; empty means
@@ -277,7 +277,7 @@ func (a Adapter) validate() error {
 	return nil
 }
 
-// Load merges agent kinds from a JSON file (docs/hub.md) into the shipped
+// Load merges agent kinds from a JSON file (docs/reference.md) into the shipped
 // ones, replacing any kind it names. Must run before any agent starts.
 func Load(path string) (added []string, err error) {
 	b, err := os.ReadFile(path)

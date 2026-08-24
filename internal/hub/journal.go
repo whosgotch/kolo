@@ -230,8 +230,7 @@ func writeJournal(path string, entries []Entry) error {
 // filled in, or a menu chosen with the arrow keys will not read back exactly.
 //
 // Nothing is written down until Enter, so a line abandoned half typed is never
-// recorded, and the member credited is the one who sent it — which is the one
-// holding the keyboard, the only person whose keys get this far.
+// recorded, and the member credited is the one whose keys the hub passed on.
 func (j *journal) typed(agent string, who Person, keys string) {
 	j.mu.Lock()
 	held := j.typing[agent]

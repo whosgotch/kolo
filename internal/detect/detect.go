@@ -1,5 +1,5 @@
 // Package detect reads an agent's screen to tell what it's doing. The zero
-// Markers matches nothing; see docs/architecture.md "Input".
+// Markers matches nothing; see docs/reference.md, "Input model".
 package detect
 
 import (

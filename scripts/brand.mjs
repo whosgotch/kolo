@@ -1,6 +1,6 @@
 // Builds the icons the page serves, from the geometry in docs/brand/ring.ts.
 //
-// The mark is generated, never stored: see docs/brand/kolo-brand.md. At the
+// The mark is generated, never stored (docs/brand/ring.ts is the geometry). At the
 // sizes a browser puts it — a tab, a home screen, a corner of the page — it is
 // under the twelve rows the ASCII build needs, so all of it is the vector build.
 //

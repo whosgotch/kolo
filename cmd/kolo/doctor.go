@@ -160,7 +160,7 @@ func missing(name string, kind adapter.Adapter) []string {
 	if kind.Markers.Blank() && len(kind.Resume) == 0 {
 		return []string{name + " runs and is shared, but kolo cannot read its screen: the list will" +
 			"\n      not say what it is doing, nobody can stop it from the browser, and it" +
-			"\n      starts fresh every restart. Describe it in kinds.json — see docs/hub.md."}
+			"\n      starts fresh every restart. Describe it in kinds.json — see docs/reference.md."}
 	}
 	var notes []string
 	if kind.Markers.Busy == "" {
