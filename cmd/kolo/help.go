@@ -93,6 +93,10 @@ it comes up:
 
     kolo up -allow "claude --model opus"
 
+And -allow '*' lends every command found on this machine's PATH, so the
+org can start an agent kolo has no opinion about. It says what it is:
+what a running agent can reach was never bounded by -allow anyway.
+
 Any command that draws a terminal will run, and the org can watch it,
 type at it and stop it. What kolo has to be told is how a particular
 agent wears its states, or the list cannot say which of them are asking
@@ -212,9 +216,10 @@ because they were minted together and are useless apart. A host keeping
 its two halves elsewhere — a secret store, a unit file — can pass -hub
 and -token, or $KOLO_HUB and $KOLO_TOKEN.
 
--dir and -allow bound what the org may start here. They do not bound what
-a running agent may reach: it has this user's whole account. Run a host as
-a user that owns only what the org should have.
+-dir and -allow bound what the org may start here. -allow '*' lends every
+command on this machine's PATH. None of it bounds what a running agent
+may reach: it has this user's whole account. Run a host as a user that
+owns only what the org should have.
 
 Whoever runs it does not use it. It takes no input and draws nothing.
 

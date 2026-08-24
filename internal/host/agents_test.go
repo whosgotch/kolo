@@ -612,3 +612,30 @@ func TestTheStateFileSaysHowAScreenIsReading(t *testing.T) {
 		t.Error("nothing says since when, so nobody can tell a moment from three days")
 	}
 }
+
+// TestAHostThatLendsAnyCommandRunsWhatsOnItsPath: with '*' the machine runs any
+// command named like one on PATH, and refuses a path or a program that is not
+// there — the hub cannot know either, so this is where both are found out.
+func TestAHostThatLendsAnyCommandRunsWhatsOnItsPath(t *testing.T) {
+	dir := t.TempDir()
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{hub.AllowAny}}, "")
+
+	if err := a.Start(spec("checkups", dir, "cat")); err != nil {
+		t.Fatalf("a command on PATH: %v", err)
+	}
+	nextReport(t, a)
+
+	for _, tc := range []struct {
+		name, agent, command string
+	}{
+		{"a path instead of a name", "scripts", "/bin/cat"},
+		{"a program that is not there", "ghost", "no-such-agent-anywhere"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := a.Start(spec(tc.agent, dir, tc.command))
+			if err == nil || !strings.Contains(err.Error(), "does not run") {
+				t.Errorf("accepted %q", tc.command)
+			}
+		})
+	}
+}

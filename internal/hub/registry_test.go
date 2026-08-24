@@ -8,7 +8,7 @@ import (
 func registryFixture(t *testing.T) *Registry {
 	t.Helper()
 	r := NewRegistry()
-	err := r.Join("devbox", []string{"/work/api", "/work/web"}, []string{"claude"}, nil, func(any) error { return nil })
+	err := r.Join("devbox", []string{"/work/api", "/work/web"}, []string{"claude"}, nil, nil, func(any) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestLeavingTakesTheAgentsWithIt(t *testing.T) {
 
 func TestOneConnectionPerHost(t *testing.T) {
 	r := registryFixture(t)
-	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, func(any) error { return nil })
+	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, nil, func(any) error { return nil })
 	if err == nil {
 		t.Fatal("a second connection claimed the same host")
 	}
@@ -131,7 +131,7 @@ func TestJoinRestoresWhatTheHostIsRunning(t *testing.T) {
 	r.Leave("devbox")
 
 	was.Status = StatusRunning
-	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, []Agent{was}, func(any) error { return nil })
+	err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, []Agent{was}, func(any) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,5 +145,45 @@ func TestJoinRestoresWhatTheHostIsRunning(t *testing.T) {
 	}
 	if _, err := r.Add(agentFixture("checkups", "/work/api")); err == nil {
 		t.Error("a restored agent did not hold its name")
+	}
+}
+
+// TestAHostThatLendsAnyCommand: '*' is the host saying every command named like
+// one on its PATH may be started, and the hub's check follows that shape — a
+// name passes, a path does not, and without '*' nothing changes.
+func TestAHostThatLendsAnyCommand(t *testing.T) {
+	r := NewRegistry()
+	err := r.Join("devbox", []string{"/work/api"}, []string{AllowAny}, nil, nil, func(any) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := agentFixture("checkups", "/work/api")
+	a.Command = "aider --model opus"
+	if _, err := r.Add(a); err != nil {
+		t.Errorf("a command the host lent any of: %v", err)
+	}
+
+	pathed := agentFixture("scripts", "/work/api")
+	pathed.Command = "/opt/tools/aider"
+	if _, err := r.Add(pathed); err == nil {
+		t.Error("a command carrying a path was taken")
+	}
+
+	empty := agentFixture("blank", "/work/api")
+	empty.Command = ""
+	if _, err := r.Add(empty); err == nil {
+		t.Error("no command at all was taken")
+	}
+}
+
+// TestLendingAnyIsNotTheDefault: a host that enumerated its commands has not
+// lent anything else, whatever it runs.
+func TestLendingAnyIsNotTheDefault(t *testing.T) {
+	r := registryFixture(t)
+	a := agentFixture("checkups", "/work/api")
+	a.Command = "aider"
+	if _, err := r.Add(a); err == nil {
+		t.Error("an unlisted command started on a host that lends a list")
 	}
 }

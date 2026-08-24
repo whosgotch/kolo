@@ -14,6 +14,7 @@ import (
 	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/config"
 	"github.com/whosgotch/kolo/internal/host"
+	"github.com/whosgotch/kolo/internal/hub"
 )
 
 // How long an agent may go unrecognised before it is worth saying so. Long
@@ -95,6 +96,12 @@ func runnable(w io.Writer, allows []string) bool {
 	fmt.Fprintf(w, "what this machine runs\n")
 	well := true
 	for _, command := range allows {
+		// The wildcard is a decision rather than a program, and it is well by
+		// definition: what it lends is whatever turns out to be on PATH.
+		if command == hub.AllowAny {
+			fmt.Fprintf(w, "  %s *  (any command found on PATH)\n", good)
+			continue
+		}
 		argv := adapter.Argv(command)
 		if len(argv) == 0 {
 			continue
@@ -130,7 +137,14 @@ func knownKinds(w io.Writer, allows []string) {
 	fmt.Fprintf(table, "  agent\twatch\ttype\tstop\treads screen\tresume\n")
 
 	var notes []string
+	rows := 0
 	for _, command := range allows {
+		// '*' names no agent: what it lends is whatever the org starts, and
+		// each of those is described by its own kind or by nothing.
+		if command == hub.AllowAny {
+			continue
+		}
+		rows++
 		argv := adapter.Argv(command)
 		if len(argv) == 0 {
 			continue
@@ -154,6 +168,9 @@ func knownKinds(w io.Writer, allows []string) {
 		notes = append(notes, missing(name, kind)...)
 	}
 	table.Flush()
+	if rows == 0 {
+		fmt.Fprintf(w, "  (whatever the org starts; kinds.json describes one so its screen can be read)\n")
+	}
 	for _, note := range notes {
 		fmt.Fprintf(w, "      %s\n", note)
 	}

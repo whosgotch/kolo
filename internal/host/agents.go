@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -106,6 +107,25 @@ func NewAgents(cfg Config, state string) *Agents {
 // new agent starts fresh: a conversation left in its directory is not its own.
 func (a *Agents) Start(spec hub.Agent) error { return a.start(spec, true, "") }
 
+// runs reports whether the org may start command here: one of the command lines
+// lent with -allow, or anything on PATH when the host lent '*'. The hub checks
+// the same rule as syntax; this one looks, because it is the machine with the
+// PATH, and it is the one that counts.
+func (a *Agents) runs(command string) bool {
+	if slices.Contains(a.cfg.Allow, command) {
+		return true
+	}
+	if !slices.Contains(a.cfg.Allow, hub.AllowAny) {
+		return false
+	}
+	name := hub.Program(command)
+	if name == "" || filepath.Base(name) != name {
+		return false
+	}
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
 // start records an agent and launches it. session is the conversation it is to
 // come back to, which only a machine restoring what it was running has.
 func (a *Agents) start(spec hub.Agent, fresh bool, session string) error {
@@ -113,7 +133,7 @@ func (a *Agents) start(spec hub.Agent, fresh bool, session string) error {
 	if !slices.Contains(a.cfg.Dirs, spec.Dir) {
 		return fmt.Errorf("this machine does not lend %s", spec.Dir)
 	}
-	if !slices.Contains(a.cfg.Allow, spec.Command) {
+	if !a.runs(spec.Command) {
 		return fmt.Errorf("this machine does not run %s", spec.Command)
 	}
 
