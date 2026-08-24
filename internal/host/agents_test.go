@@ -2,6 +2,7 @@ package host
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -85,7 +86,7 @@ func TestStartRefuses(t *testing.T) {
 		{"a directory not lent", "other", "/etc", "cat", "does not lend"},
 		{"a command not allowed", "other", dir, "rm", "does not run"},
 		{"a name already running", "checkups", dir, "cat", "already running"},
-		{"a directory in use", "other", dir, "cat", "already working in"},
+		{"a directory in use", "other", dir, "cat", "one cat to a directory"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := a.Start(spec(tc.agent, tc.dir, tc.command))
@@ -365,10 +366,10 @@ sleep 30
 	}
 	nextReport(t, a)
 	waitFor(t, func() bool {
-		return strings.Contains(screenOf(t, a, "checkups").Text(), "args [--model opus]")
+		return strings.Contains(screenOf(t, a, "checkups").Text(), "args [--model opus --session-id")
 	})
 
-	bounce(t, a, "checkups", a.Restart, "args [--model opus --continue]")
+	bounce(t, a, "checkups", a.Restart, fmt.Sprintf("args [--model opus --resume %s]", sessionOf(t, a, "checkups")))
 }
 
 // TestRestartResumesAndFreshDoesNot is the difference between the two actions.
@@ -388,11 +389,21 @@ sleep 30
 		t.Fatal(err)
 	}
 	nextReport(t, a)
-	// A new agent starts clean; see Agents.Start.
-	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "args []") })
+	// A new agent of a pinned kind starts with an identity kolo minted for it,
+	// not with nothing.
+	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "args [--session-id") })
+	minted := sessionOf(t, a, "checkups")
 
-	bounce(t, a, "checkups", a.Restart, "args [--continue]")
-	bounce(t, a, "checkups", a.Fresh, "args []")
+	bounce(t, a, "checkups", a.Restart, "args [--resume "+minted+"]")
+	if got := sessionOf(t, a, "checkups"); got != minted {
+		t.Errorf("a restart changed the identity: %s became %s", minted, got)
+	}
+	// Starting fresh drops the conversation, and mints the next one — so what
+	// comes back is new, rather than whatever ran here last.
+	bounce(t, a, "checkups", a.Fresh, "args [--session-id")
+	if got := sessionOf(t, a, "checkups"); got == "" || got == minted {
+		t.Errorf("a fresh start did not mint a new identity: %q", got)
+	}
 }
 
 // bounce asks for a restart of one kind and waits for the process it brings
@@ -439,7 +450,7 @@ func TestRestartingIsNotAFailure(t *testing.T) {
 func TestAFailedResumeStartsFresh(t *testing.T) {
 	defer quickRestarts()()
 	dir := t.TempDir()
-	script := fakeAgentNamed(t, dir, "claude", `case "$*" in *--continue*) exit 1 ;; esac
+	script := fakeAgentNamed(t, dir, "claude", `case "$*" in *--resume*) exit 1 ;; esac
 printf '? for shortcuts\r\n'
 sleep 30
 `)
@@ -611,4 +622,119 @@ func TestTheStateFileSaysHowAScreenIsReading(t *testing.T) {
 	if rec.Since.IsZero() {
 		t.Error("nothing says since when, so nobody can tell a moment from three days")
 	}
+}
+
+// TestAHostThatLendsAnyCommandRunsWhatsOnItsPath: with '*' the machine runs any
+// command named like one on PATH, and refuses a path or a program that is not
+// there — the hub cannot know either, so this is where both are found out.
+func TestAHostThatLendsAnyCommandRunsWhatsOnItsPath(t *testing.T) {
+	dir := t.TempDir()
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{hub.AllowAny}}, "")
+
+	if err := a.Start(spec("checkups", dir, "cat")); err != nil {
+		t.Fatalf("a command on PATH: %v", err)
+	}
+	nextReport(t, a)
+
+	for _, tc := range []struct {
+		name, agent, command string
+	}{
+		{"a path instead of a name", "scripts", "/bin/cat"},
+		{"a program that is not there", "ghost", "no-such-agent-anywhere"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := a.Start(spec(tc.agent, dir, tc.command))
+			if err == nil || !strings.Contains(err.Error(), "does not run") {
+				t.Errorf("accepted %q", tc.command)
+			}
+		})
+	}
+}
+
+// TestAgentsThatNameTheirConversationsShareADirectory: the same rule the hub
+// checks, from the machine that actually knows the kinds. Two agents of a kind
+// that names its conversations work one directory; a kind that asks for "the
+// last conversation here" does not join them.
+func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
+	robo(t)
+	dir := t.TempDir()
+	program := fakeAgentNamed(t, dir, "robo", `printf 'session: 1111-2222\n'; sleep 30`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{program}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("one", dir, program)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	if err := a.Start(spec("two", dir, program)); err != nil {
+		t.Fatalf("a second agent that names its conversation was refused: %v", err)
+	}
+	nextReport(t, a)
+}
+
+// TestTwoAgentsOfAPinnedKindShareADirectory: claude's arrangement, rehearsed
+// with a fake. Each agent is given its own identity at birth and comes back to
+// it at a restart — so neither can ever come back as the other.
+func TestTwoAgentsOfAPinnedKindShareADirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kinds.json")
+	body := `{"pind": {"markers": {"busy": "working"},
+		"pin": ["--session-id", "{session}"], "resume": ["--resume", "{session}"]}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.Load(path); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	program := fakeAgentNamed(t, dir, "pind", `printf 'args [%s]\r\nworking\r\n' "$*"
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{program}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("one", dir, program)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	if err := a.Start(spec("two", dir, program)); err != nil {
+		t.Fatalf("a second agent of a pinned kind was refused: %v", err)
+	}
+	nextReport(t, a)
+
+	waitFor(t, func() bool { return sessionOf(t, a, "one") != "" && sessionOf(t, a, "two") != "" })
+	first, second := sessionOf(t, a, "one"), sessionOf(t, a, "two")
+	if first == second {
+		t.Fatalf("both agents were handed the same conversation: %s", first)
+	}
+
+	bounce(t, a, "two", a.Restart, "args [--resume "+second+"]")
+	if got := sessionOf(t, a, "two"); got != second {
+		t.Errorf("a restart changed two's identity: %s became %s", second, got)
+	}
+}
+
+// TestDifferentKindsShareADirectory: a claude and an opencode in one directory
+// cannot come back as each other — each kind's "last conversation here" is
+// read from a store the other never writes to.
+func TestDifferentKindsShareADirectory(t *testing.T) {
+	dir := t.TempDir()
+	claude := fakeAgentNamed(t, dir, "claude", `printf '? for shortcuts\r\n'
+sleep 30
+`)
+	robo(t)
+	opencode := fakeAgentNamed(t, dir, "robo", `printf 'session: 9f3c\r\ntype a message\r\n'
+sleep 30
+`)
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{claude, opencode}}, "")
+	t.Cleanup(a.StopAll)
+
+	if err := a.Start(spec("checkups", dir, claude)); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	if err := a.Start(spec("reviews", dir, opencode)); err != nil {
+		t.Fatalf("a different kind was refused a shared directory: %v", err)
+	}
+	nextReport(t, a)
 }

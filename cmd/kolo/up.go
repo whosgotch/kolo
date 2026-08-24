@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
 	"os/user"
 	"path/filepath"
@@ -33,7 +32,7 @@ func upCmd(args []string) error {
 	fs := flag.NewFlagSet("up", flag.ExitOnError)
 	var dirs, allow list
 	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default the current directory)")
-	fs.Var(&allow, "allow", "an agent command line the org may run, flags and all (repeat; default whichever kolo knows and finds installed)")
+	fs.Var(&allow, "allow", "an agent command line the org may run, flags and all (repeat; '*' lends any command on PATH; default whichever kolo knows and finds installed)")
 	orgPath := fs.String("org", config.Path("org.json"), "org file, created if it is not there")
 	name := fs.String("name", "", "org name, used only when creating the org file (default this directory's name)")
 	addr := fs.String("addr", "", "address the hub listens on (default 0.0.0.0:7300, or :443 with -tls-domain)")
@@ -79,8 +78,8 @@ func upCmd(args []string) error {
 		allow = installedKinds()
 		if len(allow) == 0 {
 			return fmt.Errorf("no agent command found: kolo knows %s, and none of them are on PATH\n"+
-				"Install one, or name it with -allow — any command that draws a terminal will run,\n"+
-				"and %s describes one kolo does not know so its screen can be read too",
+				"Install one, name it with -allow, or lend any command with -allow '*' —\n"+
+				"anything that draws a terminal will run, and %s describes one kolo\ndoes not know so its screen can be read too",
 				strings.Join(adapter.Kinds(), ", "), *kinds)
 		}
 	}
@@ -233,16 +232,11 @@ const (
 	defaultUses = 10
 )
 
-// installedKinds is every agent kolo knows about that this machine can actually
-// run, so the common case names none of them.
+// installedKinds is every agent this machine can actually run of the ones kolo
+// has heard of — the kinds it ships with and knows from kinds.json, plus the
+// names in the discovery catalog. So the common case names none of them.
 func installedKinds() list {
-	var found list
-	for _, kind := range adapter.Kinds() {
-		if _, err := exec.LookPath(kind); err == nil {
-			found = append(found, kind)
-		}
-	}
-	return found
+	return list(adapter.Discovered())
 }
 
 // orgName falls back to the directory kolo was started in. It is a label, shown

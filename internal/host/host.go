@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
@@ -89,8 +90,20 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 
 	// The hello carries what is already running. A host that dropped kept its
 	// agents while the hub let them go, and this is what puts them back.
+	// Found is which of the agents kolo has heard of are installed here, so a
+	// browser lending any command can suggest them; it decides nothing.
+	// ByName is which of the lent commands resume by naming their
+	// conversation — the host's own knowledge, carried because the one-agent-
+	// to-a-directory rule bends only where the host can vouch for it.
+	byName := make([]string, 0, len(cfg.Allow))
+	for _, command := range cfg.Allow {
+		if adapter.For(command).ResumesByName() {
+			byName = append(byName, command)
+		}
+	}
 	hello, _ := json.Marshal(map[string]any{
 		"type": "hello", "dirs": cfg.Dirs, "allow": cfg.Allow,
+		"found": adapter.Discovered(), "by_name": byName,
 		"agents": agents.Specs(), "version": cfg.Version,
 	})
 	if err := send(ctx, conn, hello); err != nil {

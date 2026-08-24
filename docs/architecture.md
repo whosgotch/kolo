@@ -27,10 +27,24 @@ Only hosts install kolo. Members open a link.
 An agent is a name, a directory on the host, and a command. Anyone in the org
 creates one from the browser and the host spawns it.
 
-**One agent per directory.** Resuming a conversation is directory-scoped, and two
-agents editing the same files would collide, so creating a second agent in a
-directory that already has one is refused. Working on the same repo in parallel
-means a second checkout.
+**One agent of each kind to a directory**, with one exception of its own.
+Resuming is how an agent comes back from a restart, and most kinds ask for
+"the last conversation in this directory", read from their own store of
+conversations. Two of the same kind sharing a directory would therefore come
+back as each other — so that pair is refused. A different kind beside them is
+safe without any arrangement: its history is a store the first kind never
+reads. And a kind that proves which conversation is its own — naming it where
+kolo can read it, or taking one kolo mints at birth — may keep company with
+itself. The host vouches for which of its lent commands can do this, because
+what a kind does on restart is the host machine's to know.
+
+Two agents editing one working tree still collide whatever their kinds. Kolo
+does not referee that; it is the org's judgment, made where the agents are
+being created.
+
+Sharing a directory still means sharing its files. Two agents editing one
+working tree collide, and kolo does not referee that; it is the org's judgment,
+made where the agents are being created.
 
 Agents are communal. Anyone may watch, send to, interrupt, restart or stop any of
 them. There are no roles; every action is attributed instead, which is what makes
@@ -181,10 +195,13 @@ Agents are supervised, and resume on restart. When resume fails — killed
 mid-tool-call, CLI upgraded, state gone — the agent starts clean and the log says
 so. Silent context loss is worse than visible context loss.
 
-How to resume is the kind's, and comes in two shapes: an agent that asks for its
-last conversation (`--continue`), and one that names a particular conversation
-(`--resume <id>`). The id for the second is read off the agent's own screen, kept
-by the host, and put back on the command line at the next launch — the same
+How to resume is the kind's, and comes in two shapes: an agent that asks for
+its last conversation (`--continue`), and one that names a particular
+conversation (`--resume <id>`). The id for the second is read off the agent's
+own screen where the agent says it — or, when the kind takes an id at birth,
+minted by the host and pinned on it, so nothing has to be said on screen at
+all. Either way it is kept by the host and put back on the command line at
+the next launch — the same
 principle as everything else here, which is that what is known about an agent is
 what the agent said, next to the screen it said it on. An agent that has never
 named a conversation is not resumed; a fresh start that says so beats a command

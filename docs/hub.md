@@ -218,10 +218,18 @@ An `-allow` entry is a whole command line, so the flags an agent needs are part
 of what the org may start rather than something somebody types at it once it is
 up: `-allow "claude --model opus"`.
 
+`-allow '*'` lends every command found on this machine's PATH, named rather
+than enumerated, so the org can start an agent kolo has no opinion about
+without restarting the host for each one. A command still has to be named like
+one on PATH — no directories; put those on PATH instead. The create form opens
+into a free-text box when a host lends anything, suggesting what it found
+installed. It says what it is: `-allow` never bounded what a running agent
+could reach, only what could be started, and this hands both over at once.
+
 That bounds what can be **started**, not what a running agent can **reach**: it
 has the host user's account, so `~/.ssh` and every other repo on the disk are
-open to whoever is driving it. Run the host as a user that owns only what the org
-should have — a dedicated account, or a machine that holds nothing else.
+open to whoever is driving it. Run the host as a user that owns only what the
+org should have — a dedicated account, or a machine that holds nothing else.
 
 The host dials out, so there is no port to open. An unreachable hub is reported
 and retried; agents keep running and say what they are when it comes back.
@@ -274,6 +282,8 @@ that knows what it is running, and the hub is told rather than configured:
 | `dialogFooter` | what a question's footer says |
 | `dialogSelected` | the sigil in front of the highlighted choice. Used to recognise a question, never to answer one |
 | `resume` | what to append to the command line to continue the last conversation |
+| `pin` | for an agent that takes a session id at start: appended on an agent's first launch with an id kolo mints itself, so the conversation belongs to that agent from birth and no screen has to say so. The same id goes back in `resume` at a restart |
+| `continue` | what to append when a restart would like the last conversation but no id names it. Used only while the agent is alone in its directory — beside another, the answer is a fresh start that says so |
 | `interrupt` | the key that stops this agent working: `esc`, `ctrl+c`, or a single character. Left out it is `esc`, which is what most of them use |
 | `session` | for an agent that resumes by naming a conversation rather than asking for the last one: a pattern whose one capture is the id, read off the agent's own screen. `resume` then carries `{session}` where the id goes |
 | `settle` | for an agent that says nothing while it waits: how long the screen must be unchanged to read as idle. Prefer leaving it out — see `docs/probe-findings.md` #6 |
@@ -283,9 +293,15 @@ that moved its footer between releases is fixed here without one of kolo.
 
 ### Agents that resume by name
 
-`--continue` is the easy shape. An agent that instead wants `--resume <id>` says
-which conversation it is in on its own screen, usually once at startup, and that
-is where kolo reads it:
+`--continue` is the easy shape. An agent that instead wants `--resume <id>`
+says which conversation it is in on its own screen, usually once at startup,
+and that is where kolo reads it — unless the kind also declares `pin`, in
+which case kolo skips the reading altogether: it mints an id per agent and
+hands it over on the first launch. Claude works this way out of the box, via
+its `--session-id`, so two of them share one directory without any
+configuration: each restart reattaches the conversation that was pinned to
+that agent, never a neighbour's. An agent that only *prints* its id, without
+taking one, is described the way robo is:
 
 ```json
 {
@@ -303,6 +319,15 @@ The last id on screen wins: an agent told to start a new conversation says so on
 the same screen, and resuming the one before it would bring back what somebody
 just cleared. Starting fresh from the browser drops the id along with the
 conversation.
+
+Because such an agent always knows which conversation is its own, two of them
+may share one directory. The usual rule is narrower than "one agent": it is
+one agent **of each kind**, because a kind that asks for "the last
+conversation here" reads that from its own store, which another kind's agents
+never write to. Two of the same kind are the dangerous pair — unless they
+name or pin their conversations, which is what the host vouches for; nothing
+is taken on faith from the browser. Sharing a directory still means sharing
+its files.
 
 An agent that never says one restarts fresh and says so, which is the same thing
 that happens when the agent itself refuses a resume. Both halves are checked at

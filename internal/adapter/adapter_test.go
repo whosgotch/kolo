@@ -16,7 +16,7 @@ import (
 // directory it was found in nor the flags it was lent with change the kind.
 func TestAKindIsTheBinaryNotTheCommandLine(t *testing.T) {
 	for _, command := range []string{"claude", "/opt/homebrew/bin/claude", "claude --model opus"} {
-		if got := For(command).Resume; !slices.Equal(got, []string{"--continue"}) {
+		if got := For(command).Resume; !slices.Equal(got, []string{"--resume", SessionPlaceholder}) {
 			t.Errorf("%q resumes with %v", command, got)
 		}
 	}
@@ -137,9 +137,13 @@ func TestAKindThatResumesByNamingAConversation(t *testing.T) {
 	if got, ok := robo.ResumeArgs(""); ok {
 		t.Errorf("resumed a conversation it cannot name: %v", got)
 	}
-	// A kind that names nothing is unaffected by an id it never asked for.
-	if got, ok := For("claude").ResumeArgs("9f3c-11ab"); !ok || !slices.Equal(got, []string{"--continue"}) {
+	// A kind that pins its identities needs no screen to read: the id is the
+	// host's own, minted at birth and filled in wherever it is asked for.
+	if got, ok := For("claude").ResumeArgs("9f3c-11ab"); !ok || !slices.Equal(got, []string{"--resume", "9f3c-11ab"}) {
 		t.Errorf("claude resumes with %v, %v", got, ok)
+	}
+	if got, ok := For("claude").ResumeArgs(""); ok {
+		t.Errorf("resumed without the id it pinned: %v", got)
 	}
 }
 
@@ -216,5 +220,67 @@ func TestLoadRefusesAKeyNobodyCanPress(t *testing.T) {
 		if _, err := Load(path); err == nil {
 			t.Errorf("%q was accepted as a key", bad)
 		}
+	}
+}
+
+// TestDiscoveredFindsWhatIsInstalled checks discovery against a PATH holding
+// exactly one agent, so the test does not depend on what the machine running it
+// happens to have. A name kolo has heard of but that is not there is not
+// reported: lending an absent command helps nobody.
+func TestDiscoveredFindsWhatIsInstalled(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"aider", "not-an-agent"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir)
+
+	got := Discovered()
+	if len(got) != 1 || got[0] != "aider" {
+		t.Errorf("Discovered() = %v, want [aider]", got)
+	}
+}
+
+// TestAKindTheHostPinsItsIdentity: an agent whose conversation is named by the
+// host at birth needs no screen to read — the id is kolo's own, minted before
+// the agent could say anything, and filled in wherever it is asked for.
+func TestAKindTheHostPinsItsIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kinds.json")
+	body := `{"pinbot": {"markers": {"busy": "working"},
+		"pin": ["--session-id", "{session}"], "resume": ["--resume", "{session}"]}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	added, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(added, []string{"pinbot"}) {
+		t.Fatalf("Load added %v", added)
+	}
+
+	kind := For("pinbot")
+	if !kind.ResumesByName() {
+		t.Error("a pinned kind cannot prove which conversation is its own")
+	}
+	got, ok := kind.PinArgs("abc-123")
+	if !ok || !slices.Equal(got, []string{"--session-id", "abc-123"}) {
+		t.Errorf("PinArgs gave %v, %v", got, ok)
+	}
+	if got, ok := kind.ResumeArgs("abc-123"); !ok || !slices.Equal(got, []string{"--resume", "abc-123"}) {
+		t.Errorf("ResumeArgs gave %v, %v", got, ok)
+	}
+	if got, ok := kind.ResumeArgs(""); ok {
+		t.Errorf("resumed without the id it pinned: %v", got)
+	}
+
+	// And a pin that names nothing would put a hole in the command line.
+	broken := filepath.Join(t.TempDir(), "kinds.json")
+	if err := os.WriteFile(broken, []byte(`{"x": {"pin": ["--session-id"], "resume": ["-r", "{session}"]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(broken); err == nil {
+		t.Error("a pin without {session} was accepted")
 	}
 }

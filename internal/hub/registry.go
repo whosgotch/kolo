@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -22,6 +23,51 @@ const (
 
 const maxLabel = 64
 
+// AllowAny is the -allow entry that lends every command the host can find on
+// its PATH, named rather than enumerated. It is an explicit act — the docs'
+// warning that -allow bounds what starts, not what a running agent reaches,
+// goes double for it — and only the host says it; nothing here implies it.
+//
+// A command under it still has to be named like one on PATH: the program name
+// alone, no directory. A host that wants /opt/tools/whatever lends its
+// directory by putting it on PATH, and the check stays the same shape
+// everywhere.
+const AllowAny = "*"
+
+// runs reports whether a host lending allow may be asked to start command:
+// one of the command lines it named, or anything on PATH when it lent '*'.
+//
+// Only the syntax is checked here, because the hub cannot know what another
+// machine has installed. Whether the program exists is the host's own check,
+// at spawn time, where it counts.
+func runs(allow []string, command string) bool {
+	if slices.Contains(allow, command) {
+		return true
+	}
+	if !slices.Contains(allow, AllowAny) {
+		return false
+	}
+	name := Program(command)
+	return name != "" && filepath.Base(name) == name
+}
+
+// Program is the word at the front of a command line, or empty when there is
+// none.
+func Program(command string) string {
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
+
+// resumesByName reports whether this host lent this command as one that names
+// its conversation on restart. Only commands from ByName qualify, and ByName
+// is the host's word: the hub has no kinds to ask.
+func (h *host) resumesByName(command string) bool {
+	return slices.Contains(h.info.ByName, command)
+}
+
 // Agent is one agent the org has asked a host to run. The name is the
 // identifier: there is no second id underneath it, and reusing a name means
 // stopping the agent that has it.
@@ -39,10 +85,20 @@ type Agent struct {
 // HostInfo is a connected host as the org sees it. The browser needs the
 // directories and commands to offer a choice that will not be refused.
 type HostInfo struct {
-	ID    string    `json:"id"`
-	Dirs  []string  `json:"dirs"`
-	Allow []string  `json:"allow"`
-	Since time.Time `json:"since"`
+	ID    string   `json:"id"`
+	Dirs  []string `json:"dirs"`
+	Allow []string `json:"allow"`
+	// Found is which of the agent kinds kolo has heard of this machine has
+	// installed, offered as suggestions when the host lends any command.
+	// Suggestion is all it is: nothing here decides what may start.
+	Found []string `json:"found,omitempty"`
+	// ByName is which of the lent commands resume by naming their
+	// conversation rather than asking for the last one. The host's word, not
+	// looked up here: what a kind does on restart is its machine's to know,
+	// and this is only carried so the one-agent-per-directory rule can bend
+	// where it is safe.
+	ByName []string  `json:"by_name,omitempty"`
+	Since  time.Time `json:"since"`
 }
 
 // Sender delivers one command to a host.
@@ -76,7 +132,7 @@ func NewRegistry() *Registry {
 // The running set is the host's word — it is the machine with the processes, and
 // after a dropped connection the only party that knows. A name another host has
 // claimed is skipped.
-func (r *Registry) Join(id string, dirs, allow []string, running []Agent, send Sender) error {
+func (r *Registry) Join(id string, dirs, allow, found, byName []string, running []Agent, send Sender) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -84,7 +140,7 @@ func (r *Registry) Join(id string, dirs, allow []string, running []Agent, send S
 		return fmt.Errorf("hub: %s is already connected", id)
 	}
 	h := &host{
-		info:   HostInfo{ID: id, Dirs: dirs, Allow: allow, Since: r.now()},
+		info:   HostInfo{ID: id, Dirs: dirs, Allow: allow, Found: found, ByName: byName, Since: r.now()},
 		send:   send,
 		agents: map[string]*Agent{},
 	}
@@ -175,14 +231,31 @@ func (r *Registry) Add(a Agent) (Sender, error) {
 	if !slices.Contains(h.info.Dirs, a.Dir) {
 		return nil, fmt.Errorf("%s does not lend %s", a.Host, a.Dir)
 	}
-	if !slices.Contains(h.info.Allow, a.Command) {
+	if !runs(h.info.Allow, a.Command) {
+		if slices.Contains(h.info.Allow, AllowAny) && Program(a.Command) != "" {
+			return nil, fmt.Errorf("%s runs commands by name — put %s's directory on PATH, or lend it with -allow",
+				a.Host, Program(a.Command))
+		}
 		return nil, fmt.Errorf("%s does not run %s", a.Host, a.Command)
 	}
-	// One agent per directory: resuming is directory-scoped, and two agents
-	// editing the same files would collide.
+	// One agent of each kind to a directory. Resuming is how an agent comes
+	// back from a restart, and a kind that asks for "the last conversation
+	// here" reads that from its own store of conversations — so two of the
+	// same kind would come back as each other, while different kinds never
+	// see one another's history at all. A kind that proves which conversation
+	// is its own, by naming or pinning one, may keep company with itself.
+	//
+	// Two agents editing one working tree still collide; that is the org's
+	// judgment rather than kolo's, and the create form says so where it
+	// applies.
 	for _, other := range h.agents {
-		if other.Dir == a.Dir {
-			return nil, fmt.Errorf("%s is already working in %s", other.Name, a.Dir)
+		if other.Dir != a.Dir {
+			continue
+		}
+		sameKind := filepath.Base(Program(a.Command)) == filepath.Base(Program(other.Command))
+		if sameKind && !(h.resumesByName(a.Command) && h.resumesByName(other.Command)) {
+			return nil, fmt.Errorf("one %s to a directory: two of them asking for \"the last conversation here\" would come back as each other. A second checkout is how the same repo runs in parallel",
+				filepath.Base(Program(a.Command)))
 		}
 	}
 

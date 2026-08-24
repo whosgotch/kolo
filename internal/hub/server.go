@@ -349,7 +349,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.registry.Join(h.ID, hello.Dirs, hello.Allow, hello.Agents, sender(s.ctx, conn)); err != nil {
+	if err := s.registry.Join(h.ID, hello.Dirs, hello.Allow, hello.Found, hello.ByName, hello.Agents, sender(s.ctx, conn)); err != nil {
 		conn.Close(websocket.StatusPolicyViolation, err.Error())
 		return
 	}
@@ -750,6 +750,8 @@ type hostHello struct {
 	Type    string   `json:"type"`
 	Dirs    []string `json:"dirs"`
 	Allow   []string `json:"allow"`
+	Found   []string `json:"found"`
+	ByName  []string `json:"by_name"`
 	Agents  []Agent  `json:"agents"`
 	Version string   `json:"version"`
 }
