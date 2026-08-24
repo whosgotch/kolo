@@ -153,7 +153,8 @@ is working is never sent while it means something else. It was Esc for every kin
 there was until kinds kolo does not ship could be described, and an agent that
 stops on Ctrl-C was being sent the key that clears its input.
 
-Claude Code is the one kolo ships. A host adds others in `~/.kolo/kinds.json`,
+Claude Code and OpenCode are the ones kolo ships. A host adds others in
+`~/.kolo/kinds.json`,
 which replaces a shipped kind of the same name, so an org runs an agent kolo has
 never heard of — or fixes one whose footer moved between releases — without
 waiting for a release of kolo. See [hub.md](hub.md#which-agents).

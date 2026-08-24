@@ -249,9 +249,9 @@ Two things do, and both are read off the agent's own screen:
 - **how to bring back its last conversation**, without which every restart is a
   fresh start
 
-Kolo ships with those for `claude`. For anything else, describe it in
-`~/.kolo/kinds.json` — the host's file, because the host is the machine that
-knows what it is running, and the hub is told rather than configured:
+Kolo ships with those for `claude` and `opencode`. For anything else, describe
+it in `~/.kolo/kinds.json` — the host's file, because the host is the machine
+that knows what it is running, and the hub is told rather than configured:
 
 ```json
 {
