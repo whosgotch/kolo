@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -235,6 +236,50 @@ func Kinds() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// catalog is every CLI agent kolo has heard a name for. It is discovery data,
+// not knowledge: none of these carries markers unless it is also in kinds or
+// kinds.json, and an agent found here runs exactly as one kolo has never heard
+// of — watched and typed at, its screen unread. A name joins this list when
+// there is evidence it is real and people run it, not on sight of a headline.
+var catalog = []string{
+	"aider",
+	"amp",
+	"claude",
+	"codex",
+	"crush",
+	"cursor-agent",
+	"droid",
+	"gemini",
+	"kilo",
+	"opencode",
+	"qwen",
+}
+
+// Discovered is every name kolo has heard of that this machine can actually
+// run, sorted: the kinds it ships with and knows from kinds.json, plus the
+// catalog above. This is what `kolo up` lends when nobody names anything, so
+// an agent installed but unknown to kolo still appears without being asked
+// for — and reads as unknown until somebody describes it.
+func Discovered() []string {
+	heard := make(map[string]bool, len(kinds)+len(catalog))
+	for _, kind := range Kinds() {
+		heard[kind] = true
+	}
+	for _, name := range catalog {
+		if !heard[name] {
+			heard[name] = true
+		}
+	}
+	var found []string
+	for name := range heard {
+		if _, err := exec.LookPath(name); err == nil {
+			found = append(found, name)
+		}
+	}
+	sort.Strings(found)
+	return found
 }
 
 // validate refuses a kind that would fail later, at a restart somebody was

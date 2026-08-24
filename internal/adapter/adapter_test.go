@@ -218,3 +218,22 @@ func TestLoadRefusesAKeyNobodyCanPress(t *testing.T) {
 		}
 	}
 }
+
+// TestDiscoveredFindsWhatIsInstalled checks discovery against a PATH holding
+// exactly one agent, so the test does not depend on what the machine running it
+// happens to have. A name kolo has heard of but that is not there is not
+// reported: lending an absent command helps nobody.
+func TestDiscoveredFindsWhatIsInstalled(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"aider", "not-an-agent"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir)
+
+	got := Discovered()
+	if len(got) != 1 || got[0] != "aider" {
+		t.Errorf("Discovered() = %v, want [aider]", got)
+	}
+}
