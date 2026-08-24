@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// A command missing from the overview is one nobody finds. The list is written
-// by hand, in two groups, so this is what notices when the two drift apart.
 func TestEveryCommandIsListed(t *testing.T) {
 	listed := map[string]bool{}
 	for _, name := range append(append([]string{}, everyday...), separately...) {
@@ -17,7 +15,6 @@ func TestEveryCommandIsListed(t *testing.T) {
 		listed[name] = true
 	}
 	for name := range commands {
-		// help itself is the thing being read, and says so at the bottom.
 		if name == "help" {
 			continue
 		}
@@ -32,7 +29,6 @@ func TestEveryCommandIsListed(t *testing.T) {
 	}
 }
 
-// The brief is one line in a list; a long one wraps and the list stops lining up.
 func TestBriefsAreShort(t *testing.T) {
 	for name, cmd := range commands {
 		if cmd.brief == "" {
@@ -44,7 +40,7 @@ func TestBriefsAreShort(t *testing.T) {
 	}
 }
 
-// Help is read in a terminal, which is 80 columns until somebody says otherwise.
+// Help is read in an 80-column terminal.
 func TestHelpFitsInATerminal(t *testing.T) {
 	var overviewText bytes.Buffer
 	overview(&overviewText)
@@ -70,8 +66,6 @@ func TestLongHelpNamesRealCommands(t *testing.T) {
 	}
 }
 
-// The overview is the first thing anyone sees, so it has to carry the one
-// command that gets them started.
 func TestOverviewLeadsWithUp(t *testing.T) {
 	var b bytes.Buffer
 	overview(&b)

@@ -1,15 +1,4 @@
 // Command kolo runs an org's shared agents.
-//
-//	kolo up        a hub and this machine lending itself to it
-//	kolo invite    a link that turns whoever opens it into a member
-//	kolo who       who is in the org, and how they got in
-//	kolo serve     the hub an org connects to
-//	kolo token     mint credentials
-//	kolo host      lend this machine to the org
-//	kolo doctor    say what will and will not work on this machine
-//
-// Agents run on a machine somebody lends to the org; everyone else reaches them
-// through the hub, in a browser. See kolo help.
 package main
 
 import (
@@ -18,9 +7,7 @@ import (
 	"os"
 )
 
-// Reported to the hub, so a member running something ancient can be identified
-// rather than guessed at. A var rather than a const: the Makefile stamps the
-// build in with -ldflags, and a const cannot be written that way.
+// version is reported to the hub and set by the Makefile via -ldflags.
 var version = "dev"
 
 type command struct {
@@ -28,8 +15,6 @@ type command struct {
 	brief string
 }
 
-// Populated in init rather than as a literal: help is one of the commands and
-// reads the list, which the compiler will not allow a literal to do.
 var commands map[string]command
 
 func init() {
@@ -50,13 +35,10 @@ func main() {
 	log.SetPrefix("kolo: ")
 
 	args := os.Args[1:]
-	// Run with nothing to do, kolo explains itself rather than complaining. It
-	// is what somebody types first, and being told off for it is a poor start.
 	if len(args) == 0 {
 		overview(os.Stdout)
 		return
 	}
-	// The flags people try before they know the command is called help.
 	if args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {
 		overview(os.Stdout)
 		return

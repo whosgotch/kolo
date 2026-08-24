@@ -17,8 +17,6 @@ import (
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
-// hostCmd lends this machine to the org. Whoever runs it is not a participant:
-// it takes no input and draws nothing.
 func hostCmd(args []string) error {
 	fs := flag.NewFlagSet("host", flag.ExitOnError)
 	var dirs, allow list
@@ -43,9 +41,6 @@ func hostCmd(args []string) error {
 		return err
 	}
 
-	// A join string is where the hub and the token come from together, which is
-	// how they were minted. The separate flags stay for a host whose two halves
-	// come from somewhere else, such as a secret store.
 	if *join != "" {
 		reached, minted, err := hub.ParseJoin(*join)
 		if err != nil {
@@ -83,8 +78,8 @@ func hostCmd(args []string) error {
 
 	log.Printf("lending %s, running %s", strings.Join(dirs, ", "), strings.Join(allow, ", "))
 
-	// Before the hub is reached, so that agents come back whether or not it is
-	// up. They are the org's, not the connection's.
+	// Before the hub is reached, so agents come back whether or not it's up
+	// — they're the org's, not the connection's.
 	if err := agents.Restore(); err != nil {
 		log.Print(err)
 	}
@@ -102,9 +97,6 @@ func hostCmd(args []string) error {
 	return nil
 }
 
-// resolveDirs makes every lent directory absolute in place, and refuses one
-// that is not there. Checked at startup, so a typo is a refusal now rather than
-// every create failing later for a reason nobody can see.
 func resolveDirs(dirs list) error {
 	for i, d := range dirs {
 		abs, err := filepath.Abs(d)
@@ -123,8 +115,7 @@ func resolveDirs(dirs list) error {
 	return nil
 }
 
-// list is a flag that may be given more than once, and may carry a
-// comma-separated set each time.
+// list is a repeatable flag; each occurrence may be comma-separated.
 type list []string
 
 func (l *list) String() string { return strings.Join(*l, ",") }
@@ -138,7 +129,6 @@ func (l *list) Set(v string) error {
 	return nil
 }
 
-// split reads a flag that may carry a comma-separated set.
 func split(v string) []string {
 	var out []string
 	for _, part := range strings.Split(v, ",") {
@@ -149,9 +139,6 @@ func split(v string) []string {
 	return out
 }
 
-// loadKinds takes on the agent kinds this machine has been configured with, and
-// says which they were: a kind that came from a file is the one to name when an
-// agent behaves as though kolo cannot read it.
 func loadKinds(path string) error {
 	added, err := adapter.Load(path)
 	if err != nil {

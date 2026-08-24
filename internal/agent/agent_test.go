@@ -13,7 +13,7 @@ func TestChildEnvScrubs(t *testing.T) {
 		"TERM=dumb",
 		"COLORTERM=truecolor",
 		"CLAUDE_CODE_CHILD_SESSION=1",
-		"COLORTERM_LIKE=keep-me", // prefix match must not scrub it
+		"COLORTERM_LIKE=keep-me",
 		"MALFORMED",
 	}
 	got := childEnv(in)
@@ -30,8 +30,6 @@ func TestChildEnvScrubs(t *testing.T) {
 	}
 }
 
-// readAll drains the PTY until the agent exits. A PTY master reports EIO rather
-// than EOF once the child is gone, so the error ends the read either way.
 func readAll(t *testing.T, a *Agent) string {
 	t.Helper()
 	var b strings.Builder

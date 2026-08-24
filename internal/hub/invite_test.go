@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// newOrgFile is an org with nothing in it but a name, which is where an invite
-// starts from.
+// newOrgFile is an org with nothing in it but a name — where an invite starts
+// from.
 func newOrgFile(t *testing.T) string {
 	t.Helper()
 	return orgFile(t, `{"org": "acme"}`)
@@ -32,8 +32,8 @@ func TestClaim(t *testing.T) {
 		t.Errorf("name = %q, want Dana Scully", member.Name)
 	}
 
-	// The token she was handed is the one she now authenticates with, and it is
-	// on disk as a hash rather than as itself.
+	// The token she was handed is what she now authenticates with; on disk it
+	// sits as a hash rather than as itself.
 	if got, ok := org.VerifyMember(token); !ok || got.ID != member.ID {
 		t.Error("the token Claim returned does not identify the member it made")
 	}
@@ -90,8 +90,8 @@ func TestClaimUsesRunOut(t *testing.T) {
 	}
 }
 
-// Two people opening the same link at once is the ordinary case, not the
-// unlikely one: the link went out to everybody in the same message.
+// Two people opening the same link at once is the ordinary case: the link went
+// out to everybody in one message.
 func TestClaimTogether(t *testing.T) {
 	path := newOrgFile(t)
 	_, invite, err := AddInvite(path, "team", time.Now().Add(time.Hour), 0)
@@ -99,8 +99,8 @@ func TestClaimTogether(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Serialised, as the hub serialises them. What is under test is that two
-	// claims of one invite make two members, each with a working token.
+	// Serialised, as the hub serialises them: two claims of one invite are
+	// meant to make two members, each with a working token.
 	var mu sync.Mutex
 	tokens := make([]string, 4)
 	var wg sync.WaitGroup
@@ -127,8 +127,6 @@ func TestClaimTogether(t *testing.T) {
 	if len(org.Members) != len(tokens) {
 		t.Fatalf("%d members, want %d", len(org.Members), len(tokens))
 	}
-	// Four people who all typed the same name are four members, each reachable
-	// by their own token.
 	seen := map[string]bool{}
 	for _, token := range tokens {
 		m, ok := org.VerifyMember(token)
@@ -197,8 +195,8 @@ func TestWithdrawInvite(t *testing.T) {
 		t.Errorf("claiming a withdrawn invite: err = %v, want ErrNoInvite", err)
 	}
 
-	// Withdrawing a link does not remove whoever came through it: they are a
-	// member now, and removing one is a separate, deliberate act.
+	// Withdrawing a link does not remove whoever came through it; removing a
+	// member is its own deliberate act.
 	org, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +211,7 @@ func TestWithdrawInvite(t *testing.T) {
 }
 
 // Who came in through which link is the question a leaked invite raises, so a
-// member has to carry the answer.
+// member carries the answer.
 func TestClaimRecordsWhereTheyCameFrom(t *testing.T) {
 	path := newOrgFile(t)
 	_, invite, err := AddInvite(path, "contractors", time.Now().Add(time.Hour), 10)

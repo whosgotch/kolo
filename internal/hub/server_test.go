@@ -17,7 +17,6 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// hubFixture starts a hub with one member and one host, and returns both tokens.
 func hubFixture(t *testing.T) (*Server, string, string) {
 	t.Helper()
 	memberToken, memberHash, err := NewToken()
@@ -49,7 +48,6 @@ func testContext(t *testing.T) context.Context {
 	return ctx
 }
 
-// joinAsHost dials as a machine lending /work/api and /work/web.
 func joinAsHost(t *testing.T, ctx context.Context, s *Server, token string) *websocket.Conn {
 	t.Helper()
 	conn, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/host", &websocket.DialOptions{
@@ -85,7 +83,6 @@ func readFrame(t *testing.T, ctx context.Context, conn *websocket.Conn, v any) {
 	}
 }
 
-// call makes an authenticated request to the hub.
 func call(t *testing.T, s *Server, method, path, token, body string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(method, "http://"+s.Addr()+path, bytes.NewBufferString(body))
@@ -177,8 +174,6 @@ func TestHostJoins(t *testing.T) {
 	}
 }
 
-// TestCreateReachesTheHost: a member on one machine asks for an agent and the
-// machine lending itself is told to run it.
 func TestCreateReachesTheHost(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)
@@ -195,8 +190,6 @@ func TestCreateReachesTheHost(t *testing.T) {
 	if cmd.Type != "spawn" || cmd.Agent.Name != "checkups" || cmd.Agent.Dir != "/work/api" || cmd.Agent.Command != "claude" {
 		t.Fatalf("the host was told %+v", cmd)
 	}
-	// The host writes this down and reads it back on reconnect, so attribution
-	// has to be in the command rather than only in the hub's memory.
 	if cmd.Agent.CreatedBy.ID != "artem" || cmd.Agent.CreatedAt.IsZero() {
 		t.Errorf("the spawn did not carry who asked: %+v", cmd.Agent)
 	}
@@ -286,8 +279,6 @@ func TestDeleteTellsTheHost(t *testing.T) {
 	}
 }
 
-// TestTokensReachOnlyTheirOwnRoutes: a host's token runs processes and a
-// member's does not, so neither may be used where the other belongs.
 func TestTokensReachOnlyTheirOwnRoutes(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)
@@ -306,8 +297,6 @@ func TestTokensReachOnlyTheirOwnRoutes(t *testing.T) {
 	}
 }
 
-// TestASecondHostIsRefused covers a host started twice by mistake: two processes
-// answering for one machine would make every command ambiguous.
 func TestASecondHostIsRefused(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)
@@ -332,8 +321,6 @@ func TestASecondHostIsRefused(t *testing.T) {
 	}
 }
 
-// TestAHostLeavingTakesItsAgents is honest listing: an agent nobody can reach is
-// not shown as though they could. It comes back when the host reconnects.
 func TestAHostLeavingTakesItsAgents(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)
@@ -351,8 +338,6 @@ func TestAHostLeavingTakesItsAgents(t *testing.T) {
 	}
 }
 
-// TestReconnectingRestoresTheList: a dropped connection never stopped the
-// processes, and the host says what it has when it comes back.
 func TestReconnectingRestoresTheList(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)
@@ -397,7 +382,6 @@ func TestReconnectingRestoresTheList(t *testing.T) {
 	}
 }
 
-// watch opens a member's view of an agent.
 func watch(t *testing.T, ctx context.Context, s *Server, token, name string) *websocket.Conn {
 	t.Helper()
 	conn, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/watch/"+name, &websocket.DialOptions{
@@ -410,10 +394,7 @@ func watch(t *testing.T, ctx context.Context, s *Server, token, name string) *we
 	return conn
 }
 
-// openScreen connects an agent's terminal as its host would.
 func openScreen(t *testing.T, ctx context.Context, s *Server, token, name string) *websocket.Conn {
-	// With the markers, as a host does: the screens these tests draw are Claude
-	// Code's, and the hub is told how to read one rather than knowing.
 	return openScreenWith(t, ctx, s, token, name, adapter.For("claude").Markers)
 }
 
@@ -436,7 +417,6 @@ func openScreenWith(t *testing.T, ctx context.Context, s *Server, token, name st
 	return conn
 }
 
-// withAgent gets a hub to the state where one agent exists and its screen is up.
 func withAgent(t *testing.T, ctx context.Context) (_ *Server, memberToken, hostToken string, screen *websocket.Conn) {
 	t.Helper()
 	s, memberToken, hostToken := hubFixture(t)
@@ -452,8 +432,6 @@ func withAgent(t *testing.T, ctx context.Context) (_ *Server, memberToken, hostT
 	return s, memberToken, hostToken, screen
 }
 
-// readUntilBytes takes frames until terminal output arrives, skipping the
-// control frames a viewer also gets.
 func readUntilBytes(t *testing.T, ctx context.Context, conn *websocket.Conn) []byte {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -469,15 +447,11 @@ func readUntilBytes(t *testing.T, ctx context.Context, conn *websocket.Conn) []b
 	}
 }
 
-// TestTheScreenReachesAWatcher: what the agent draws on one machine is what
-// somebody sees on another.
 func TestTheScreenReachesAWatcher(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, _, screen := withAgent(t, ctx)
 
 	viewer := watch(t, ctx, s, memberToken, "checkups")
-	// The subscription opens with a repaint, so what arrives first describes the
-	// screen as it already stands rather than only what happens next.
 	if got := readUntilBytes(t, ctx, viewer); len(got) == 0 {
 		t.Fatal("no repaint on joining")
 	}
@@ -490,8 +464,6 @@ func TestTheScreenReachesAWatcher(t *testing.T) {
 	}
 }
 
-// TestWatchersDoNotDisturbEachOther: people are meant to watch together, and a
-// second viewer joining must not interrupt the first.
 func TestWatchersDoNotDisturbEachOther(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, _, screen := withAgent(t, ctx)
@@ -511,8 +483,6 @@ func TestWatchersDoNotDisturbEachOther(t *testing.T) {
 	}
 }
 
-// TestARestartedScreenReplacesTheOld: a new process is a new screen, and the old
-// viewers are dropped rather than left watching something that has gone.
 func TestARestartedScreenReplacesTheOld(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken, first := withAgent(t, ctx)
@@ -528,8 +498,8 @@ func TestARestartedScreenReplacesTheOld(t *testing.T) {
 		return ok && now != was
 	})
 
-	// Read on rather than once: what a viewer was already told stays readable
-	// after the screen has gone, so the end of the connection is what to wait for.
+	// Read on rather than once: frames already sent stay readable after the
+	// screen has gone, so only the end of the connection proves it dropped.
 	read, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var err error
@@ -572,8 +542,6 @@ func TestScreenRoutesRefuseTheWrongToken(t *testing.T) {
 	}
 }
 
-// post sends a form without following the redirect, so the response that sets
-// the cookie is the one under test.
 func post(t *testing.T, s *Server, path string, form url.Values, cookie *http.Cookie) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest("POST", "http://"+s.Addr()+path, strings.NewReader(form.Encode()))
@@ -604,8 +572,6 @@ func sessionOf(resp *http.Response) *http.Cookie {
 	return nil
 }
 
-// TestSignIn: a member pastes their token once and the browser carries it after
-// that, where script cannot read it.
 func TestSignIn(t *testing.T) {
 	s, memberToken, _ := hubFixture(t)
 
@@ -672,7 +638,6 @@ func TestSignInRefusesAndSignsOut(t *testing.T) {
 func TestThePageIsServed(t *testing.T) {
 	s, _, _ := hubFixture(t)
 
-	// Served without a token: the page is what asks for one.
 	resp := call(t, s, "GET", "/", "", "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /: %s", resp.Status)
@@ -689,8 +654,6 @@ func TestThePageIsServed(t *testing.T) {
 	}
 }
 
-// TestKeysReachTheHost: what the member holding the keyboard presses goes to the
-// machine running the agent, with the hub's word for who pressed it.
 func TestKeysReachTheHost(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)
@@ -718,16 +681,11 @@ func TestKeysReachTheHost(t *testing.T) {
 	if got.Type != "keys" || got.Name != "checkups" || got.Keys != "ls\r" {
 		t.Fatalf("the host was told %+v", got)
 	}
-	// The name is decided from the connection's credentials, so a browser
-	// claiming to be somebody else is simply not read.
 	if got.From != "Artem" {
 		t.Errorf("attributed to %q, want Artem", got.From)
 	}
 }
 
-// TestKeysAreRefusedWithoutTheKeyboard is the whole of the concurrency rule. A
-// browser can ask; the hub decides, because it is the only thing that knows who
-// is holding what.
 func TestKeysAreRefusedWithoutTheKeyboard(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)
@@ -743,8 +701,6 @@ func TestKeysAreRefusedWithoutTheKeyboard(t *testing.T) {
 	if err := viewer.Write(ctx, websocket.MessageText, []byte(`{"type":"keys","keys":"rm -rf /"}`)); err != nil {
 		t.Fatal(err)
 	}
-	// An interrupt after it, to prove the connection is alive and being read: if
-	// the keys had gone through they would arrive first.
 	if err := viewer.Write(ctx, websocket.MessageText, []byte(`{"type":"interrupt"}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -756,10 +712,6 @@ func TestKeysAreRefusedWithoutTheKeyboard(t *testing.T) {
 	}
 }
 
-// TestAJoinerIsToldWhatTheAgentIsDoing: somebody opening an agent mid-question
-// sees the question repainted, and has to be told it is a question — which the
-// host announced before this browser existed. What the question says is on the
-// screen they were just repainted with.
 func TestAJoinerIsToldWhatTheAgentIsDoing(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, _, screen := withAgent(t, ctx)
@@ -778,7 +730,6 @@ func TestAJoinerIsToldWhatTheAgentIsDoing(t *testing.T) {
 		Type  string `json:"type"`
 		State string `json:"state"`
 	}
-	// Past the size and the repaint, which are the rest of catching up.
 	for state.Type != "state" {
 		kind, data, err := viewer.Read(ctx)
 		if err != nil {
@@ -796,11 +747,6 @@ func TestAJoinerIsToldWhatTheAgentIsDoing(t *testing.T) {
 	}
 }
 
-// TestAnAgentKindWithNoMarkersClaimsNothing: a host lending a command kolo has
-// no adapter for sends no markers, and the hub then says nothing about that
-// agent's screen rather than reading it with somebody else's. It is still
-// watched and still typed at; what it loses is the board being able to say what
-// it is doing.
 func TestAnAgentKindWithNoMarkersClaimsNothing(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)
@@ -829,8 +775,6 @@ func TestAnAgentKindWithNoMarkersClaimsNothing(t *testing.T) {
 	}
 }
 
-// TestAnInterruptReachesTheHost: the one thing a member does that is not words.
-// The hub passes it on unread; the screen's machine decides whether it lands.
 func TestAnInterruptReachesTheHost(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)
@@ -844,10 +788,7 @@ func TestAnInterruptReachesTheHost(t *testing.T) {
 
 	viewer := watch(t, ctx, s, memberToken, "checkups")
 	for _, send := range []string{
-		// Both of these must be dropped rather than passed on, so the frame read
-		// below is the one that was meant. An answer is now one of them: kolo
-		// presses nothing on anybody's behalf but the interrupt, and a browser
-		// still asking for one is a browser to ignore.
+		// Dropped, not passed on, so the frame read below is the interrupt.
 		`{"type":"keystroke","text":""}`,
 		`{"type":"answer","choice":2,"label":"No"}`,
 		`{"type":"interrupt"}`,
@@ -864,8 +805,6 @@ func TestAnInterruptReachesTheHost(t *testing.T) {
 	}
 }
 
-// TestARestartAndAStartFreshReachTheHost: both are the process rather than the
-// screen, and the hub passes them on like everything else — attributed, unread.
 func TestARestartAndAStartFreshReachTheHost(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)
@@ -893,17 +832,13 @@ func TestARestartAndAStartFreshReachTheHost(t *testing.T) {
 	}
 }
 
-// TestTheKeyboardIsVisibleToWatchers: who is typing reaches everyone watching,
-// not only whoever took it. It is the only thing keeping two people off one
-// terminal, so it has to be seen.
 func TestTheKeyboardIsVisibleToWatchers(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, _, screen := withAgent(t, ctx)
 
 	viewer := watch(t, ctx, s, memberToken, "checkups")
-	readUntilBytes(t, ctx, viewer) // the repaint
+	readUntilBytes(t, ctx, viewer)
 
-	// A second browser takes the keyboard; the first is watching only.
 	taker := watch(t, ctx, s, memberToken, "checkups")
 	if err := taker.Write(ctx, websocket.MessageText, []byte(`{"type":"take"}`)); err != nil {
 		t.Fatal(err)

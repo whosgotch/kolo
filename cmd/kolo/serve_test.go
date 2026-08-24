@@ -2,11 +2,6 @@ package main
 
 import "testing"
 
-// A listener asked for every interface reports itself as [::]:7300, whose first
-// colon is inside the address rather than before the port. Cutting there gave
-// kolo up a port of ":]:7300", which it joined into a loopback URL the host half
-// spent the rest of its life failing to dial — so the machine never joined, and
-// the org was offered nothing to run an agent on.
 func TestPortOf(t *testing.T) {
 	for _, c := range []struct{ addr, want string }{
 		{"0.0.0.0:7300", "7300"},

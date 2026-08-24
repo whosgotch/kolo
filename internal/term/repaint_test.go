@@ -8,13 +8,6 @@ import (
 	"github.com/hinshun/vt10x"
 )
 
-// roundTrip feeds input into one screen, repaints a second screen from the
-// first one's snapshot, and reports every difference between them.
-//
-// The assertion is a round trip rather than a golden file on purpose: a golden
-// file pins whatever bytes the encoder happens to emit today, including wrong
-// ones, while this pins the only property that matters — a viewer joining now
-// sees what the host sees.
 func roundTrip(t *testing.T, cols, rows int, input []byte) {
 	t.Helper()
 
@@ -61,18 +54,13 @@ func TestSnapshotRoundTrip(t *testing.T) {
 		{"reverse video", "\x1b[7mreversed\x1b[0m tail"},
 		{"reverse with one colour", "\x1b[31;7mred reversed\x1b[0m"},
 		{"reverse with both colours", "\x1b[31;44;7mboth\x1b[0m"},
-		// Trailing blanks are skipped by the encoder, but only when they carry
-		// no colour of their own.
 		{"coloured trailing blanks", "\x1b[41m" + spaces(20) + "\x1b[0m"},
-		// The agent's TUI draws in these; see docs/probe-findings.md #1.
 		{"box drawing and braille", "┌────┐\r\n│ ⠂⠐ │\r\n└────┘\r\n"},
 		{"line drawing charset", "\x1b(0qqqwqqq\x1b(B done"},
 		{"alternate screen", "before\x1b[?1049hinside the TUI\r\nsecond line"},
 		{"hidden cursor", "text\x1b[?25l"},
 		{"cursor parked mid screen", "\x1b[10;20Hx\x1b[5;3H"},
 		{"full last row", "\x1b[40;1H" + repeat("z", 120)},
-		// The window title Claude Code sets on every frame. It must stay off
-		// screen; the emulator this replaced leaked it (findings #1).
 		{"osc title", "visible\x1b]0;✳ hidden title\x07 tail"},
 		{"scrolled past the bottom", repeat("filler line\r\n", 60)},
 	}
@@ -83,12 +71,6 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSnapshotRoundTripCapture replays a real recording, which exercises
-// sequence combinations no handwritten case will think of. Recordings are not
-// committed — they contain live session content — so point KOLO_RAW at one the
-// Milestone 0 probe produced:
-//
-//	KOLO_RAW=/tmp/out/raw.log go test ./internal/term -run Capture -v
 func TestSnapshotRoundTripCapture(t *testing.T) {
 	path := os.Getenv("KOLO_RAW")
 	if path == "" {
@@ -111,8 +93,6 @@ func repeat(s string, n int) string {
 	return string(out)
 }
 
-// cellView is a glyph reduced to what a viewer can actually see, so that cells
-// differing only in bits the encoder deliberately drops compare equal.
 type cellView struct {
 	ch rune
 	st style

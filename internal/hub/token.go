@@ -10,17 +10,12 @@ import (
 	"strings"
 )
 
-// TokenPrefix marks a string as a kolo token wherever it turns up. Secret
-// scanners key off prefixes like this, and so do people.
+// TokenPrefix marks a string as a kolo token, for secret scanners.
 const TokenPrefix = "kolo_"
 
-// Far past what anyone can guess, and machine-handled rather than typed, so the
-// length costs nothing.
 const tokenBytes = 32
 
-// NewToken returns a token to give to a member and the hash to record for them.
-// kolo never stores the token: this is the only moment it exists, and losing it
-// means issuing another.
+// NewToken returns a token and its hash; the raw token is never stored.
 func NewToken() (token, hash string, err error) {
 	b := make([]byte, tokenBytes)
 	if _, err := rand.Read(b); err != nil {
@@ -30,27 +25,20 @@ func NewToken() (token, hash string, err error) {
 	return token, HashToken(token), nil
 }
 
-// JoinPrefix marks a host's join string. It carries the kolo_ prefix too, so a
-// scanner that knows one knows the other.
 const JoinPrefix = TokenPrefix + "join_"
 
-// join is what a machine needs to reach an org: where the hub is, and the token
-// to arrive with. One string rather than two, because two halves sent separately
-// end up in the same message anyway, and are one more thing to get right by hand.
 type join struct {
 	Hub   string `json:"hub"`
 	Token string `json:"token"`
 }
 
-// NewJoin packs a hub and a host's token into one string to paste.
 func NewJoin(hubURL, token string) string {
 	b, _ := json.Marshal(join{Hub: hubURL, Token: token})
 	return JoinPrefix + base64.RawURLEncoding.EncodeToString(b)
 }
 
-// ParseJoin reads a join string back. It is not a security boundary — the token
-// inside is checked by the hub like any other — so what is refused here is only
-// what would otherwise fail later with nothing to point at.
+// ParseJoin decodes a join string. Not a security boundary: the token inside
+// is verified by the hub like any other.
 func ParseJoin(s string) (hubURL, token string, err error) {
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(s, JoinPrefix) {
@@ -70,21 +58,15 @@ func ParseJoin(s string) (hubURL, token string, err error) {
 	return j.Hub, j.Token, nil
 }
 
-// HashToken returns the hex SHA-256 of a token.
-//
-// A plain hash, not bcrypt or argon2: those make guessing a low-entropy secret
-// expensive, and 32 random bytes offer nothing to guess. What matters is that the
-// stored form cannot be used to connect.
+// HashToken returns the hex SHA-256 of a token; plain, since 32 random bytes
+// leave nothing for bcrypt/argon2 to slow down.
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
 	return hex.EncodeToString(sum[:])
 }
 
-// InviteURL is the link to send a team: the hub, and the invite in the fragment.
-//
-// The fragment is not sent to a server by any browser, so the secret stays out
-// of the hub's own logs and out of anything in between — it is read by the page
-// and posted back deliberately.
+// InviteURL puts the token in the fragment, which browsers never send to a
+// server, keeping it out of logs.
 func InviteURL(hubURL, token string) string {
 	return strings.TrimSuffix(hubURL, "/") + "/join#" + token
 }

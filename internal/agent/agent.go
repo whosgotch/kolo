@@ -1,5 +1,4 @@
-// Package agent runs a CLI agent under a pseudo-terminal, so it believes it owns
-// a real terminal and draws the TUI viewers watch.
+// Package agent runs a CLI agent under a pseudo-terminal.
 package agent
 
 import (
@@ -12,26 +11,18 @@ import (
 	"github.com/creack/pty"
 )
 
-// COLORTERM makes the agent emit 24-bit colour, which vt10x packs into the same
-// integer space as its palette indices — rgb(0,0,200) becomes indistinguishable
-// from palette 200. Without it the agent stays on 256 colours, where the snapshot
-// encoder is lossless (internal/term.writeColor).
-//
-// CLAUDE_CODE_CHILD_SESSION is inherited when kolo is run from inside an agent
-// session, and disables the child's transcript saving (probe-findings,
-// incidental #2).
+// COLORTERM breaks vt10x; the other stops nested transcript saving.
 var scrubbed = []string{"COLORTERM", "CLAUDE_CODE_CHILD_SESSION"}
 
 type Agent struct {
 	cmd *exec.Cmd
 	pty *os.File
 
-	// Each write is indivisible: nothing may interleave inside one, or a line
-	// arrives at the agent split down the middle (probe-findings #2, #3).
+	// A write must be indivisible, or a line arrives split mid-way.
 	mu sync.Mutex
 }
 
-// Start launches argv under a PTY. An empty dir means the current one.
+// Start launches argv under a PTY; empty dir means the current one.
 func Start(argv []string, dir string, cols, rows int) (*Agent, error) {
 	if len(argv) == 0 {
 		return nil, fmt.Errorf("agent: no command given")
@@ -50,8 +41,6 @@ func Start(argv []string, dir string, cols, rows int) (*Agent, error) {
 // Read reports io.EOF once the agent exits.
 func (a *Agent) Read(p []byte) (int, error) { return a.pty.Read(p) }
 
-// Write arrives as if typed, indivisibly; callers still choose what belongs in
-// one write.
 func (a *Agent) Write(p []byte) (int, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -64,8 +53,8 @@ func (a *Agent) Resize(cols, rows int) error {
 
 func (a *Agent) Wait() error { return a.cmd.Wait() }
 
-// Close kills the agent if it is still running and releases the PTY, which ends
-// any in-flight Read.
+// Close kills the process if it's still running, and releases the PTY,
+// ending any in-flight Read.
 func (a *Agent) Close() error {
 	if a.cmd.Process != nil {
 		a.cmd.Process.Kill()
@@ -73,9 +62,7 @@ func (a *Agent) Close() error {
 	return a.pty.Close()
 }
 
-// childEnv returns env with the scrubbed variables removed and TERM pinned to
-// what the emulator implements, so the agent never emits sequences the snapshot
-// cannot reproduce.
+// Pins TERM to what the emulator implements.
 func childEnv(env []string) []string {
 	drop := make(map[string]bool, len(scrubbed)+1)
 	for _, k := range scrubbed {

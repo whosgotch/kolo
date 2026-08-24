@@ -7,12 +7,8 @@ import (
 	"github.com/hinshun/vt10x"
 )
 
-// Snapshot returns a byte sequence that reproduces the current screen on a
-// terminal that has not seen any of the session so far.
-//
-// A joining viewer gets this before the live stream starts. xterm.js renders the
-// agent's raw output, so the catch-up speaks the same language rather than a
-// grid format. Rows are placed absolutely, so nothing here can scroll.
+// Snapshot renders the current screen as terminal bytes for a joining viewer.
+// Rows are positioned absolutely, so replaying it cannot scroll.
 func (s *Screen) Snapshot() []byte {
 	s.term.Lock()
 	defer s.term.Unlock()
@@ -20,13 +16,8 @@ func (s *Screen) Snapshot() []byte {
 	cols, rows := s.term.Size()
 	var b bytes.Buffer
 
-	// The agent's TUI runs on the alternate screen once up, but not at the
-	// startup prompts (probe-findings, incidental #3).
-	//
-	// Only the enter is emitted: a just-connected terminal is on the normal
-	// screen already, so the reset would be a no-op — and vt10x, which the
-	// round-trip test replays into, mishandles it by swapping *into* the
-	// alternate screen (state.go, the !set || !alt condition).
+	// Only enter-alt-screen is emitted, never exit: a fresh terminal starts on
+	// the normal screen, and vt10x turns a no-op exit into an enter (state.go).
 	if s.term.Mode()&vt10x.ModeAltScreen != 0 {
 		b.WriteString("\x1b[?1049h")
 	}
@@ -73,21 +64,12 @@ func defaultStyle() style {
 	return style{fg: vt10x.DefaultFG, bg: vt10x.DefaultBG}
 }
 
-// isBlank reports whether a cell can be skipped because the erase already left it
-// that way. A space with a non-default background is not blank.
 func isBlank(g vt10x.Glyph) bool {
 	return (g.Char == ' ' || g.Char == 0) && styleOf(g) == defaultStyle()
 }
 
-// writeSGR emits a full attribute set leading with a reset, rather than the
-// difference from the previous one: a snapshot is written once per viewer, so the
-// redundancy costs nothing and removes a class of bug.
-//
-// Reverse video is reconstructed here rather than read from the glyph, because
-// vt10x resolves it into the stored colours (see styleOf). That is lossless for
-// concrete colours, but the two defaults have no spelling in the slot they were
-// swapped into — there is no "default background, as a foreground". Wherever a
-// default lands in the wrong slot, the pair is swapped back and SGR 7 restores it.
+// Reverse video is reconstructed, not read off the glyph: vt10x already swapped
+// fg/bg (styleOf), and a default in the wrong slot is swapped back + SGR 7.
 func writeSGR(b *bytes.Buffer, st style) {
 	fg, bg := st.fg, st.bg
 	reverse := fg == vt10x.DefaultBG || bg == vt10x.DefaultFG
@@ -116,13 +98,8 @@ func writeSGR(b *bytes.Buffer, st style) {
 	b.WriteString("m")
 }
 
-// writeColor appends one SGR colour parameter. base is 3 for a foreground and 4
-// for a background, which also yields the bright (90/100) and extended (38/48)
-// forms by arithmetic.
-//
-// vt10x packs a 24-bit colour into the same uint32 as a palette index, so 200 and
-// rgb(0,0,200) both read as palette 200. The runner avoids this at the source by
-// scrubbing COLORTERM, keeping the agent on 256 colours.
+// writeColor appends one SGR colour parameter; base is 3 (fg) or 4 (bg). vt10x
+// packs 24-bit colour into palette space, so COLORTERM is scrubbed (internal/agent).
 func writeColor(b *bytes.Buffer, c vt10x.Color, base int) {
 	switch {
 	case c >= 1<<24: // DefaultFG, DefaultBG, DefaultCursor

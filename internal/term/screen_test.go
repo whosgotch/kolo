@@ -8,7 +8,6 @@ import (
 	"github.com/hinshun/vt10x"
 )
 
-// cell writes seq followed by one character and returns the glyph it produced.
 func cell(t *testing.T, seq string) vt10x.Glyph {
 	t.Helper()
 	s := New(10, 2)
@@ -18,9 +17,6 @@ func cell(t *testing.T, seq string) vt10x.Glyph {
 	return s.term.Cell(0, 0)
 }
 
-// TestMirroredAttributes guards the constants copied out of vt10x's state.go.
-// If the dependency ever moves and the bit order shifts, one attribute will
-// read as another, so each case asserts the flags it does *not* set as well.
 func TestMirroredAttributes(t *testing.T) {
 	tests := []struct {
 		name string
@@ -35,7 +31,7 @@ func TestMirroredAttributes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := styleOf(cell(t, tt.sgr))
-			got.fg, got.bg = 0, 0 // colours are not under test here
+			got.fg, got.bg = 0, 0
 			if got != tt.want {
 				t.Errorf("styleOf(%q) = %+v, want %+v", tt.sgr, got, tt.want)
 			}
@@ -43,9 +39,6 @@ func TestMirroredAttributes(t *testing.T) {
 	}
 }
 
-// TestReverseIsAlreadyApplied pins the behaviour styleOf relies on: vt10x
-// resolves reverse video into the stored colours, so a repaint must not emit
-// SGR 7 on top of them.
 func TestReverseIsAlreadyApplied(t *testing.T) {
 	got := styleOf(cell(t, "\x1b[31;7m"))
 	if got.fg != vt10x.DefaultBG || got.bg != vt10x.Red {
@@ -57,9 +50,6 @@ func TestReverseIsAlreadyApplied(t *testing.T) {
 	}
 }
 
-// TestBoldPromotesColour documents the other colour rewrite vt10x performs: a
-// bold foreground below 8 is stored as its bright counterpart. Emitting SGR 1
-// again over that colour is harmless, so styleOf keeps the bit.
 func TestBoldPromotesColour(t *testing.T) {
 	got := styleOf(cell(t, "\x1b[31;1m"))
 	if got.fg != vt10x.LightRed {
@@ -70,23 +60,12 @@ func TestBoldPromotesColour(t *testing.T) {
 	}
 }
 
-// TestGfxIsAlreadyTranslated pins the third bit styleOf drops: with the
-// line-drawing charset selected, the glyph holds the translated rune, not the
-// ASCII that selected it.
 func TestGfxIsAlreadyTranslated(t *testing.T) {
 	if got := cell(t, "\x1b(0q").Char; got != '─' {
 		t.Errorf("Char = %q, want %q", got, '─')
 	}
 }
 
-// TestWriteAcrossChunkBoundaries pins the two things Write guarantees: the
-// whole slice is reported consumed, and it makes no difference where the
-// caller's chunks happen to fall.
-//
-// Reads off a PTY split anywhere, so this is the common case rather than an
-// edge one — every box-drawing character in an agent's TUI is three bytes. The
-// round-trip tests all wrote their input in one call, which is exactly why they
-// never caught the emulator dropping split runes.
 func TestWriteAcrossChunkBoundaries(t *testing.T) {
 	input := []byte("┌───┐\r\n│ ⠂⠐ │\r\n└───┘\r\n\x1b[1m✳ bold\x1b[0m ✓")
 

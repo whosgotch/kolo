@@ -1,11 +1,4 @@
 // Package term keeps an authoritative model of the agent's screen.
-//
-// Not a renderer: the browser does that, with xterm.js, fed the agent's raw
-// output byte for byte. This answers "what is on screen right now", so a viewer
-// joining mid-session can be repainted before the live stream starts.
-//
-// The emulator is github.com/hinshun/vt10x. See docs/probe-findings.md #1 for
-// why not github.com/charmbracelet/x/vt.
 package term
 
 import (
@@ -15,9 +8,8 @@ import (
 	"github.com/hinshun/vt10x"
 )
 
-// Attribute bits mirrored from vt10x's state.go, because Glyph.Mode is exported
-// but the bits it holds are not. Frozen since 2022, so stable — but recheck
-// against state.go if the dependency ever moves.
+// Attribute bits mirrored from vt10x's state.go; Glyph.Mode exports the field
+// but not these bits. Recheck against state.go if the dependency moves.
 const (
 	attrReverse = 1 << iota
 	attrUnderline
@@ -32,7 +24,7 @@ type Screen struct {
 	term vt10x.Terminal
 
 	mu sync.Mutex
-	// Leading bytes of a rune the last write ended in the middle of. See Write.
+	// Leading bytes of a rune the last write ended mid-way. See Write.
 	partial []byte
 }
 
@@ -40,14 +32,8 @@ func New(cols, rows int) *Screen {
 	return &Screen{term: vt10x.New(vt10x.WithSize(cols, rows))}
 }
 
-// Write never fails and always reports the whole slice consumed. Both matter.
-//
-// PTY reads split anywhere, so a multi-byte rune regularly straddles two writes,
-// and vt10x returns a short count with a nil error and drops what it could not
-// decode (vt_posix.go, "not enough bytes for a full rune"). That breaks
-// io.Writer: io.MultiWriter turns it into ErrShortWrite, io.Copy stops, nothing
-// drains the PTY, and the agent blocks forever. So Write splits on a rune
-// boundary itself and carries the remainder into the next call.
+// Write never fails and always reports the whole slice consumed: vt10x drops an
+// incomplete rune at a PTY read boundary (vt_posix.go), breaking io.Copy.
 func (s *Screen) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -67,8 +53,7 @@ func (s *Screen) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// incompleteTail returns how many bytes at the end of b begin a rune that is
-// not all there yet, and so must wait for the rest.
+// incompleteTail returns how many bytes at the end of b begin an incomplete rune.
 func incompleteTail(b []byte) int {
 	for i := 1; i <= utf8.UTFMax-1 && i <= len(b); i++ {
 		c := b[len(b)-i]
@@ -87,10 +72,9 @@ func (s *Screen) Resize(cols, rows int) { s.term.Resize(cols, rows) }
 
 func (s *Screen) Size() (cols, rows int) { return s.term.Size() }
 
-// Text is the screen as plain rows, one per line, with no styling.
+// Text is the screen as plain rows, one per line.
 func (s *Screen) Text() string { return s.term.String() }
 
-// style is everything a repaint must restate when it moves to a cell.
 type style struct {
 	fg, bg    vt10x.Color
 	bold      bool
@@ -99,15 +83,8 @@ type style struct {
 	blink     bool
 }
 
-// styleOf reads the attributes a repaint has to reproduce.
-//
-// Three bits are ignored deliberately. attrReverse is already applied — vt10x
-// swaps FG and BG in the stored glyph (state.go, setChar) and leaves the bit set,
-// so re-emitting SGR 7 would swap them back. attrGfx is likewise applied: the
-// glyph holds the translated rune. attrWrap draws nothing.
-//
-// attrBold gets the same colour treatment but is a font weight too, so it is
-// kept; re-emitting SGR 1 over an already-bright colour is idempotent.
+// styleOf skips attrReverse and attrGfx: vt10x already applies both to the
+// stored glyph, so re-emitting them would double-apply. attrWrap draws nothing.
 func styleOf(g vt10x.Glyph) style {
 	return style{
 		fg:        g.FG,

@@ -12,8 +12,6 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// fileHub is a hub started from a file on disk, which is what reloading needs
-// and what hubFixture, holding its org in memory, deliberately is not.
 func fileHub(t *testing.T) (*Server, string, string, string) {
 	t.Helper()
 	memberToken, memberHash, err := NewToken()
@@ -43,7 +41,6 @@ func fileHub(t *testing.T) (*Server, string, string, string) {
 	return s, path, memberToken, hostToken
 }
 
-// writeOrg replaces the org file, as an operator editing it does.
 func writeOrg(t *testing.T, path string, org Org) {
 	t.Helper()
 	body, _ := json.MarshalIndent(org, "", "  ")
@@ -59,7 +56,6 @@ func TestReloadAddsAndRemoves(t *testing.T) {
 		t.Fatal("the member the hub started with cannot connect")
 	}
 
-	// Somebody new, minted by an operator who did not restart anything.
 	danaToken, danaHash, err := NewToken()
 	if err != nil {
 		t.Fatal(err)
@@ -81,8 +77,6 @@ func TestReloadAddsAndRemoves(t *testing.T) {
 	}
 }
 
-// A file that will not parse must not empty the org: nobody could connect, and
-// the cause would be a typo somebody made while adding one person.
 func TestReloadKeepsWhatWorksOnABadEdit(t *testing.T) {
 	s, path, memberToken, _ := fileHub(t)
 
@@ -97,8 +91,6 @@ func TestReloadKeepsWhatWorksOnABadEdit(t *testing.T) {
 		t.Error("a typo in the org file locked out a member who was already in it")
 	}
 
-	// An org that validates but is empty of people is a deliberate edit, and is
-	// applied like any other.
 	writeOrg(t, path, Org{Name: "acme"})
 	if _, changed := s.reload(path, nil); !changed {
 		t.Fatal("the fixed file was not read")
@@ -119,8 +111,6 @@ func TestReloadIgnoresAnUnchangedFile(t *testing.T) {
 	}
 }
 
-// Revoking a machine has to reach the machine. A host holds one connection and
-// makes no further requests, so nothing else would ever notice.
 func TestReloadDisconnectsARevokedHost(t *testing.T) {
 	s, path, _, hostToken := fileHub(t)
 	go s.Serve()
@@ -134,15 +124,10 @@ func TestReloadDisconnectsARevokedHost(t *testing.T) {
 	writeOrg(t, path, Org{Name: "acme", Members: []Member{{ID: "artem", TokenHash: HashToken("y")}}})
 	s.reload(path, nil)
 
-	// Read with no deadline of its own, so what ends it is the connection
-	// closing rather than this test giving up — the difference between an
-	// assertion and a pause.
 	mustClose(t, conn, "a host removed from the org stayed connected")
 	waitFor(t, func() bool { return len(s.registry.Hosts()) == 0 })
 }
 
-// The same for a browser: a member watching an agent is handed frames and asks
-// for nothing, so their removal has to reach the stream.
 func TestReloadDisconnectsARevokedWatcher(t *testing.T) {
 	s, path, memberToken, hostToken := fileHub(t)
 	go s.Serve()
@@ -164,9 +149,8 @@ func TestReloadDisconnectsARevokedWatcher(t *testing.T) {
 	mustClose(t, watch, "a member removed from the org kept watching")
 }
 
-// mustClose fails unless the other end hangs up. The read is given no deadline:
-// a read that ends because the test ran out of patience looks exactly like one
-// that ends because the connection closed, and only one of them is the point.
+// mustClose passes only if the connection closes; the read has no deadline,
+// since a timeout ending it would look exactly like a close.
 func mustClose(t *testing.T, conn *websocket.Conn, whenNot string) {
 	t.Helper()
 	ended := make(chan struct{})

@@ -48,8 +48,6 @@ func serveCmd(args []string) error {
 	}
 	s, err := hub.Listen(org, *addr)
 	if err != nil {
-		// Usually a second hub started without noticing the first, so say what
-		// to look for rather than only what the operating system said.
 		if errors.Is(err, syscall.EADDRINUSE) {
 			return fmt.Errorf("%w\n\nSomething is already listening there — another kolo serve, most likely.\n"+
 				"Find it with:   lsof -nP -i:%s\n"+
@@ -69,8 +67,6 @@ func serveCmd(args []string) error {
 		log.Printf("hub for %s on %s, %d member(s)", org.Name, s.Addr(), len(org.Members))
 	}
 
-	// Shut down on a signal, so agents are disconnected deliberately and come
-	// back on their own rather than holding a dead socket.
 	stopping := make(chan os.Signal, 1)
 	signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -82,12 +78,7 @@ func serveCmd(args []string) error {
 	return s.Serve()
 }
 
-// portOf is the port an address is listening on.
-//
-// net.SplitHostPort rather than cutting at a colon: a listener on every
-// interface reports itself as [::]:7300, and the first colon in that is inside
-// the address. Cutting there produced ":]:7300", which went on to be joined
-// into a loopback URL the host half could not dial.
+// portOf uses net.SplitHostPort: cutting at the first colon breaks on [::]:7300.
 func portOf(addr string) string {
 	if _, port, err := net.SplitHostPort(addr); err == nil {
 		return port
@@ -95,7 +86,6 @@ func portOf(addr string) string {
 	return addr
 }
 
-// nextAddr suggests the port above the one that was taken.
 func nextAddr(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	n, convErr := strconv.Atoi(port)
@@ -105,9 +95,6 @@ func nextAddr(addr string) string {
 	return net.JoinHostPort(host, strconv.Itoa(n+1))
 }
 
-// tokenCmd mints credentials for one member or one host and records them in the
-// org file. The token is shown once and never stored: the hub keeps only a hash,
-// so losing it means issuing another.
 func tokenCmd(args []string) error {
 	fs := flag.NewFlagSet("token", flag.ExitOnError)
 	orgPath := fs.String("org", config.Path("org.json"), "org file to add them to")
@@ -136,9 +123,6 @@ func tokenCmd(args []string) error {
 		return err
 	}
 
-	// Written to the org file rather than printed to be pasted into it: the
-	// command that mints a token is the one that knows which list its hash
-	// belongs in, and a hash in the wrong list fails quietly, later.
 	if *asHost {
 		if _, err := hub.AddHost(*orgPath, hub.Host{ID: *id, TokenHash: hash}); err != nil {
 			return missingOrg(err, *orgPath)
@@ -160,13 +144,8 @@ func tokenCmd(args []string) error {
 	return nil
 }
 
-// defaultHubURL is the address kolo serve listens on by default, so everything
-// on one machine needs no flag at all.
 const defaultHubURL = "http://127.0.0.1:7300"
 
-// missingOrg turns the first thing a new operator meets into instructions. There
-// is nobody to add until the org has a name, and its name is the one thing kolo
-// cannot pick for them.
 func missingOrg(err error, path string) error {
 	if !errors.Is(err, fs.ErrNotExist) {
 		return err

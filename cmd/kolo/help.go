@@ -7,19 +7,11 @@ import (
 	"strings"
 )
 
-// Two groups, because most people need one of them.
-//
-// Everything an org does day to day is the first three: start the machine, let
-// people in, see who is in. The other three exist for a hub that lives somewhere
-// other than the machine running the agents, which is a deployment rather than a
-// way of using kolo. A list that mixes them makes the common case look like a
-// choice between six things.
 var (
 	everyday   = []string{"up", "invite", "who", "doctor"}
 	separately = []string{"serve", "token", "host"}
 )
 
-// helpCmd explains kolo, or one of its commands.
 func helpCmd(args []string) error {
 	if len(args) == 0 {
 		overview(os.Stdout)
@@ -41,10 +33,6 @@ func helpCmd(args []string) error {
 	return nil
 }
 
-// overview is what somebody who has just been handed kolo needs: what it is,
-// the one command that starts it, and where to look next. Not every flag there
-// is — that is what -h is for, and a wall of them is how a simple thing comes to
-// look complicated.
 func overview(w io.Writer) {
 	fmt.Fprintln(w, "kolo — shared agents on a machine your team lends.")
 	fmt.Fprintln(w)
@@ -70,8 +58,6 @@ func briefs(w io.Writer, title string, names []string) {
 	}
 }
 
-// The long half of each command's help: what it is for and when to reach for it,
-// which is the part a flag list cannot say.
 var longHelp = map[string]string{
 	"up": `Runs the hub and lends this machine to it, in one process.
 

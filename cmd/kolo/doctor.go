@@ -17,19 +17,9 @@ import (
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
-// How long an agent may go unrecognised before it is worth saying so. Long
-// enough that an agent still starting up is not a complaint, short enough that
-// somebody watching a first run finds out in that sitting.
+// puzzled is how long an agent may go unrecognised before it counts as a fault.
 const puzzled = 2 * time.Minute
 
-// doctorCmd says what will and will not work on this machine.
-//
-// It changes nothing: no agent is touched, no file is written, nothing is
-// started. A diagnostic that alters what it is diagnosing is worse than none.
-//
-// It reads what the host wrote down rather than asking anything, so it works on
-// a machine where kolo is running and on one where it is not, and needs none of
-// the flags kolo up was given.
 func doctorCmd(args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 	statePath := fs.String("state", config.Path("agents.json"), "what this machine wrote down about its agents")
@@ -50,18 +40,13 @@ func doctorCmd(args []string) error {
 		return err
 	}
 	if !ok {
-		// Something here needs a person. Said with the exit code as well as on
-		// screen, so this can be the last line of a setup script.
 		os.Exit(1)
 	}
 	return nil
 }
 
-// doctor writes the report and says whether everything it looked at was well.
 func doctor(w io.Writer, statePath, kindsPath string) (bool, error) {
 	if _, err := adapter.Load(kindsPath); err != nil {
-		// A kinds file kolo will not read is the whole diagnosis: the host
-		// refuses to start on it too.
 		fmt.Fprintf(w, "%s %v\n", bad, err)
 		return false, nil
 	}
@@ -81,17 +66,12 @@ func doctor(w io.Writer, statePath, kindsPath string) (bool, error) {
 	return eachAgent(w, state.Agents) && well, nil
 }
 
-// The verdicts. A failure is something that will not work; a warning is
-// something that works and is probably not what somebody meant.
 const (
 	good = "ok  "
 	warn = "note"
 	bad  = "fail"
 )
 
-// runnable says whether what the org may start can be started at all. It is
-// checked here because the person who finds out otherwise is a member in a
-// browser, and the person who can fix it is whoever lent the machine.
 func runnable(w io.Writer, allows []string) bool {
 	fmt.Fprintf(w, "what this machine runs\n")
 	well := true
@@ -120,7 +100,6 @@ func runnable(w io.Writer, allows []string) bool {
 	return well
 }
 
-// shown names the command, and where it was found when that is not obvious.
 func shown(command, path, program string) string {
 	if path == program || filepath.Base(path) == command {
 		return command
@@ -128,9 +107,6 @@ func shown(command, path, program string) string {
 	return command + "  (" + path + ")"
 }
 
-// knownKinds says what kolo can do with each of them. This is the answer to the
-// question a host actually has, which is not whether an agent is supported but
-// what will and will not work if they lend it.
 func knownKinds(w io.Writer, allows []string) {
 	fmt.Fprintf(w, "what kolo knows about them\n")
 	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -152,8 +128,6 @@ func knownKinds(w io.Writer, allows []string) {
 		name := filepath.Base(argv[0])
 		kind := adapter.For(command)
 
-		// Watching and typing need nothing: they are the terminal, and the
-		// terminal is the same whatever is drawing on it.
 		stop, reads, resume := no, no, no
 		if kind.Markers.Busy != "" {
 			stop = yes
@@ -182,8 +156,6 @@ const (
 	no  = "-"
 )
 
-// missing says what each gap costs, in the terms of somebody using the agent
-// rather than in the terms of the file that would fix it.
 func missing(name string, kind adapter.Adapter) []string {
 	if kind.Markers.Blank() && len(kind.Resume) == 0 {
 		return []string{name + " runs and is shared, but kolo cannot read its screen: the list will" +
@@ -201,10 +173,6 @@ func missing(name string, kind adapter.Adapter) []string {
 	return notes
 }
 
-// eachAgent reports what this machine was last running, and what kolo made of each
-// screen. Free to check and the only thing that catches an agent whose markers
-// stopped fitting it — a CLI that shipped a new footer breaks nothing that says
-// so, until somebody presses stop and nothing happens.
 func eachAgent(w io.Writer, records []host.Record) bool {
 	fmt.Fprintf(w, "agents this machine was running\n")
 	if len(records) == 0 {
@@ -219,8 +187,6 @@ func eachAgent(w io.Writer, records []host.Record) bool {
 		}
 		switch {
 		case rec.State == "" || rec.State == "unknown":
-			// Only once it has had time to draw something. An agent still
-			// starting has said nothing yet, which is not a fault.
 			if !rec.Since.IsZero() && time.Since(rec.Since) < puzzled {
 				fmt.Fprintf(w, "  %s %s  starting, nothing on its screen yet\n", good, rec.Spec.Name)
 				continue
@@ -244,7 +210,7 @@ func firstWord(command string) string {
 	return command
 }
 
-// since is a duration a person would say out loud.
+// since renders time since t the way a person would say it.
 func since(t time.Time) string {
 	d := time.Since(t)
 	switch {

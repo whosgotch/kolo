@@ -1,16 +1,5 @@
-// Package detect reads the agent's screen to tell what it is doing.
-//
-// What the screen looks like in each state is a property of the agent kind, so
-// the markers are given rather than known here; internal/adapter holds them.
-//
-// An empty marker matches nothing, so the zero Markers — a kind with no adapter
-// — reads every screen as Unknown.
-//
-// What it says is what the agent is doing, and nothing more: which choice a
-// question is offering is the agent's business and the business of whoever takes
-// its keyboard.
-//
-// See docs/architecture.md "Input" and docs/probe-findings.md #4 and #5.
+// Package detect reads an agent's screen to tell what it's doing. The zero
+// Markers matches nothing; see docs/architecture.md "Input".
 package detect
 
 import (
@@ -18,11 +7,10 @@ import (
 	"time"
 )
 
-// State is what the agent's screen says it is doing.
 type State int
 
 const (
-	// Unknown is first, so an unrecognised screen is the zero value.
+	// First, so an unrecognised screen is the zero value.
 	Unknown State = iota
 	Idle
 	Dialog
@@ -42,41 +30,27 @@ func (s State) String() string {
 	}
 }
 
-// Markers are the strings one agent kind puts on screen in each state, each
-// taken from a recording of it rather than from its source. Matched
-// case-sensitively: "esc to interrupt" and "Esc to cancel" are different states.
+// Markers are the strings a kind draws on screen per state, matched
+// case-sensitively against a recording of the screen, not its source.
 type Markers struct {
-	// Idle is the hints an input box that can take a line carries, any one of
-	// which means idle: the hint changes between versions and permission modes
-	// while meaning the same thing (probe-findings #7). Read last and only as an
-	// absence.
 	Idle         []string `json:"idle,omitempty"`
 	Busy         string   `json:"busy,omitempty"`
 	DialogFooter string   `json:"dialogFooter,omitempty"`
-	// DialogSelected is the sigil in front of a dialog's highlighted choice. It
-	// is not a marker of the dialog on its own — the input box draws the same
-	// sigil in front of its placeholder — so what is looked for is the sigil in
-	// front of the first choice.
+	// Matched as "<sigil> 1.", so a bare sigil doesn't also hit the input
+	// box's placeholder, which wears the same sigil.
 	DialogSelected string `json:"dialogSelected,omitempty"`
-	// Settle is how long the screen must go unchanged before it reads as idle,
-	// for a kind that says nothing while it waits. Zero means silence proves
-	// nothing, which is the arrangement to prefer (probe-findings #6).
+	// How long the screen must sit unchanged to read as idle; zero means
+	// silence proves nothing.
 	Settle time.Duration `json:"settle,omitempty"`
 }
 
-// Blank reports whether these markers say nothing at all, and so read every
-// screen as Unknown. It is what a kind kolo has no adapter for gets, and what a
-// configured one must not be.
+// Blank reports markers that match nothing, as an unconfigured kind has.
 func (m Markers) Blank() bool {
 	return len(m.Idle) == 0 && m.Busy == "" && m.DialogFooter == "" && m.DialogSelected == ""
 }
 
-// OfSettled is Of, plus the answer a single screen cannot give: a kind that
-// declares a settle period reads as idle once nothing has changed for that long,
-// and only from a screen Of made nothing of.
-//
-// still is how long the screen has been the same picture. A blank screen is never
-// idle: silence means something only once there is something to be silent under.
+// OfSettled is Of, plus a settle-timeout fallback for a kind that says nothing
+// while idle. A blank screen is never idle.
 func (m Markers) OfSettled(screen string, still time.Duration) State {
 	if s := m.Of(screen); s != Unknown {
 		return s
@@ -87,8 +61,7 @@ func (m Markers) OfSettled(screen string, still time.Duration) State {
 	return Unknown
 }
 
-// Of classifies the agent's screen. Dialog is tested first: if a screen somehow
-// carried two sets of markers, the safest reading is the one to give.
+// Of classifies the screen; dialog wins over idle as the safer reading.
 func (m Markers) Of(screen string) State {
 	switch {
 	case has(screen, m.DialogFooter), has(screen, m.firstChoice()):
@@ -101,8 +74,6 @@ func (m Markers) Of(screen string) State {
 	return Unknown
 }
 
-// firstChoice is the dialog's highlighted first option, which is the arrangement
-// the sigil only appears in while a question is on screen.
 func (m Markers) firstChoice() string {
 	if m.DialogSelected == "" {
 		return ""
@@ -110,7 +81,6 @@ func (m Markers) firstChoice() string {
 	return m.DialogSelected + " 1."
 }
 
-// has is Contains, except that a marker a kind does not declare matches nothing.
 func has(screen, marker string) bool {
 	return marker != "" && strings.Contains(screen, marker)
 }

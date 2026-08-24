@@ -1,8 +1,5 @@
-// Package host is the machine half of kolo: it lends a machine to the org and
-// runs the agents the org asks for on it.
-//
-// The connection is outbound and the machine is never listened to, which removes
-// the inbound port, the firewall rule and the NAT problem.
+// Package host is the machine half of kolo: it lends a machine to the org
+// and runs the agents the org asks for.
 package host
 
 import (
@@ -19,8 +16,6 @@ import (
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
-// Dropped wifi comes back in seconds, so the first retry is quick; a hub that is
-// down stays down, so the wait grows rather than hammering it.
 const (
 	minBackoff = 500 * time.Millisecond
 	maxBackoff = 30 * time.Second
@@ -30,13 +25,10 @@ const (
 
 // Config is what a machine needs to reach a hub as itself.
 type Config struct {
-	// Hub is the base URL, such as https://hub.example.com.
-	Hub string
-	// Token identifies the machine. It is sent in a header, never in the URL.
+	Hub   string
 	Token string
-	// Dirs are the directories this machine lends. Absolute paths.
-	Dirs []string
-	// Allow are the commands it will run.
+	// Absolute paths.
+	Dirs    []string
 	Allow   []string
 	Version string
 }
@@ -50,11 +42,8 @@ type Event struct {
 	Note      string
 }
 
-// Run keeps the machine connected until ctx is cancelled.
-//
-// A lost connection is not a failure — machines sleep and wifi drops — so it is
-// reported and retried. Agents keep running while the hub is away: the connection
-// is how the org reaches them, not what holds them up.
+// Run keeps the machine connected until ctx is cancelled. Lost connections
+// are retried, not failed; agents keep running while the hub is away.
 func Run(ctx context.Context, agents *Agents, onEvent func(Event)) {
 	if onEvent == nil {
 		onEvent = func(Event) {}
@@ -88,13 +77,8 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 	}
 	defer conn.CloseNow()
 
-	// The hello carries what is already running. A host that dropped kept its
-	// agents while the hub let them go, and this is what puts them back.
-	// Found is which of the agents kolo has heard of are installed here, so a
-	// browser lending any command can suggest them; it decides nothing.
-	// ByName is which of the lent commands resume by naming their
-	// conversation — the host's own knowledge, carried because the one-agent-
-	// to-a-directory rule bends only where the host can vouch for it.
+	// The hello carries what's running, so a reconnect puts its agents back
+	// on the hub's list.
 	byName := make([]string, 0, len(cfg.Allow))
 	for _, command := range cfg.Allow {
 		if adapter.For(command).ResumesByName() {
@@ -123,14 +107,13 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Commands come down while reports go up, and neither waits behind the other.
+	// Commands come down while reports go up, neither waiting behind the other.
 	failed := make(chan error, 2)
 	go func() { failed <- obey(ctx, conn, agents) }()
 	go func() { failed <- report(ctx, conn, agents) }()
 	return <-failed
 }
 
-// obey runs what the hub asks for.
 func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 	for {
 		kind, data, err := conn.Read(ctx)
@@ -146,16 +129,16 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 		}
 		switch c.Type {
 		case "spawn":
-			// The refusal that counts, this being the machine that runs the
-			// process. See hub.Registry.Add for the hub's copy of the checks.
+			// The refusal that counts: this machine runs the process. See
+			// hub.Registry.Add for the hub's copy of the checks.
 			if err := agents.Start(c.Agent); err != nil {
 				agents.report(c.Agent.Name, hub.StatusFailed, err.Error())
 			}
 		case "stop":
 			agents.Stop(c.Name)
 		case "keys":
-			// Silently: a keystroke that arrives a moment after the agent stopped
-			// is not worth a line on everybody's screen.
+			// Silently: a keystroke just after the agent stopped isn't worth
+			// a line on everybody's screen.
 			agents.Type(c.Name, c.Keys)
 		case "resize":
 			agents.Resize(c.Name, c.Cols, c.Rows)
@@ -214,8 +197,8 @@ type command struct {
 	Agent hub.Agent `json:"agent"`
 }
 
-// wsURL turns a hub's base URL into a websocket one, so a hub reached over HTTPS
-// is not silently connected to in the clear.
+// wsURL turns a base URL into a websocket one, so https is never silently
+// connected to in the clear.
 func wsURL(base string) string {
 	base = strings.TrimSuffix(base, "/")
 	switch {
@@ -227,8 +210,6 @@ func wsURL(base string) string {
 	return base
 }
 
-// jitter spreads retries out, so hosts that dropped together do not all come back
-// at the same instant.
 func jitter(d time.Duration) time.Duration {
 	return d/2 + time.Duration(rand.Int64N(int64(d/2)+1))
 }

@@ -11,11 +11,6 @@ import (
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
-// whoCmd says who is in the org and how they got there.
-//
-// An invite is a link anyone holding it can spend, which is only safe if
-// somebody can see what it let in. This is that: who joined, when, and through
-// which link.
 func whoCmd(args []string) error {
 	fs := flag.NewFlagSet("who", flag.ExitOnError)
 	orgPath := fs.String("org", config.Path("org.json"), "org file to read")
@@ -62,8 +57,6 @@ func whoCmd(args []string) error {
 	return out.Flush()
 }
 
-// joinedHow is where a member came from, for the question an invite raises: who
-// did that link let in?
 func joinedHow(m hub.Member) string {
 	if m.Joined.IsZero() {
 		return "added by hand"

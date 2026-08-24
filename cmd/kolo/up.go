@@ -21,13 +21,6 @@ import (
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
-// upCmd is the whole of kolo in one command: the hub the org connects to, and
-// this machine lending itself to that hub. Everything it needs that does not
-// exist yet — the org file, this machine's credential, the first member — it
-// makes, so getting started is one line and nothing to paste between steps.
-//
-// serve, token and host remain for an org whose hub lives somewhere other than
-// the machine running the agents. That is the deployment; this is the default.
 func upCmd(args []string) error {
 	fs := flag.NewFlagSet("up", flag.ExitOnError)
 	var dirs, allow list
@@ -56,9 +49,6 @@ func upCmd(args []string) error {
 	}
 	strayOrg(fs)
 
-	// Both of these are refusals in kolo host, where the machine being lent is
-	// deliberate and saying so costs nothing. Here they are the common case, so
-	// they are answered rather than asked.
 	if len(dirs) == 0 {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -69,8 +59,8 @@ func upCmd(args []string) error {
 	if err := resolveDirs(dirs); err != nil {
 		return err
 	}
-	// Before the agent commands are settled, because a kind configured here is
-	// one kolo can then find installed and offer without being asked.
+	// Before the -allow default below, so kinds configured here are offered
+	// if found installed.
 	if err := loadKinds(*kinds); err != nil {
 		return err
 	}
@@ -84,8 +74,8 @@ func upCmd(args []string) error {
 		}
 	}
 
-	// The org, this machine and the first member all have to be on disk before
-	// the hub starts: it reads the file once and never again.
+	// Every org write happens before the hub starts: it reads the file once
+	// and never again.
 	created, err := hub.Init(*orgPath, orgName(*name))
 	if err != nil {
 		return err
@@ -94,9 +84,7 @@ func upCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	// A fresh token every start, replacing the last. Nothing keeps this one —
-	// it goes straight to the host half in memory — so there is nothing to lose
-	// and nothing left behind by a start that crashed.
+	// Fresh every start; nothing keeps it — it goes straight to the host half.
 	hostToken, hostHash, err := hub.NewToken()
 	if err != nil {
 		return err
@@ -105,14 +93,8 @@ func upCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	// An invite rather than a member: whoever started this joins the same way
-	// everyone else does, so there is one way in rather than a founder's way and
-	// a joiner's way.
-	//
-	// Only when there is not one already. A host restarted three times before
-	// anybody joined used to hand out three live links, none of which the next
-	// one withdrew — and minting over a link already pasted somewhere is the
-	// other half of that, so a live one is named rather than replaced.
+	// Only when none exists: restarts used to hand out several live links,
+	// so a live one is named rather than replaced.
 	var invite string
 	if len(org.Members) == 0 && len(org.Live(time.Now())) == 0 {
 		var err error
@@ -134,10 +116,8 @@ func upCmd(args []string) error {
 	}
 	defer s.Close()
 
-	// Where a person types the hub, and where the host half in this process
-	// reaches it. They differ once there is a certificate: the org arrives by
-	// name over https, and the host half stays on loopback rather than going out
-	// to that name and hoping the network answers itself.
+	// shown is for people; local is what the host half dials. They differ
+	// with TLS: the org arrives by name over https, the host stays local.
 	shown := browseURL(s.Addr())
 	local := "http://" + net.JoinHostPort("127.0.0.1", portOf(s.Addr()))
 	if len(domains) > 0 {
@@ -159,9 +139,8 @@ func upCmd(args []string) error {
 		s.Close()
 	}()
 
-	// The host half dials the hub half over loopback rather than being called
-	// directly, so it is the same host talking to the same hub as it would be on
-	// two machines. One process is a deployment, not a second code path.
+	// The host half dials the hub half like any other host would — one
+	// process is a deployment, not a second code path.
 	agents := host.NewAgents(host.Config{
 		Hub:     local,
 		Token:   hostToken,
@@ -210,8 +189,8 @@ func upCmd(args []string) error {
 			log.Printf("%v; retrying in %s", e.Err, e.Retry.Round(100_000_000))
 		}
 	})
-	// host.Run returns when the signal arrives, which is also what closes the
-	// hub; a Serve that ended on its own is the interesting error.
+	// host.Run returns on signal, which also closes the hub; a Serve that
+	// ended on its own is the interesting error.
 	select {
 	case err := <-served:
 		return err
@@ -220,27 +199,16 @@ func upCmd(args []string) error {
 	}
 }
 
-// What kolo up hands out, and what kolo invite offers unless told otherwise. A
-// link goes in a channel, gets forwarded, and outlives the reason it was made,
-// so it is bounded twice: long enough to get a team in over a week that has a
-// weekend in it, and wide enough for a team rather than a company.
-//
-// Neither bound is security on its own — whoever holds the link can spend it —
-// they are what keeps a leak small enough to notice and undo.
+// Same bounds kolo invite offers unless told otherwise.
 const (
 	inviteDays  = 7
 	defaultUses = 10
 )
 
-// installedKinds is every agent this machine can actually run of the ones kolo
-// has heard of — the kinds it ships with and knows from kinds.json, plus the
-// names in the discovery catalog. So the common case names none of them.
 func installedKinds() list {
 	return list(adapter.Discovered())
 }
 
-// orgName falls back to the directory kolo was started in. It is a label, shown
-// in the browser and the log, and one that can be corrected by editing a line.
 func orgName(given string) string {
 	if given != "" {
 		return given
@@ -253,15 +221,12 @@ func orgName(given string) string {
 	return "kolo"
 }
 
-// machineID is what this host appears as in the log. The hostname, because that
-// is the name the org already has for the machine.
+// machineID is the hostname, minus a trailing .local and the like.
 func machineID() (string, error) {
 	name, err := os.Hostname()
 	if err != nil {
 		return "", fmt.Errorf("this machine has no hostname to be known by; use kolo host -join with an id you choose")
 	}
-	// Trailing .local and the like: the machine is "devbox" to everyone talking
-	// about it, and an id is read by people.
 	if base, _, ok := strings.Cut(name, "."); ok {
 		name = base
 	}
@@ -275,9 +240,7 @@ func whoami() string {
 	return "owner"
 }
 
-// browseURL is the address to hand to a person. A hub on 0.0.0.0 is reachable at
-// this machine's address on the network, which is what its org needs, and never
-// at 0.0.0.0.
+// browseURL turns 0.0.0.0 into this machine's LAN address, for people to open.
 func browseURL(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -293,8 +256,6 @@ func browseURL(addr string) string {
 	return "http://" + net.JoinHostPort(host, port)
 }
 
-// lanAddr is this machine's address on the network it is on, or empty if it
-// appears to be on none.
 func lanAddr() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
@@ -319,14 +280,6 @@ func onLoopback(addr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// strayOrg says something when the directory being lent has an org file in it
-// that kolo is about to ignore.
-//
-// Earlier versions kept the org beside whatever you were lending, so a machine
-// could end up with an org per directory and no way to tell which one it was
-// serving. It lives under ~/.kolo now. The old file is left alone rather than
-// moved or read: it may be somebody's real org, and picking it up silently is
-// the confusion this change is undoing.
 func strayOrg(fs *flag.FlagSet) {
 	set := false
 	fs.Visit(func(f *flag.Flag) {
@@ -345,15 +298,8 @@ func strayOrg(fs *flag.FlagSet) {
 		"pass -org org.json to use that one instead, or delete it.\n", cwd, config.Dir())
 }
 
-// wayIn is what an org that somebody has already joined needs on the screen:
-// either a link, or the one command that makes one.
-//
-// A hub nobody can reach is the failure this is for — the previous version
-// printed a kolo invite line with two flags in it, which is a thing to retype
-// rather than a way in. The link behind a live invite is a hash by now and
-// cannot be shown a second time, so the invites that are still out there are
-// named instead: minting another over one still in a channel is how a team ends
-// up locked out of a link they were using.
+// wayIn lists live invites (their links can't be shown twice) and the command
+// that makes a new one.
 func wayIn(org *hub.Org, orgPath, shown string) {
 	if live := org.Live(time.Now()); len(live) > 0 {
 		fmt.Printf("\nLinks that still work — none of them can be shown again:\n\n")
@@ -366,8 +312,6 @@ func wayIn(org *hub.Org, orgPath, shown string) {
 	fmt.Printf("\nA link for anyone else:\n\n    %s\n", inviteLine(orgPath, shown))
 }
 
-// inviteLine is kolo invite with the flags this hub needs and none it does not,
-// so it can be typed off the screen rather than read as a template.
 func inviteLine(orgPath, shown string) string {
 	cmd := "kolo invite"
 	if orgPath != config.Path("org.json") {
@@ -379,7 +323,6 @@ func inviteLine(orgPath, shown string) string {
 	return cmd
 }
 
-// members counts them the way somebody reads a line about their own org.
 func members(n int) string {
 	switch n {
 	case 0:

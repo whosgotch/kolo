@@ -12,7 +12,6 @@ import (
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
-// write puts a state file where the doctor will look, and returns its path.
 func writeState(t *testing.T, state host.State) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "agents.json")
@@ -26,8 +25,6 @@ func writeState(t *testing.T, state host.State) string {
 	return path
 }
 
-// absent is a path with nothing at it, for the checks that take a file kolo
-// does not need to exist.
 func absent(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "nothing.json")
@@ -51,9 +48,6 @@ func agent(name, dir, command, state string, since time.Time) host.Record {
 	}
 }
 
-// TestDoctorSaysWhatEachAgentKindCosts is the question a host actually has,
-// which is not whether an agent is supported but what will not work if they
-// lend it.
 func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
 	out, ok := report(t, host.State{Allows: []string{"claude", "sh"}}, absent(t))
 	if !ok {
@@ -61,8 +55,6 @@ func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
 	}
 	for _, want := range []string{
 		"claude", "--resume {session}",
-		// An agent kolo knows nothing about runs, and the report says what that
-		// costs rather than calling it unsupported.
 		"sh runs and is shared, but kolo cannot read its screen",
 		"kinds.json",
 	} {
@@ -72,8 +64,6 @@ func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
 	}
 }
 
-// TestDoctorFindsACommandThatIsNotThere: the person who finds out otherwise is
-// a member in a browser, and the person who can fix it lent the machine.
 func TestDoctorFindsACommandThatIsNotThere(t *testing.T) {
 	out, ok := report(t, host.State{Allows: []string{"definitely-not-installed-xyz"}}, absent(t))
 	if ok {
@@ -84,9 +74,6 @@ func TestDoctorFindsACommandThatIsNotThere(t *testing.T) {
 	}
 }
 
-// TestDoctorNoticesMarkersThatStoppedFitting is what the whole command is for.
-// A CLI that shipped a new footer breaks nothing that says so — until somebody
-// presses stop and nothing happens.
 func TestDoctorNoticesMarkersThatStoppedFitting(t *testing.T) {
 	long := time.Now().Add(-3 * 24 * time.Hour)
 	out, ok := report(t, host.State{
@@ -103,8 +90,6 @@ func TestDoctorNoticesMarkersThatStoppedFitting(t *testing.T) {
 	}
 }
 
-// TestDoctorLetsAnAgentStart: one that has drawn nothing yet has said nothing
-// yet, which is not a fault.
 func TestDoctorLetsAnAgentStart(t *testing.T) {
 	out, ok := report(t, host.State{
 		Allows: []string{"claude"},
@@ -118,7 +103,6 @@ func TestDoctorLetsAnAgentStart(t *testing.T) {
 	}
 }
 
-// TestDoctorReportsWhatAgentsAreDoing, for the ones it can read.
 func TestDoctorReportsWhatAgentsAreDoing(t *testing.T) {
 	out, ok := report(t, host.State{
 		Allows: []string{"claude"},
@@ -132,8 +116,6 @@ func TestDoctorReportsWhatAgentsAreDoing(t *testing.T) {
 	}
 }
 
-// TestDoctorRefusesAKindsFileTheHostWouldRefuse: the file is the diagnosis, and
-// saying so beats a report about a machine that will not start.
 func TestDoctorRefusesAKindsFileTheHostWouldRefuse(t *testing.T) {
 	kinds := filepath.Join(t.TempDir(), "kinds.json")
 	if err := os.WriteFile(kinds, []byte(`{"robo": {}}`), 0o600); err != nil {
@@ -148,8 +130,6 @@ func TestDoctorRefusesAKindsFileTheHostWouldRefuse(t *testing.T) {
 	}
 }
 
-// TestDoctorOnAMachineThatHasDoneNothing says what to do rather than printing
-// empty headings at somebody who has just installed kolo.
 func TestDoctorOnAMachineThatHasDoneNothing(t *testing.T) {
 	var out strings.Builder
 	ok, err := doctor(&out, absent(t), absent(t))

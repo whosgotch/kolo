@@ -1,17 +1,4 @@
 // Command kolorec records an agent session for use as a test fixture.
-//
-// internal/detect has to be built against screens a real agent produces, not ones
-// we imagine. This drives an agent through a scripted sequence and writes down
-// what came back:
-//
-//	kolorec -script scripts/permission-dialog.txt -out /tmp/recordings claude
-//
-// The raw log replays through internal/term, so a fixture is a recording of the
-// session rather than a transcription of one.
-//
-// Recordings capture whatever is on screen — paths, an email in a welcome box —
-// so they stay out of version control. Write them somewhere temporary, look at
-// them, and keep what you learned rather than the recording.
 package main
 
 import (
@@ -51,14 +38,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Resolve the output before chdir, so -out stays relative to where the
-	// recorder was invoked rather than to the agent's directory.
+	// Resolved before chdir, so -out stays relative to the invocation dir.
 	outDir, err := filepath.Abs(*out)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// chdir rather than passing a directory through the agent package: where an
-	// agent starts is a recording concern, and kolo runs where the host ran it.
 	if *dir != "" {
 		if err := os.Chdir(*dir); err != nil {
 			log.Fatal(err)
@@ -69,21 +53,14 @@ func main() {
 	}
 }
 
-// step is one line of a script.
 type step struct {
 	verb string
 	arg  string
 	dur  time.Duration
 }
 
-// parseScript reads a line-based script. Blank lines and # comments are ignored.
-//
-//	wait 5s                        pause
-//	send explain what you just did type a line and submit it
-//	type hello                     type without submitting
-//	key esc                        send one named key
-//	waitfor 60s Do you want to     wait for text to appear on screen
-//	dump permission-dialog         write the screen out under that name
+// parseScript parses the script verbs: wait, send, type, key, waitfor, dump.
+// Blank lines and # comments are ignored.
 func parseScript(path string) ([]step, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -130,8 +107,7 @@ func parseScript(path string) ([]step, error) {
 	return steps, sc.Err()
 }
 
-// Control sequences a script may send, to drive the agent into a state worth
-// recording. kolo never exposes them to a guest.
+// Control sequences kolo never exposes to a guest.
 var keys = map[string]string{
 	"enter": "\r",
 	"esc":   "\x1b",
@@ -177,8 +153,8 @@ func do(a *agent.Agent, screen *term.Screen, out, name string, i int, s step) er
 		time.Sleep(s.dur)
 
 	case "send":
-		// Text and Enter as separate writes. Bundled together they read as a
-		// paste and the line is never submitted (docs/probe-findings.md #3).
+		// Text and Enter as separate writes: bundled they read as a paste and
+		// never submit (probe-findings #3).
 		log.Printf("  [%02d] send %q", i, s.arg)
 		if _, err := a.Write([]byte(s.arg)); err != nil {
 			return err

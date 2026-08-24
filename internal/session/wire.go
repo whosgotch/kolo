@@ -7,15 +7,9 @@ import (
 	"github.com/coder/websocket"
 )
 
-// A viewer that has stopped acknowledging cannot hold up the screen it is
-// watching.
 const writeTimeout = 10 * time.Second
 
-// Send puts one message on the wire: terminal output as binary, anything kolo
-// says about it as text, so neither has to be told apart by looking inside.
-//
-// The host sends to the hub and the hub sends to the browser, and both are
-// carrying the same messages to something that subscribed the same way.
+// Send writes one message: control frames as text, terminal output as binary.
 func Send(ctx context.Context, conn *websocket.Conn, m Message) error {
 	kind := websocket.MessageBinary
 	if m.Control {

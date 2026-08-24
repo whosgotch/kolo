@@ -11,20 +11,10 @@ import (
 	"github.com/whosgotch/kolo/internal/term"
 )
 
-// The real adapter's markers rather than a copy of them, so a kind that changes
-// one of its strings is a failure here rather than a detector quietly reading
-// screens nobody draws any more.
 var claude = adapter.For("claude").Markers
 
-// The same for opencode: the real markers, so a release that moves its status
-// bar is a failure here rather than a kind that quietly reads as unknown.
 var opencode = adapter.For("opencode").Markers
 
-// Reconstructions of the three states, written out rather than recorded: a real
-// recording carries somebody's email and paths, which is not a thing to commit.
-// What the detector reads is the arrangement, and that is reproduced here.
-//
-// A real recording can still be replayed locally; see TestOfARecording.
 const (
 	idleScreen = `
 ╭─── Claude Code ──────────────────────────────────────────────╮
@@ -58,8 +48,6 @@ const (
  Esc to cancel · Tab to amend
 `
 
-	// The one that made the gate necessary. The input box is drawn, exactly as
-	// when idle, and the only difference is the hint under it.
 	busyScreen = `
 ❯ run in bash: for i in 1 2 3; do echo $i; sleep 2; done
 
@@ -72,9 +60,6 @@ const (
   ⏸ manual mode on · esc to interrupt · ← for agents
 `
 
-	// v2.1.234, where the hint the detector was written against is gone: the
-	// footer carries the permission mode and the agents hint, and idle differs
-	// from working only by what is missing (probe-findings #7).
 	idleScreenNow = `
                                                                      ● high · /effort
 ────────────────────────────────────────────────────────────────
@@ -92,11 +77,6 @@ const (
   ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
 `
 
-	// The same version again, with something in the input box: every segment of
-	// the footer but the permission mode is gone. A line waiting in the box is
-	// what a failed submit leaves behind, and it must not read as unknown — the
-	// agent is idle, and it is the state a member is looking at when they wonder
-	// why nothing happened.
 	idleScreenTyped = `
 ────────────────────────────────────────────────────────────────
 ❯ Dana: count slowly from one to sixty
@@ -104,9 +84,6 @@ const (
   ⏵⏵ auto mode on (shift+tab to cycle)
 `
 
-	// The same version's auto-mode question, which is drawn above the input box
-	// rather than in place of it — so the idle footer is on screen underneath a
-	// question nobody has answered.
 	autoModeScreen = `
   9. Nine — one shy of double digits.
 
@@ -205,10 +182,6 @@ func TestOf(t *testing.T) {
 	}
 }
 
-// TestAQuestionOverTheInputBoxIsStillAQuestion pins the arrangement where the
-// auto-mode question draws above the input box and leaves the idle footer on
-// screen, so both sets of markers are up at once and only the order they are
-// tested in reads it as a question.
 func TestAQuestionOverTheInputBoxIsStillAQuestion(t *testing.T) {
 	if !hasAnyOf(autoModeScreen, claude.Idle) {
 		t.Fatal("fixture no longer carries the idle footer; it is the point of this test")
@@ -218,8 +191,6 @@ func TestAQuestionOverTheInputBoxIsStillAQuestion(t *testing.T) {
 	}
 }
 
-// hasAnyOf is the any-of match the detector does, for tests that assert about a
-// screen rather than about a verdict.
 func hasAnyOf(screen string, markers []string) bool {
 	for _, m := range markers {
 		if strings.Contains(screen, m) {
@@ -229,8 +200,6 @@ func hasAnyOf(screen string, markers []string) bool {
 	return false
 }
 
-// TestUnrecognisedScreensHold is the property the whole package is for. A
-// screen that means nothing to the detector must say so.
 func TestUnrecognisedScreensHold(t *testing.T) {
 	screens := map[string]string{
 		"empty":             "",
@@ -248,8 +217,6 @@ func TestUnrecognisedScreensHold(t *testing.T) {
 	}
 }
 
-// TestDialogWinsOverIdle pins the tie-break. If both sets of markers are on
-// screen at once, the question is the safer reading.
 func TestDialogWinsOverIdle(t *testing.T) {
 	both := "Do you want to create note.txt?\n ❯ 1. Yes\n Esc to cancel\n ? for shortcuts\n"
 	if got := claude.Of(both); got != detect.Dialog {
@@ -257,7 +224,6 @@ func TestDialogWinsOverIdle(t *testing.T) {
 	}
 }
 
-// TestOpencodeStates pins the kind against reconstructions of its three states.
 func TestOpencodeStates(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -278,9 +244,6 @@ func TestOpencodeStates(t *testing.T) {
 	}
 }
 
-// TestOpencodeReadsBusyWhileTheIdleHintsAreUp pins why the reading order
-// matters for this kind: the working status bar carries the idle hints too,
-// and only busy being read first keeps it from passing as idle.
 func TestOpencodeReadsBusyWhileTheIdleHintsAreUp(t *testing.T) {
 	if !hasAnyOf(ocBusyScreen, opencode.Idle) {
 		t.Fatal("fixture no longer carries the idle hints; it is the point of this test")
@@ -290,8 +253,6 @@ func TestOpencodeReadsBusyWhileTheIdleHintsAreUp(t *testing.T) {
 	}
 }
 
-// TestOpencodeUnrecognisedScreensHold: another tool's screen says nothing to
-// this kind, and neither does a screen of its own missing the bar.
 func TestOpencodeUnrecognisedScreensHold(t *testing.T) {
 	screens := map[string]string{
 		"another agent":  "$ some other tool\n> waiting for input\n",
@@ -307,28 +268,18 @@ func TestOpencodeUnrecognisedScreensHold(t *testing.T) {
 	}
 }
 
-// TestBusyKeepsItsInputBox is why this state needed a marker of its own. It draws
-// the input box, so the absence of the idle footer is the only thing between a
-// message and a child process's stdin.
 func TestBusyKeepsItsInputBox(t *testing.T) {
-	// The current version's footer carries the idle hint while it works, so this
-	// says what it can: the busy screen must not read as idle, whatever it shows.
 	if got := claude.Of(busyScreenNow); got != detect.Busy {
 		t.Errorf("the current version's busy screen reads as %s", got)
 	}
 	if strings.Contains(busyScreen, "? for shortcuts") {
 		t.Error("the busy screen carries the idle footer, so it reads as safe to send")
 	}
-	// Two footers, two states. A case-insensitive match would fold them
-	// together and a busy agent would read as a dialog.
 	if strings.Contains(busyScreen, claude.DialogFooter) {
 		t.Error("the busy screen reads as a dialog")
 	}
 }
 
-// TestAKindWithNoMarkersRecognisesNothing is what makes an agent kolo has no
-// adapter for watchable rather than drivable. An empty marker must match no
-// screen, not every screen.
 func TestAKindWithNoMarkersRecognisesNothing(t *testing.T) {
 	var unknownKind detect.Markers
 	for name, screen := range map[string]string{
@@ -345,10 +296,6 @@ func TestAKindWithNoMarkersRecognisesNothing(t *testing.T) {
 	}
 }
 
-// A kind that says nothing while it waits, so the only thing telling working
-// from waiting is that one of them is still changing (probe-findings #6). Its
-// working line carries Claude Code's string exactly, as the second kind probed
-// does.
 var settling = detect.Markers{
 	Busy:           "esc to interrupt",
 	DialogFooter:   "Press enter to continue",
@@ -366,11 +313,7 @@ func TestSilenceIsIdleOnceItHasLasted(t *testing.T) {
 	}{
 		{"still streaming", reply, time.Second, detect.Unknown},
 		{"nothing has moved for long enough", reply, 3 * time.Second, detect.Idle},
-		// The screen an agent has before it has drawn anything. Waiting on that is
-		// not the same as waiting for a person.
 		{"blank, however long", "   \n\n", time.Hour, detect.Unknown},
-		// Stillness is only ever consulted about a screen that said nothing. A
-		// working line that has been up for a minute is a minute of working.
 		{"working and quiet", "◦ Working (60s • esc to interrupt)\n", time.Minute, detect.Busy},
 		{"a question nobody has answered", " › 1. Yes\n   2. No\n Press enter to continue\n", time.Hour, detect.Dialog},
 	}
@@ -383,9 +326,6 @@ func TestSilenceIsIdleOnceItHasLasted(t *testing.T) {
 	}
 }
 
-// TestSilenceMeansNothingToAKindThatSpeaks: settling is opt-in, and a kind whose
-// screen says when it is idle must never be read by how long it has been quiet.
-// Claude Code may sit on an unrecognised screen for as long as it likes.
 func TestSilenceMeansNothingToAKindThatSpeaks(t *testing.T) {
 	for _, still := range []time.Duration{0, time.Second, time.Hour} {
 		if got := claude.OfSettled("some other tool\n> waiting for input\n", still); got != detect.Unknown {
@@ -394,11 +334,6 @@ func TestSilenceMeansNothingToAKindThatSpeaks(t *testing.T) {
 	}
 }
 
-// TestOfARecording replays a real capture, exercising arrangements no handwritten
-// screen will think of. Recordings are not committed; make your own with
-// cmd/kolorec and point this at it:
-//
-//	KOLO_RECORDING=/tmp/rec/idle.raw KOLO_STATE=idle go test ./internal/detect
 func TestOfARecording(t *testing.T) {
 	path, want := os.Getenv("KOLO_RECORDING"), os.Getenv("KOLO_STATE")
 	if path == "" {
@@ -409,7 +344,6 @@ func TestOfARecording(t *testing.T) {
 		t.Fatal(err)
 	}
 	screen := term.New(120, 40)
-	// In chunks, because that is how the bytes arrive off a PTY.
 	for i := 0; i < len(raw); i += 64 {
 		screen.Write(raw[i:min(i+64, len(raw))])
 	}

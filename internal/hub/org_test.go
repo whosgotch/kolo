@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// orgFile writes a config and returns its path.
 func orgFile(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "org.json")
@@ -43,8 +42,6 @@ func TestLoad(t *testing.T) {
 	}
 }
 
-// TestVerifyRejects is the important one: everything that is not a member's
-// token has to come back as nobody.
 func TestVerifyRejects(t *testing.T) {
 	token, hash, err := NewToken()
 	if err != nil {
@@ -69,8 +66,6 @@ func TestVerifyRejects(t *testing.T) {
 	}
 }
 
-// TestVerifyIgnoresSurroundingSpace covers a token pasted out of a chat message
-// or a file, which is how they actually travel.
 func TestVerifyIgnoresSurroundingSpace(t *testing.T) {
 	token, hash, _ := NewToken()
 	org := &Org{Name: "acme", Members: []Member{{ID: "artem", TokenHash: hash}}}
@@ -80,7 +75,6 @@ func TestVerifyIgnoresSurroundingSpace(t *testing.T) {
 	}
 }
 
-// TestRevocation pins what removing a member from the file does.
 func TestRevocation(t *testing.T) {
 	token, hash, _ := NewToken()
 	org := &Org{Name: "acme", Members: []Member{{ID: "artem", TokenHash: hash}}}
@@ -117,9 +111,6 @@ func TestLoadReportsAMissingFile(t *testing.T) {
 	}
 }
 
-// TestNewTokenIsUnpredictable is a smoke test, not a measure of randomness: it
-// would catch a token generated from something fixed, which is the mistake worth
-// catching.
 func TestNewTokenIsUnpredictable(t *testing.T) {
 	seen := make(map[string]bool, 100)
 	for range 100 {
@@ -149,9 +140,6 @@ func mustToken(t *testing.T) string {
 	return token
 }
 
-// TestTokenKindsDoNotCross is the point of having two lists. A host's token
-// carries the power to run processes on a machine and a member's does not, so
-// one resolving as the other would be an escalation in either direction.
 func TestTokenKindsDoNotCross(t *testing.T) {
 	memberToken, memberHash, err := NewToken()
 	if err != nil {
@@ -199,9 +187,6 @@ func TestAnIdIsUniqueAcrossMembersAndHosts(t *testing.T) {
 	}
 }
 
-// TestAddPutsThemInTheRightList is the point of writing the org file rather than
-// printing an entry to paste into it: nobody has to decide which list a hash
-// belongs in, and a person and a machine do not end up in each other's.
 func TestAddPutsThemInTheRightList(t *testing.T) {
 	path := orgFile(t, `{"org": "acme"}`)
 
@@ -220,7 +205,6 @@ func TestAddPutsThemInTheRightList(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Read back from disk, because what the hub will do with it is read the file.
 	org, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -256,8 +240,6 @@ func TestAddKeepsWhoIsAlreadyThere(t *testing.T) {
 	}
 }
 
-// TestAddRefusesADuplicate: the hub would refuse this org at startup, so it is
-// refused now, while there is somebody to tell.
 func TestAddRefusesADuplicate(t *testing.T) {
 	path := orgFile(t, `{"org": "acme"}`)
 	_, hash, err := NewToken()
@@ -270,9 +252,6 @@ func TestAddRefusesADuplicate(t *testing.T) {
 	if _, err := AddHost(path, Host{ID: "artem", TokenHash: hash}); err == nil {
 		t.Fatal("a machine took a name a member already had")
 	}
-
-	// The refusal must not have written anything: an org file left holding the
-	// entry it just refused is worse than the entry never arriving.
 	org, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -307,7 +286,6 @@ func TestJoinCarriesTheHubAndTheToken(t *testing.T) {
 	if gotHub != "https://hub.acme.com" || gotToken != token {
 		t.Errorf("came back as %q, %q", gotHub, gotToken)
 	}
-	// Pasting is how it travels, and a paste picks up whitespace.
 	if _, _, err := ParseJoin("  " + joined + "\n"); err != nil {
 		t.Errorf("refused a join string with space around it: %v", err)
 	}

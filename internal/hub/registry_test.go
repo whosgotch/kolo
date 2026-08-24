@@ -34,8 +34,6 @@ func TestAddAndList(t *testing.T) {
 	}
 }
 
-// TestAddRefuses covers the rules a member is told about in the response to
-// their own request, rather than finding out from a list that never changes.
 func TestAddRefuses(t *testing.T) {
 	r := registryFixture(t)
 	if _, err := r.Add(agentFixture("checkups", "/work/api")); err != nil {
@@ -65,8 +63,6 @@ func TestAddRefuses(t *testing.T) {
 	}
 }
 
-// TestLeavingTakesTheAgentsWithIt is the honest version of a list: an agent
-// nobody can reach is not shown as though they could.
 func TestLeavingTakesTheAgentsWithIt(t *testing.T) {
 	r := registryFixture(t)
 	if _, err := r.Add(agentFixture("checkups", "/work/api")); err != nil {
@@ -119,9 +115,6 @@ func TestValidName(t *testing.T) {
 	}
 }
 
-// TestJoinRestoresWhatTheHostIsRunning covers a dropped connection. The
-// processes never stopped; only the hub's knowledge of them did, and the host is
-// the only party that still knows.
 func TestJoinRestoresWhatTheHostIsRunning(t *testing.T) {
 	r := registryFixture(t)
 	if _, err := r.Add(agentFixture("checkups", "/work/api")); err != nil {

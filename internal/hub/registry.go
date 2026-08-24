@@ -13,8 +13,7 @@ import (
 	"unicode/utf8"
 )
 
-// An agent is Starting from the moment the org asks for it until the host says
-// otherwise, so a name is taken and shown without waiting for a round trip.
+// Agent status values. Starting lasts until the host reports otherwise.
 const (
 	StatusStarting = "starting"
 	StatusRunning  = "running"
@@ -23,23 +22,13 @@ const (
 
 const maxLabel = 64
 
-// AllowAny is the -allow entry that lends every command the host can find on
-// its PATH, named rather than enumerated. It is an explicit act — the docs'
-// warning that -allow bounds what starts, not what a running agent reaches,
-// goes double for it — and only the host says it; nothing here implies it.
-//
-// A command under it still has to be named like one on PATH: the program name
-// alone, no directory. A host that wants /opt/tools/whatever lends its
-// directory by putting it on PATH, and the check stays the same shape
-// everywhere.
+// AllowAny is the -allow entry that lends every command on the host's PATH.
+// A command under it is still named like one on PATH: program name, no directory.
 const AllowAny = "*"
 
 // runs reports whether a host lending allow may be asked to start command:
 // one of the command lines it named, or anything on PATH when it lent '*'.
-//
-// Only the syntax is checked here, because the hub cannot know what another
-// machine has installed. Whether the program exists is the host's own check,
-// at spawn time, where it counts.
+// Syntax only; whether the program exists is checked on the host.
 func runs(allow []string, command string) bool {
 	if slices.Contains(allow, command) {
 		return true
@@ -61,16 +50,11 @@ func Program(command string) string {
 	return fields[0]
 }
 
-// resumesByName reports whether this host lent this command as one that names
-// its conversation on restart. Only commands from ByName qualify, and ByName
-// is the host's word: the hub has no kinds to ask.
 func (h *host) resumesByName(command string) bool {
 	return slices.Contains(h.info.ByName, command)
 }
 
-// Agent is one agent the org has asked a host to run. The name is the
-// identifier: there is no second id underneath it, and reusing a name means
-// stopping the agent that has it.
+// Agent is one agent a host was asked to run. Name is its identifier.
 type Agent struct {
 	Name      string    `json:"name"`
 	Host      string    `json:"host"`
@@ -82,8 +66,6 @@ type Agent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// HostInfo is a connected host as the org sees it. The browser needs the
-// directories and commands to offer a choice that will not be refused.
 type HostInfo struct {
 	ID    string   `json:"id"`
 	Dirs  []string `json:"dirs"`
@@ -110,11 +92,8 @@ type host struct {
 	agents map[string]*Agent
 }
 
-// Registry is every connected host and the agents on them.
-//
-// A host that disconnects takes its agents with it: they may still be running,
-// but nothing here can reach them, and listing an agent nobody can watch or stop
-// is worse than a short list. The host re-announces what it has on return.
+// Registry tracks connected hosts and their agents. A host that disconnects
+// takes its agents with it.
 type Registry struct {
 	mu    sync.Mutex
 	hosts map[string]*host
@@ -125,13 +104,8 @@ func NewRegistry() *Registry {
 	return &Registry{hosts: map[string]*host{}, now: time.Now}
 }
 
-// Join records a connected host and the agents it says it is already running. A
-// second connection claiming the same host id is refused: two processes answering
-// for one machine would make every command ambiguous.
-//
-// The running set is the host's word — it is the machine with the processes, and
-// after a dropped connection the only party that knows. A name another host has
-// claimed is skipped.
+// Join records a host and the agents it reports already running. A second
+// connection for the same id is refused; names another host claimed are skipped.
 func (r *Registry) Join(id string, dirs, allow, found, byName []string, running []Agent, send Sender) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -183,7 +157,7 @@ func (r *Registry) Hosts() []HostInfo {
 	return out
 }
 
-// Agents lists every agent the org can currently reach, oldest first.
+// Agents lists every reachable agent, oldest first.
 func (r *Registry) Agents() []Agent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -212,11 +186,8 @@ func (r *Registry) Agent(name string) (Agent, bool) {
 	return Agent{}, false
 }
 
-// Add records an agent and returns the host's sender, so the caller can dispatch
-// the spawn without holding the lock.
-//
-// Every rule the host enforces is checked here too, so the person creating an
-// agent is told why it will not work. The host's own check is the one that counts.
+// Add records an agent and returns its host's sender, for dispatching the
+// spawn without holding the lock.
 func (r *Registry) Add(a Agent) (Sender, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -238,16 +209,9 @@ func (r *Registry) Add(a Agent) (Sender, error) {
 		}
 		return nil, fmt.Errorf("%s does not run %s", a.Host, a.Command)
 	}
-	// One agent of each kind to a directory. Resuming is how an agent comes
-	// back from a restart, and a kind that asks for "the last conversation
-	// here" reads that from its own store of conversations — so two of the
-	// same kind would come back as each other, while different kinds never
-	// see one another's history at all. A kind that proves which conversation
-	// is its own, by naming or pinning one, may keep company with itself.
-	//
-	// Two agents editing one working tree still collide; that is the org's
-	// judgment rather than kolo's, and the create form says so where it
-	// applies.
+	// One agent of each kind to a directory: a kind resuming "the last
+	// conversation here" would come back as its neighbour. Naming or pinning
+	// an id proves ownership, so such kinds may share.
 	for _, other := range h.agents {
 		if other.Dir != a.Dir {
 			continue
@@ -305,9 +269,7 @@ func (r *Registry) find(name string) (*Agent, *host) {
 	return nil, nil
 }
 
-// ValidName reports whether a name is one an agent may have. It ends up in a
-// URL, a log line and a sentence said out loud, so it is kept to a shape all
-// three can carry.
+// ValidName reports whether s is a usable agent name in URLs and log lines.
 func ValidName(s string) bool {
 	if len(s) == 0 || len(s) > 32 {
 		return false
@@ -323,9 +285,8 @@ func ValidName(s string) bool {
 	return true
 }
 
-// label reduces a string a client chose for itself to something safe to print: a
-// control character here is an escape sequence in somebody else's terminal. The
-// bound is the caller's, because a name and a sentence are not the same length.
+// label reduces a client-chosen string to something safe to print; the bound
+// is the caller's.
 func label(s string, max int) string {
 	var b strings.Builder
 	for _, r := range strings.ToValidUTF8(s, "") {
@@ -333,7 +294,6 @@ func label(s string, max int) string {
 		case r == '\n' || r == '\r' || r == '\t':
 			b.WriteRune(' ')
 		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
-			// dropped
 		default:
 			b.WriteRune(r)
 		}

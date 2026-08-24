@@ -1,8 +1,4 @@
-// Package session holds one agent's screen and the viewers watching it.
-//
-// Used twice over: by the viewer an agent serves on its own machine, and by the
-// hub, which holds one per agent. Both need a screen kept current, a way to catch
-// somebody up to it, and a fan-out of what happens next.
+// Package session holds one agent's screen and fans it out to viewers.
 package session
 
 import (
@@ -14,31 +10,22 @@ import (
 	"github.com/whosgotch/kolo/internal/term"
 )
 
-// How far a viewer may fall behind, in messages, before it is dropped rather
-// than slowed down.
 const viewerBuffer = 256
 
-// Message is one thing to send to the viewer: either a control frame or a chunk
-// of the agent's raw terminal output.
+// Message is one frame on the viewer websocket.
 type Message struct {
 	Control bool
 	Data    []byte
 }
 
-// Session owns the virtual terminal and fans the agent's output out to viewers.
-// Every viewer gets its own subscription: guests watch together, and a page that
-// reconnects on its own would otherwise take the screen from itself.
+// Session owns the virtual terminal and fans its output out to every viewer.
 type Session struct {
-	// How the agent's kind wears its state, so that what the session says about
-	// the screen is read with the markers of the agent drawing it.
 	markers detect.Markers
 
 	mu     sync.Mutex
 	screen *term.Screen
 	subs   map[*subscriber]struct{}
-	// The screen as it last looked, and when it started looking that way. Kept
-	// only for a kind whose idle is silence, because keeping it costs a copy of
-	// the screen per write and the kinds that announce themselves do not need it.
+	// Only used for markers whose idle is silence.
 	settled   string
 	settledAt time.Time
 }
@@ -50,18 +37,13 @@ type subscriber struct {
 
 func New(cols, rows int, markers detect.Markers) *Session {
 	return &Session{
-		markers: markers,
-		screen:  term.New(cols, rows),
-		subs:    map[*subscriber]struct{}{},
-		// From now rather than the zero time, so an agent that has not drawn
-		// anything yet has not been still since the beginning of time.
+		markers:   markers,
+		screen:    term.New(cols, rows),
+		subs:      map[*subscriber]struct{}{},
 		settledAt: time.Now(),
 	}
 }
 
-// Markers are what this session reads its screen with. The host sends them on
-// with the screen itself, so the hub reads that screen the same way rather than
-// keeping a table of its own to look the agent up in.
 func (s *Session) Markers() detect.Markers { return s.markers }
 
 func (s *Session) Viewers() int {
@@ -70,9 +52,8 @@ func (s *Session) Viewers() int {
 	return len(s.subs)
 }
 
-// Write feeds agent output into the virtual terminal and on to the viewers. It
-// never fails and never blocks on a viewer: this sits between the agent and the
-// host's own terminal, so stalling here would stall the host.
+// Write never blocks: it sits inline between the agent and the host, so
+// stalling on a slow viewer would stall the agent.
 func (s *Session) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -83,25 +64,19 @@ func (s *Session) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// State reads the agent's screen and reports whether it could take a line now —
-// the same screen the viewer sees, not a second one kept alongside.
 func (s *Session) State() detect.State {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.markers.OfSettled(s.screen.Text(), time.Since(s.settledAt))
 }
 
-// Screen is the agent's screen and how long it has been that same picture, read
-// together because a kind whose idle is silence needs both to be true at once.
 func (s *Session) Screen() (text string, still time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.screen.Text(), time.Since(s.settledAt)
 }
 
-// noteChange records when the screen last became what it is now. Bytes arriving
-// are not a change: a repaint that redraws the same picture, or output that
-// scrolls off, leaves the screen where it was. Callers must hold s.mu.
+// Callers must hold s.mu.
 func (s *Session) noteChange() {
 	if s.markers.Settle == 0 {
 		return
@@ -111,16 +86,12 @@ func (s *Session) noteChange() {
 	}
 }
 
-// Text is the agent's screen as it stands. It is what the relay reads before
-// writing anything: the state a key may be sent in.
 func (s *Session) Text() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.screen.Text()
 }
 
-// Announce sends the viewer a control frame describing something that happened
-// to a guest's message.
 func (s *Session) Announce(event any) {
 	b, err := json.Marshal(event)
 	if err != nil {
@@ -131,7 +102,6 @@ func (s *Session) Announce(event any) {
 	s.send(Message{Control: true, Data: b})
 }
 
-// Resize follows the host's terminal and tells the viewer to match.
 func (s *Session) Resize(cols, rows int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -140,12 +110,8 @@ func (s *Session) Resize(cols, rows int) {
 	s.send(sizeMessage(cols, rows))
 }
 
-// Subscribe adds a viewer and returns what it needs to start: the size, a repaint
-// of the screen as it stands, and the stream of what happens next.
-//
-// The snapshot and the subscription are made in one critical section with Write.
-// A gap between them means output received twice or not at all, and neither is
-// recoverable — a half-applied escape sequence corrupts the screen from then on.
+// Subscribe takes the backlog and registers the stream in the same critical
+// section as Write, so a joining viewer misses or duplicates no bytes.
 func (s *Session) Subscribe() (backlog []Message, stream <-chan Message, cancel func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -163,8 +129,7 @@ func (s *Session) Subscribe() (backlog []Message, stream <-chan Message, cancel 
 	}
 }
 
-// Close ends the session and disconnects everyone watching: the agent behind the
-// screen has gone or been replaced, so there is nothing to catch anyone up to.
+// Close disconnects every viewer.
 func (s *Session) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -173,11 +138,8 @@ func (s *Session) Close() {
 	}
 }
 
-// send queues a message for every viewer, dropping any that has fallen too far
-// behind. Skipping bytes is not an option: a viewer renders an escape-sequence
-// stream, so a gap corrupts it permanently, where a drop costs one reconnect.
-//
-// Callers must hold s.mu.
+// send drops any viewer that's fallen behind: skipping bytes would corrupt
+// its escape-sequence stream. Callers must hold s.mu.
 func (s *Session) send(m Message) {
 	for sub := range s.subs {
 		select {
@@ -188,7 +150,7 @@ func (s *Session) send(m Message) {
 	}
 }
 
-// drop disconnects one viewer. Callers must hold s.mu.
+// Callers must hold s.mu.
 func (s *Session) drop(sub *subscriber) {
 	if !sub.closed {
 		sub.closed = true

@@ -11,17 +11,12 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// TestAKindIsTheBinaryNotTheCommandLine: a host lends a command line, and what
-// kolo knows about it is decided by the program at the front of it. Neither the
-// directory it was found in nor the flags it was lent with change the kind.
 func TestAKindIsTheBinaryNotTheCommandLine(t *testing.T) {
 	for _, command := range []string{"claude", "/opt/homebrew/bin/claude", "claude --model opus"} {
 		if got := For(command).Resume; !slices.Equal(got, []string{"--resume", SessionPlaceholder}) {
 			t.Errorf("%q resumes with %v", command, got)
 		}
 	}
-	// An agent kind kolo has no adapter for is inert rather than guessed at: it
-	// cannot be resumed, so every restart of one is fresh.
 	for _, command := range []string{"something-else", "", "   "} {
 		if got := For(command).Resume; got != nil {
 			t.Errorf("%q was given %v to resume with", command, got)
@@ -36,8 +31,6 @@ func TestArgvSplitsOnWhitespace(t *testing.T) {
 	}
 }
 
-// TestLoadAddsAKindKoloDoesNotShip is the point of the file: an org running an
-// agent kolo has never heard of describes it rather than waiting for a release.
 func TestLoadAddsAKindKoloDoesNotShip(t *testing.T) {
 	defer restoreKinds()()
 	path := filepath.Join(t.TempDir(), "kinds.json")
@@ -56,14 +49,11 @@ func TestLoadAddsAKindKoloDoesNotShip(t *testing.T) {
 	if For("robo").Markers.Busy != "thinking" {
 		t.Error("robo's screen is not read with robo's markers")
 	}
-	// The kinds kolo ships with survive a file that does not mention them.
 	if For("claude").Resume == nil {
 		t.Error("configuring a kind lost the built-in ones")
 	}
 }
 
-// TestLoadReplacesAKindKoloDoesShip: an agent that moved its footer between
-// releases is fixed on the machine running it, without one of kolo.
 func TestLoadReplacesAKindKoloDoesShip(t *testing.T) {
 	defer restoreKinds()()
 	path := filepath.Join(t.TempDir(), "kinds.json")
@@ -77,8 +67,6 @@ func TestLoadReplacesAKindKoloDoesShip(t *testing.T) {
 	}
 }
 
-// TestLoadRefusesWhatWouldGoUnnoticed: a file kolo cannot read, and an entry
-// that would leave the agent exactly as unreadable as saying nothing.
 func TestLoadRefusesWhatWouldGoUnnoticed(t *testing.T) {
 	defer restoreKinds()()
 	dir := t.TempDir()
@@ -91,7 +79,6 @@ func TestLoadRefusesWhatWouldGoUnnoticed(t *testing.T) {
 	}
 }
 
-// TestLoadWithoutAFileIsFine: most machines run the kinds kolo knows.
 func TestLoadWithoutAFileIsFine(t *testing.T) {
 	added, err := Load(filepath.Join(t.TempDir(), "absent.json"))
 	if err != nil || added != nil {
@@ -99,7 +86,6 @@ func TestLoadWithoutAFileIsFine(t *testing.T) {
 	}
 }
 
-// restoreKinds puts the shipped table back, Load having replaced it.
 func restoreKinds() func() {
 	was := kinds
 	return func() { kinds = was }
@@ -112,8 +98,6 @@ func write(t *testing.T, path, body string) {
 	}
 }
 
-// TestAKindThatResumesByNamingAConversation is the gap this closes: an agent
-// whose resume command wants an id rather than "the last one".
 func TestAKindThatResumesByNamingAConversation(t *testing.T) {
 	defer restoreKinds()()
 	path := filepath.Join(t.TempDir(), "kinds.json")
@@ -132,13 +116,9 @@ func TestAKindThatResumesByNamingAConversation(t *testing.T) {
 	if !ok || !slices.Equal(got, []string{"--resume", "9f3c-11ab"}) {
 		t.Errorf("resumes with %v, %v", got, ok)
 	}
-	// A kind that needs an id and has never seen one cannot resume. Starting
-	// fresh and saying so beats a command line with a hole in it.
 	if got, ok := robo.ResumeArgs(""); ok {
 		t.Errorf("resumed a conversation it cannot name: %v", got)
 	}
-	// A kind that pins its identities needs no screen to read: the id is the
-	// host's own, minted at birth and filled in wherever it is asked for.
 	if got, ok := For("claude").ResumeArgs("9f3c-11ab"); !ok || !slices.Equal(got, []string{"--resume", "9f3c-11ab"}) {
 		t.Errorf("claude resumes with %v, %v", got, ok)
 	}
@@ -147,9 +127,6 @@ func TestAKindThatResumesByNamingAConversation(t *testing.T) {
 	}
 }
 
-// TestTheLastConversationOnScreenWins: an agent told to start a new conversation
-// says so on the same screen, and resuming the one before it would bring back
-// what somebody just cleared.
 func TestTheLastConversationOnScreenWins(t *testing.T) {
 	robo := Adapter{Resume: []string{"-r", "{session}"}, Session: `session: (\S+)`}
 	if id := robo.SessionFrom("session: one\r\ncleared\r\nsession: two\r\n"); id != "two" {
@@ -158,15 +135,11 @@ func TestTheLastConversationOnScreenWins(t *testing.T) {
 	if id := robo.SessionFrom("nothing about a session here"); id != "" {
 		t.Errorf("read %q off a screen that carries none", id)
 	}
-	// A pattern that drags in half the screen is a pattern to fix, not an id to
-	// put on a command line.
 	if id := robo.SessionFrom("session: " + strings.Repeat("x", maxSession+1)); id != "" {
 		t.Errorf("read %d characters as an id", len(id))
 	}
 }
 
-// TestLoadRefusesAHalfDescribedSession: each half is useless without the other,
-// and both fail at a restart somebody was counting on rather than at startup.
 func TestLoadRefusesAHalfDescribedSession(t *testing.T) {
 	defer restoreKinds()()
 	dir := t.TempDir()
@@ -184,8 +157,6 @@ func TestLoadRefusesAHalfDescribedSession(t *testing.T) {
 	}
 }
 
-// TestTheInterruptKeyBelongsToTheKind: kolo sent Esc to everything, which is a
-// key that clears the input box of an agent that stops on Ctrl-C.
 func TestTheInterruptKeyBelongsToTheKind(t *testing.T) {
 	for _, c := range []struct {
 		named string
@@ -204,8 +175,6 @@ func TestTheInterruptKeyBelongsToTheKind(t *testing.T) {
 	}
 }
 
-// TestLoadRefusesAKeyNobodyCanPress: a key kolo cannot spell is a stop button
-// that does nothing, found at the moment somebody needs it most.
 func TestLoadRefusesAKeyNobodyCanPress(t *testing.T) {
 	defer restoreKinds()()
 	path := filepath.Join(t.TempDir(), "kinds.json")

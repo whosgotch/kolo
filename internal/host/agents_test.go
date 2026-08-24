@@ -28,7 +28,6 @@ func spec(name, dir, command string) hub.Agent {
 	return hub.Agent{Name: name, Dir: dir, Command: command, CreatedBy: hub.Person{ID: "artem", Name: "Artem"}}
 }
 
-// nextReport takes the next thing the host would tell the hub.
 func nextReport(t *testing.T, a *Agents) statusReport {
 	t.Helper()
 	select {
@@ -60,7 +59,6 @@ func TestStartAndStop(t *testing.T) {
 	a.Stop("checkups")
 	waitFor(t, func() bool { return len(a.Names()) == 0 })
 
-	// A stop is not a failure, so nothing further is reported.
 	select {
 	case r := <-a.reports:
 		t.Errorf("stopping reported %+v", r)
@@ -68,8 +66,6 @@ func TestStartAndStop(t *testing.T) {
 	}
 }
 
-// TestStartRefuses: the hub asks, but this is the machine that would run the
-// process, so this is where a refusal counts.
 func TestStartRefuses(t *testing.T) {
 	a, dir := agentsFixture(t)
 	if err := a.Start(spec("checkups", dir, "cat")); err != nil {
@@ -123,8 +119,6 @@ func waitFor(t *testing.T, cond func() bool) {
 	t.Fatal("timed out waiting")
 }
 
-// TestAnAgentThatDiesComesBack is what long-lived means here: nobody is at this
-// machine, so something else has to start it again.
 func TestAnAgentThatDiesComesBack(t *testing.T) {
 	defer quickRestarts()()
 	a, dir := agentsFixture(t)
@@ -137,7 +131,7 @@ func TestAnAgentThatDiesComesBack(t *testing.T) {
 	}
 	first := processOf(t, a, "checkups")
 
-	first.Close() // as if it had crashed: no Stop, so nothing marked it stopping
+	first.Close() // as if it had crashed: no Stop marked it stopping
 
 	if got := nextReport(t, a); got.Status != hub.StatusStarting {
 		t.Fatalf("after dying, reported %+v", got)
@@ -148,7 +142,6 @@ func TestAnAgentThatDiesComesBack(t *testing.T) {
 	waitFor(t, func() bool { return processOf(t, a, "checkups") != first })
 }
 
-// TestGivingUp: an agent that cannot stay up would otherwise restart for ever.
 func TestGivingUp(t *testing.T) {
 	defer quickRestarts()()
 	a, dir := agentsFixture(t)
@@ -171,8 +164,6 @@ func TestGivingUp(t *testing.T) {
 	}
 }
 
-// TestTheStateFileBringsAgentsBack covers a host restarting: the org asked for
-// these agents, and a machine coming back should bring them with it.
 func TestTheStateFileBringsAgentsBack(t *testing.T) {
 	dir := t.TempDir()
 	state := filepath.Join(t.TempDir(), "agents.json")
@@ -195,8 +186,6 @@ func TestTheStateFileBringsAgentsBack(t *testing.T) {
 	if len(written.Agents) != 1 || written.Agents[0].Spec.CreatedBy.ID != "artem" {
 		t.Fatalf("wrote %+v; who asked for it has to survive too", written)
 	}
-	// What the machine was started with, so kolo doctor does not have to be
-	// handed the flags kolo up was given.
 	if !slices.Equal(written.Lends, []string{dir}) || !slices.Equal(written.Allows, []string{"cat"}) {
 		t.Errorf("wrote %+v; what the machine lends has to survive too", written)
 	}
@@ -225,23 +214,17 @@ func processOf(t *testing.T, a *Agents, name string) *agent.Agent {
 	return p.agent
 }
 
+// quickRestarts shrinks restartDelay so tests don't wait out the real one.
 func quickRestarts() func() {
 	was := restartDelay
 	restartDelay = 10 * time.Millisecond
 	return func() { restartDelay = was }
 }
 
-// fakeAgent writes a script that shows the marker the detector reads as idle and
-// then waits on stdin, so the gate can be exercised without a real agent.
-// The screens these scripts draw are Claude Code's, so the script is that kind:
-// the markers a screen is read with come from the name of the command.
 func fakeAgent(t *testing.T, dir, body string) string {
 	return fakeAgentNamed(t, dir, "claude", body)
 }
 
-// fakeAgentNamed is the same, under a name of the caller's choosing. The name
-// decides what kolo knows about the kind — how to read its screen, and how to
-// resume it.
 func fakeAgentNamed(t *testing.T, dir, name, body string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -251,7 +234,6 @@ func fakeAgentNamed(t *testing.T, dir, name, body string) string {
 	return path
 }
 
-// screenOf is the agent's screen as everybody watching it sees it.
 func screenOf(t *testing.T, a *Agents, name string) *session.Session {
 	t.Helper()
 	a.mu.Lock()
@@ -290,14 +272,8 @@ func TestSendingToAnAgentThatIsNotHere(t *testing.T) {
 	}
 }
 
-// TestAQuestionIsAnsweredByTypingAtIt: kolo read the choices off the screen and
-// pressed one on a member's behalf once. It does not any more — the question is
-// the agent's, and the member holding the keyboard presses the key themselves,
-// looking at the screen it lands on.
 func TestAQuestionIsAnsweredByTypingAtIt(t *testing.T) {
 	dir := t.TempDir()
-	// Raw mode, because that is what an agent's TUI does and it is what makes a
-	// single keystroke arrive without an Enter behind it.
 	script := fakeAgent(t, dir, `stty raw -echo
 printf ' Do you want to create note.txt?\r\n ❯ 1. Yes\r\n   2. No\r\n\r\n Esc to cancel\r\n'
 c=$(dd bs=1 count=1 2>/dev/null)
@@ -311,8 +287,6 @@ sleep 30
 		t.Fatal(err)
 	}
 	nextReport(t, a)
-	// The room is still told a question is up. What it is, and what to press, is
-	// on the screen everybody can see.
 	waitFor(t, func() bool { return screenOf(t, a, "checkups").State() == detect.Dialog })
 
 	if err := a.Type("checkups", "2"); err != nil {
@@ -321,7 +295,6 @@ sleep 30
 	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "chose 2") })
 }
 
-// TestAnInterruptReachesTheAgent: Esc, and only while the agent is working.
 func TestAnInterruptReachesTheAgent(t *testing.T) {
 	dir := t.TempDir()
 	script := fakeAgent(t, dir, `stty raw -echo
@@ -344,13 +317,9 @@ sleep 30
 	}
 	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "got 033") })
 
-	// The agent has stopped working, so there is nothing left to interrupt.
 	waitFor(t, func() bool { return a.Interrupt("checkups", "Artem") != nil })
 }
 
-// TestAnAgentKeepsTheFlagsItWasLentWith: what a host allows is a whole command
-// line, so an agent comes back the way the host started it and the resume flag
-// goes after rather than instead.
 func TestAnAgentKeepsTheFlagsItWasLentWith(t *testing.T) {
 	defer quickRestarts()()
 	dir := t.TempDir()
@@ -372,13 +341,9 @@ sleep 30
 	bounce(t, a, "checkups", a.Restart, fmt.Sprintf("args [--model opus --resume %s]", sessionOf(t, a, "checkups")))
 }
 
-// TestRestartResumesAndFreshDoesNot is the difference between the two actions.
-// Both replace the process; only one keeps what the org has told it.
 func TestRestartResumesAndFreshDoesNot(t *testing.T) {
 	defer quickRestarts()()
 	dir := t.TempDir()
-	// Named claude, because that is the agent kind kolo knows how to resume. The
-	// script writes what it was launched with onto its own screen.
 	script := fakeAgentNamed(t, dir, "claude", `printf 'args [%s]\r\n? for shortcuts\r\n' "$*"
 sleep 30
 `)
@@ -389,8 +354,6 @@ sleep 30
 		t.Fatal(err)
 	}
 	nextReport(t, a)
-	// A new agent of a pinned kind starts with an identity kolo minted for it,
-	// not with nothing.
 	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "args [--session-id") })
 	minted := sessionOf(t, a, "checkups")
 
@@ -398,16 +361,12 @@ sleep 30
 	if got := sessionOf(t, a, "checkups"); got != minted {
 		t.Errorf("a restart changed the identity: %s became %s", minted, got)
 	}
-	// Starting fresh drops the conversation, and mints the next one — so what
-	// comes back is new, rather than whatever ran here last.
 	bounce(t, a, "checkups", a.Fresh, "args [--session-id")
 	if got := sessionOf(t, a, "checkups"); got == "" || got == minted {
 		t.Errorf("a fresh start did not mint a new identity: %q", got)
 	}
 }
 
-// bounce asks for a restart of one kind and waits for the process it brings
-// back, checking what that new run says it was launched with.
 func bounce(t *testing.T, a *Agents, name string, ask func(string, string) error, want string) {
 	t.Helper()
 	was := processOf(t, a, name)
@@ -419,8 +378,6 @@ func bounce(t *testing.T, a *Agents, name string, ask func(string, string) error
 	})
 }
 
-// TestRestartingIsNotAFailure: somebody restarting an agent three times in a
-// minute is impatient, not proof the agent cannot run.
 func TestRestartingIsNotAFailure(t *testing.T) {
 	defer quickRestarts()()
 	dir := t.TempDir()
@@ -445,8 +402,6 @@ func TestRestartingIsNotAFailure(t *testing.T) {
 	}
 }
 
-// TestAFailedResumeStartsFresh: the CLI upgraded, or the state is gone. Coming
-// back without the conversation and saying so beats losing it silently.
 func TestAFailedResumeStartsFresh(t *testing.T) {
 	defer quickRestarts()()
 	dir := t.TempDir()
@@ -485,8 +440,6 @@ sleep 30
 	}
 }
 
-// robo is an agent kind that resumes by naming a conversation rather than by
-// asking for the last one, described the way a host describes one.
 func robo(t *testing.T) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "kinds.json")
@@ -500,7 +453,6 @@ func robo(t *testing.T) {
 	}
 }
 
-// sessionOf is the conversation this machine has taken down for an agent.
 func sessionOf(t *testing.T, a *Agents, name string) string {
 	t.Helper()
 	a.mu.Lock()
@@ -512,9 +464,6 @@ func sessionOf(t *testing.T, a *Agents, name string) string {
 	return p.session
 }
 
-// TestAnAgentIsResumedByName: the id is read off the agent's own screen, kept,
-// and put back on the command line at a restart. Starting fresh drops it, or
-// the conversation somebody just cleared comes back at the next restart.
 func TestAnAgentIsResumedByName(t *testing.T) {
 	defer quickRestarts()()
 	robo(t)
@@ -529,7 +478,6 @@ sleep 30
 		t.Fatal(err)
 	}
 	nextReport(t, a)
-	// A new agent starts fresh, and nothing has been read off its screen yet.
 	waitFor(t, func() bool { return strings.Contains(screenOf(t, a, "checkups").Text(), "args []") })
 	waitFor(t, func() bool { return sessionOf(t, a, "checkups") == "9f3c-11ab" })
 
@@ -537,9 +485,6 @@ sleep 30
 	bounce(t, a, "checkups", a.Fresh, "args []")
 }
 
-// TestAConversationNobodyNamedIsNotResumed: a kind that resumes by name, and a
-// run that never said which conversation it was in. A command line with a hole
-// in it is worse than a fresh start that says so.
 func TestAConversationNobodyNamedIsNotResumed(t *testing.T) {
 	defer quickRestarts()()
 	robo(t)
@@ -559,8 +504,6 @@ sleep 30
 	bounce(t, a, "checkups", a.Restart, "args []")
 }
 
-// TestTheStateFileKeepsTheConversation: the machine went away mid-conversation,
-// and the process that knew which one cannot be asked.
 func TestTheStateFileKeepsTheConversation(t *testing.T) {
 	defer quickRestarts()()
 	robo(t)
@@ -574,8 +517,6 @@ sleep 30
 		t.Fatal(err)
 	}
 	nextReport(t, first)
-	// On the file rather than what the process is holding: what survives the
-	// machine is what was written down, and it is written a moment later.
 	waitFor(t, func() bool {
 		b, err := os.ReadFile(state)
 		return err == nil && strings.Contains(string(b), `"session": "9f3c-11ab"`)
@@ -592,13 +533,9 @@ sleep 30
 	})
 }
 
-// TestTheStateFileSaysHowAScreenIsReading is what kolo doctor stands on: an
-// agent whose markers do not fit it reads as unknown for its whole life, and
-// nothing else in kolo would ever say so.
 func TestTheStateFileSaysHowAScreenIsReading(t *testing.T) {
 	dir := t.TempDir()
 	state := filepath.Join(t.TempDir(), "agents.json")
-	// Named for a kind kolo has no adapter for, so nothing matches its screen.
 	script := fakeAgentNamed(t, dir, "stranger", "printf '? for shortcuts\\r\\n'\nsleep 30\n")
 	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{script}}, state)
 	t.Cleanup(a.StopAll)

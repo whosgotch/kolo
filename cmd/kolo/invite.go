@@ -10,10 +10,6 @@ import (
 	"github.com/whosgotch/kolo/internal/hub"
 )
 
-// inviteCmd mints a link that turns whoever opens it into a member.
-//
-// It replaces minting a token per person and sending each one somewhere private.
-// An org has a channel it already talks in; this is the thing to paste there.
 func inviteCmd(args []string) error {
 	fs := flag.NewFlagSet("invite", flag.ExitOnError)
 	orgPath := fs.String("org", config.Path("org.json"), "org file to record it in")
@@ -61,8 +57,6 @@ func inviteCmd(args []string) error {
 	return nil
 }
 
-// bound says what stops the link, in the order somebody worries about it: how
-// many people, then how long.
 func bound(uses, days int) string {
 	who := fmt.Sprintf("The first %d people who open it are in", uses)
 	if uses == 0 {

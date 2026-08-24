@@ -7,26 +7,19 @@ import (
 	"github.com/whosgotch/kolo/internal/session"
 )
 
-// screens holds one live terminal per agent.
-//
-// The hub keeps its own copy rather than passing bytes through. It costs an
-// emulator per agent and buys what a pipe cannot: somebody opening an agent is
-// repainted from the screen as it stands, without asking the host and without the
-// redraw landing in front of everyone already watching.
+// screens holds one live terminal per agent, so joiners get a repaint without
+// asking the host.
 type screens struct {
 	mu sync.Mutex
 	m  map[string]*session.Session
-	// What each browser watching each agent says it can draw, and the size last
-	// agreed from them.
+	// Per-browser window sizes; agreed is the size last asked of the host.
 	windows map[string]map[any]size
 	agreed  map[string]size
 }
 
 type size struct{ cols, rows int }
 
-// The smallest terminal kolo will ask a host for. Below this the agent's own
-// interface stops fitting on its own screen, and a phone in somebody's pocket
-// would take the room's agent down to a size nobody can work at.
+// floor is the smallest terminal kolo will ask a host for.
 var floor = size{cols: 60, rows: 15}
 
 func newScreens() *screens {
@@ -37,13 +30,8 @@ func newScreens() *screens {
 	}
 }
 
-// propose records what one browser can draw and returns the size every browser
-// can, when that has changed.
-//
-// The smallest wins, as it does in tmux and for the same reason: one grid is
-// being shown in several windows at once, and anything larger than the smallest
-// window is drawn by an agent that cannot see where it is being cut off. A zero
-// size is a browser leaving.
+// propose records one browser's size and returns the size all can use,
+// smallest wins as in tmux. A zero size removes the browser.
 func (s *screens) propose(name string, at any, cols, rows int) (int, int, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -59,8 +47,6 @@ func (s *screens) propose(name string, at any, cols, rows int) (int, int, bool) 
 		windows[at] = size{cols, rows}
 	}
 
-	// Nobody watching leaves the agent at whatever it has: resizing a terminal
-	// with no one in front of it only costs the agent a redraw.
 	if len(windows) == 0 {
 		return 0, 0, false
 	}
@@ -76,17 +62,13 @@ func (s *screens) propose(name string, at any, cols, rows int) (int, int, bool) 
 		return 0, 0, false
 	}
 	s.agreed[name] = smallest
-	// The hub's own screen follows, or somebody joining later is repainted from a
-	// grid the size the agent has stopped using.
 	if live, ok := s.m[name]; ok {
 		live.Resize(smallest.cols, smallest.rows)
 	}
 	return smallest.cols, smallest.rows, true
 }
 
-// open starts a screen for an agent, replacing whatever was there — which is what
-// a restarted agent looks like from here. Viewers of the old one are dropped and
-// reconnect, rather than being repainted with a process that no longer exists.
+// open replaces any existing screen, dropping its viewers.
 func (s *screens) open(name string, cols, rows int, markers detect.Markers) *session.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,9 +88,7 @@ func (s *screens) get(name string) (*session.Session, bool) {
 	return live, ok
 }
 
-// close ends a screen, unless it has already been replaced by a newer one. The
-// check matters when an agent reconnects before its old connection has finished
-// tidying up: closing then would take down the screen that just arrived.
+// close ends a screen unless it's already been replaced by a newer one.
 func (s *screens) close(name string, live *session.Session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -59,12 +59,6 @@ func TestWriteReachesTheViewer(t *testing.T) {
 	}
 }
 
-// TestSubscribeLosesNothingUnderWrites is the reason Subscribe holds the same
-// lock as Write. A viewer that misses a chunk, or receives one already folded
-// into its snapshot, renders a corrupted screen from then on and never
-// recovers, so the catch-up and the live stream have to join up exactly.
-//
-// Run with -race for the other half of the guarantee.
 func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
 	s := New(80, 24, adapter.For("claude").Markers)
 
@@ -79,7 +73,6 @@ func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
 		}
 	}()
 
-	// Join mid-flight, which is the case that matters.
 	time.Sleep(2 * time.Millisecond)
 	backlog, stream, cancel := s.Subscribe()
 
@@ -90,8 +83,6 @@ func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
 		}
 	}
 
-	// Drain as a real viewer does, concurrently: a viewer that stops reading
-	// gets dropped rather than buffered, which is a different test.
 	drained := make(chan struct{})
 	go func() {
 		defer close(drained)
@@ -111,10 +102,6 @@ func TestSubscribeLosesNothingUnderWrites(t *testing.T) {
 	}
 }
 
-// TestViewersWatchTogether is the point of the whole thing: guests watch at the
-// same time. A second viewer joining must not disturb the first, which an
-// earlier take-over rule got wrong — with pages that reconnect on their own, it
-// left two viewers knocking each other offline forever.
 func TestViewersWatchTogether(t *testing.T) {
 	s := New(80, 24, adapter.For("claude").Markers)
 	_, first, cancelFirst := s.Subscribe()
@@ -140,8 +127,6 @@ func TestViewersWatchTogether(t *testing.T) {
 	}
 }
 
-// TestOneViewerLeavingLeavesTheRest covers the other half: a viewer dropped for
-// falling behind must not take the others with it.
 func TestOneViewerLeavingLeavesTheRest(t *testing.T) {
 	s := New(80, 24, adapter.For("claude").Markers)
 	_, slow, cancelSlow := s.Subscribe()
@@ -149,7 +134,6 @@ func TestOneViewerLeavingLeavesTheRest(t *testing.T) {
 	_, keen, cancelKeen := s.Subscribe()
 	defer cancelKeen()
 
-	// Overflow the slow viewer without ever reading from it.
 	for range viewerBuffer + 10 {
 		s.Write([]byte("x"))
 		select {
@@ -180,7 +164,6 @@ func TestOneViewerLeavingLeavesTheRest(t *testing.T) {
 	}
 }
 
-// drain empties whatever is buffered without blocking.
 func drain(ch <-chan Message) {
 	for {
 		select {
@@ -194,8 +177,6 @@ func drain(ch <-chan Message) {
 	}
 }
 
-// TestSlowViewerIsDropped pins the overflow policy: the viewer is disconnected,
-// not served a stream with a hole in it, and the agent is never held up.
 func TestSlowViewerIsDropped(t *testing.T) {
 	s := New(80, 24, adapter.For("claude").Markers)
 	_, stream, cancel := s.Subscribe()
@@ -207,7 +188,7 @@ func TestSlowViewerIsDropped(t *testing.T) {
 
 	for range viewerBuffer {
 		if _, open := <-stream; !open {
-			return // closed, as it should be
+			return
 		}
 	}
 	if _, open := <-stream; open {
@@ -234,13 +215,8 @@ func TestResizeTellsTheViewer(t *testing.T) {
 	}
 }
 
-// A kind whose idle is silence, with a settle period short enough to wait out in
-// a test. See docs/probe-findings.md #6.
 var settling = detect.Markers{Busy: "esc to interrupt", Settle: 50 * time.Millisecond}
 
-// TestSilenceBecomesIdleForAKindThatSettles: the session is the only thing that
-// knows when the screen last changed, so this is where "it has stopped moving"
-// is answered.
 func TestSilenceBecomesIdleForAKindThatSettles(t *testing.T) {
 	s := New(80, 24, settling)
 	s.Write([]byte("2. Two, and so on."))
@@ -253,16 +229,12 @@ func TestSilenceBecomesIdleForAKindThatSettles(t *testing.T) {
 		t.Errorf("state after the screen settled = %s, want idle", got)
 	}
 
-	// And a change starts the wait again: a reply arriving a line at a time is
-	// the case this has to keep holding through.
 	s.Write([]byte("\r\n3. Three."))
 	if got := s.State(); got != detect.Unknown {
 		t.Errorf("state after the screen moved again = %s, want it held", got)
 	}
 }
 
-// TestARepaintIsNotAChange: an agent that redraws the same picture is not doing
-// anything, and a kind whose idle is silence would never settle if it were.
 func TestARepaintIsNotAChange(t *testing.T) {
 	s := New(80, 24, settling)
 	s.Write([]byte("waiting"))
@@ -274,8 +246,6 @@ func TestARepaintIsNotAChange(t *testing.T) {
 	}
 }
 
-// TestAnAgentThatHasDrawnNothingIsNotIdle: a session is still by definition
-// before the process has said anything, and that stillness means nothing.
 func TestAnAgentThatHasDrawnNothingIsNotIdle(t *testing.T) {
 	s := New(80, 24, settling)
 	time.Sleep(2 * settling.Settle)

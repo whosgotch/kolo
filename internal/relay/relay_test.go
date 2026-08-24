@@ -9,8 +9,6 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// recorder stands in for the agent's input and remembers each write separately,
-// which is the only way to tell one write from two.
 type recorder struct {
 	writes []string
 	err    error
@@ -24,8 +22,7 @@ func (r *recorder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// The relay is given a screen rather than a verdict, so these go through the real
-// detector: stubbing the verdict would pass with a relay that reads screens wrong.
+// Real detector on purpose; a stubbed verdict would pass a relay reading screens wrong.
 var screens = map[detect.State]string{
 	detect.Idle:    "❯\n  ? for shortcuts\n",
 	detect.Busy:    "✳ Levitating…\n❯\n  esc to interrupt\n",
@@ -33,14 +30,9 @@ var screens = map[detect.State]string{
 	detect.Unknown: "some other tool\n",
 }
 
-// fixture builds a relay whose screen the test controls, and returns the way to
-// change it.
 func fixture(state detect.State) (*Relay, *recorder, func(detect.State)) {
 	rec := &recorder{}
 	current := screens[state]
-	// Claude Code's idle is a thing its screen says, so the stillness the relay is
-	// given never decides anything here; a kind whose idle is silence is exercised
-	// in TestSilenceIsIdleOnlyForAKindThatSaysSo.
 	r := New(rec, func() (string, time.Duration) { return current, 0 }, adapter.For("claude"))
 	if got := r.state(); got != state {
 		panic("fixture screen for " + state.String() + " reads as " + got.String())
@@ -48,9 +40,6 @@ func fixture(state detect.State) (*Relay, *recorder, func(detect.State)) {
 	return r, rec, func(s detect.State) { current = screens[s] }
 }
 
-// TestKeystrokesGoThroughUntouched is the change of shape. What a member presses
-// is what the agent gets: no line assembled for them, no moment picked for them,
-// and nothing stripped out — an escape sequence is a keypress, not an attack.
 func TestKeystrokesGoThroughUntouched(t *testing.T) {
 	for _, keys := range []string{"a", "\x1b", "\x1b[B", "\r", "/clear"} {
 		t.Run(strings.ToValidUTF8(keys, "?"), func(t *testing.T) {
@@ -65,8 +54,6 @@ func TestKeystrokesGoThroughUntouched(t *testing.T) {
 	}
 }
 
-// TestKeystrokesNeedNoParticularScreen: the member is looking at the screen, so
-// there is nothing for kolo to protect them from. Every state takes keys.
 func TestKeystrokesNeedNoParticularScreen(t *testing.T) {
 	for _, state := range []detect.State{detect.Idle, detect.Busy, detect.Dialog, detect.Unknown} {
 		t.Run(state.String(), func(t *testing.T) {
@@ -81,8 +68,6 @@ func TestKeystrokesNeedNoParticularScreen(t *testing.T) {
 	}
 }
 
-// TestAFloodIsNotAKeystroke keeps out the one thing a keystroke channel should
-// not carry: somebody piping a file into an agent one frame at a time.
 func TestAFloodIsNotAKeystroke(t *testing.T) {
 	r, rec, _ := fixture(detect.Idle)
 	if err := r.Type(strings.Repeat("x", maxKeys+1)); err == nil {
@@ -115,10 +100,6 @@ func TestInterruptOnlyWhileWorking(t *testing.T) {
 	}
 }
 
-// TestTheInterruptKeyIsTheKindsOwn: Esc was sent to every agent there was, and
-// it is the key that clears the input box of one that stops on Ctrl-C. What is
-// pressed is now the kind's, and it is pressed under the same rule — only while
-// the agent is working.
 func TestTheInterruptKeyIsTheKindsOwn(t *testing.T) {
 	rec := &recorder{}
 	stops := adapter.Adapter{
@@ -135,10 +116,6 @@ func TestTheInterruptKeyIsTheKindsOwn(t *testing.T) {
 	}
 }
 
-// TestSilenceIsIdleOnlyForAKindThatSaysSo: a kind whose idle is silence reads as
-// idle once the screen has stopped moving (docs/probe-findings.md #6). That
-// reading is now what the room is shown rather than permission to type, since
-// kolo types nothing on its own.
 func TestSilenceIsIdleOnlyForAKindThatSaysSo(t *testing.T) {
 	settling := adapter.Adapter{Markers: detect.Markers{
 		Busy:   "esc to interrupt",
@@ -163,9 +140,6 @@ func TestSilenceIsIdleOnlyForAKindThatSaysSo(t *testing.T) {
 	}
 }
 
-// TestOneWriteAtATime is the rule that outlived the queue: two writers to one
-// terminal interleave, and a keystroke landing inside an answer is a keypress
-// nobody made.
 func TestOneWriteAtATime(t *testing.T) {
 	r, _, _ := fixture(detect.Busy)
 	started := make(chan struct{})
@@ -186,7 +160,6 @@ func TestOneWriteAtATime(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	// And once it is over, the keyboard works again.
 	if err := r.Type("x"); err != nil {
 		t.Fatal(err)
 	}
