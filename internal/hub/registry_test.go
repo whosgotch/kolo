@@ -102,6 +102,31 @@ func TestRemoveFreesTheNameAndTheDirectory(t *testing.T) {
 	}
 }
 
+func TestSetLabelLeavesNameAlone(t *testing.T) {
+	r := registryFixture(t)
+	if _, err := r.Add(agentFixture("checkups", "/work/api")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := r.SetLabel("checkups", "Auth Refactor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "checkups" || got.Label != "Auth Refactor" {
+		t.Errorf("relabeled to %+v", got)
+	}
+	// The identifier every URL and the host address it by is untouched:
+	// a rename is a label, not a new identity.
+	agents := r.Agents()
+	if len(agents) != 1 || agents[0].Name != "checkups" {
+		t.Fatalf("the name moved: %+v", agents)
+	}
+
+	if _, err := r.SetLabel("nobody", "x"); err == nil {
+		t.Error("relabeled an agent that does not exist")
+	}
+}
+
 func TestValidName(t *testing.T) {
 	for _, s := range []string{"a", "checkups", "mr-checkups", "api-2"} {
 		if !ValidName(s) {

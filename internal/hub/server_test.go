@@ -279,6 +279,43 @@ func TestDeleteTellsTheHost(t *testing.T) {
 	}
 }
 
+func TestRelabelDoesNotTellTheHost(t *testing.T) {
+	s, memberToken, hostToken := hubFixture(t)
+	ctx := testContext(t)
+	conn := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, conn, &cmd)
+
+	if got := call(t, s, "PATCH", "/v1/agents/checkups", memberToken, `{"label":"Auth Refactor"}`); got.StatusCode != http.StatusOK {
+		t.Fatalf("relabel: %s", got.Status)
+	}
+	if got := list(t, s, memberToken); len(got.Agents) != 1 || got.Agents[0].Name != "checkups" || got.Agents[0].Label != "Auth Refactor" {
+		t.Errorf("listed %+v", got.Agents)
+	}
+	if got := call(t, s, "PATCH", "/v1/agents/nobody", memberToken, `{"label":"x"}`); got.StatusCode != http.StatusNotFound {
+		t.Errorf("relabeling a stranger = %s", got.Status)
+	}
+	if got := call(t, s, "PATCH", "/v1/agents/checkups", memberToken, `{`); got.StatusCode != http.StatusBadRequest {
+		t.Errorf("unreadable body = %s", got.Status)
+	}
+
+	// Name is what the host was told to spawn, and stays what the host is
+	// addressed by — a label is the hub's own field, nothing to relay. Proved
+	// by doing something that DOES relay (a stop) right after and checking
+	// that's the very next frame: a canceled read on this library closes the
+	// connection outright, so a short-deadline read can't be used to probe
+	// for silence without tearing the host down first.
+	call(t, s, "DELETE", "/v1/agents/checkups", memberToken, "")
+	var told stop
+	readFrame(t, ctx, conn, &told)
+	if told.Type != "stop" || told.Name != "checkups" {
+		t.Errorf("the relabel left something queued ahead of the stop: %+v", told)
+	}
+}
+
 func TestTokensReachOnlyTheirOwnRoutes(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)

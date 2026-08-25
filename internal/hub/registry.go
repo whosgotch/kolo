@@ -58,9 +58,14 @@ func (h *host) resumesByName(command string) bool {
 	return slices.Contains(h.info.ByName, command)
 }
 
-// Agent is one agent a host was asked to run. Name is its identifier.
+// Agent is one agent a host was asked to run. Name is its identifier — it
+// addresses the agent in every URL and protocol message, host included, so
+// it does not change once picked. Label is a member's own word for it, the
+// hub's alone to know: renaming is a label edit, nothing a host needs
+// telling or a live connection needs reopening for.
 type Agent struct {
 	Name      string    `json:"name"`
+	Label     string    `json:"label,omitempty"`
 	Host      string    `json:"host"`
 	Dir       string    `json:"dir"`
 	Command   string    `json:"command"`
@@ -239,6 +244,20 @@ func (r *Registry) SetStatus(name, status, reason string) {
 	if a, h := r.find(name); h != nil {
 		a.Status, a.Error = status, reason
 	}
+}
+
+// SetLabel changes what an agent is called on screen. Name, which the host
+// and every open connection address it by, is untouched — this is the hub's
+// own field, so nothing beyond the registry needs to hear about it.
+func (r *Registry) SetLabel(name, label string) (Agent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, h := r.find(name)
+	if h == nil {
+		return Agent{}, fmt.Errorf("no agent called %q", name)
+	}
+	a.Label = label
+	return *a, nil
 }
 
 func (r *Registry) Sender(name string) (Sender, bool) {

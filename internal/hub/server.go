@@ -79,6 +79,7 @@ func Listen(org *Org, addr string) (*Server, error) {
 	mux.HandleFunc("GET /v1/host", s.handleHost)
 	mux.HandleFunc("GET /v1/agents", s.handleList)
 	mux.HandleFunc("POST /v1/agents", s.handleCreate)
+	mux.HandleFunc("PATCH /v1/agents/{name}", s.handleRelabel)
 	mux.HandleFunc("DELETE /v1/agents/{name}", s.handleDelete)
 	mux.HandleFunc("GET /v1/log", s.handleLog)
 	mux.HandleFunc("GET /v1/agent/{name}", s.handleScreen)
@@ -416,6 +417,28 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, created)
 }
 
+func (s *Server) handleRelabel(w http.ResponseWriter, r *http.Request) {
+	member, ok := s.authenticate(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	name := r.PathValue("name")
+	var req relabelRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		http.Error(w, "unreadable request", http.StatusBadRequest)
+		return
+	}
+	newLabel := label(req.Label, maxLabel)
+	agent, err := s.registry.SetLabel(name, newLabel)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	s.journal.add(Entry{Agent: name, What: WhatRelabeled, Who: member.Person(), Text: newLabel})
+	writeJSON(w, http.StatusOK, agent)
+}
+
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	member, ok := s.authenticate(r)
 	if !ok {
@@ -705,6 +728,10 @@ type createRequest struct {
 	Host    string `json:"host"`
 	Dir     string `json:"dir"`
 	Command string `json:"command"`
+}
+
+type relabelRequest struct {
+	Label string `json:"label"`
 }
 
 type listResponse struct {

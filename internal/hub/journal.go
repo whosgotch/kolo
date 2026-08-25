@@ -22,6 +22,7 @@ const (
 	WhatInterrupted = "interrupted"
 	WhatRestarted   = "restarted"
 	WhatFresh       = "fresh"
+	WhatRelabeled   = "relabeled"
 	WhatStopped     = "stopped"
 	WhatFailed      = "failed"
 	WhatGone        = "gone"
