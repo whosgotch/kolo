@@ -14,12 +14,15 @@
 <link rel="stylesheet" href="/assets/xterm.css">
 <style>
   /* Every colour and face is the brand's, read from /assets/tokens.css.
-     Nothing below invents one. */
+     Nothing below invents one. Surfaces are barely lighter than the ground
+     they sit on — a hairline border does the separating, not a fill — so
+     the sidebar and the terminal frame read as one dark canvas, not two
+     panels glued together. */
   :root {
     --bg: var(--kolo-bg);
-    --panel: var(--kolo-bg-raised);
-    --raised: var(--kolo-bg-raised);
-    --line: color-mix(in srgb, var(--kolo-slate) 30%, transparent);
+    --raised: color-mix(in srgb, var(--kolo-chalk) 5%, var(--kolo-bg));
+    --raised-hover: color-mix(in srgb, var(--kolo-chalk) 9%, var(--kolo-bg));
+    --line: color-mix(in srgb, var(--kolo-slate) 16%, transparent);
     --text: var(--kolo-fg);
     --dim: var(--kolo-fg-muted);
     --faint: color-mix(in srgb, var(--kolo-fg-muted) 75%, transparent);
@@ -32,194 +35,355 @@
   html, body { margin: 0; height: 100%; overflow: hidden; }
   body { background: var(--bg); color: var(--text); font: 13px/1.5 var(--ui);
          -webkit-font-smoothing: antialiased; }
+  a { color: var(--structure); }
   /* Every display rule below would otherwise outrank the browser's own rule for
      the hidden attribute, which is how the views are switched. */
   [hidden] { display: none !important; }
 
-  button, input, select {
-    background: var(--raised); color: var(--text); border: 1px solid var(--line);
-    border-radius: 6px; padding: 6px 10px; font: inherit;
-  }
+  button, input, select { font: inherit; color: inherit; background: none; border: none; }
   button { cursor: pointer; }
-  button:hover:not(:disabled) { background: color-mix(in srgb, var(--kolo-chalk) 8%, var(--raised));
-                                border-color: color-mix(in srgb, var(--kolo-slate) 55%, transparent); }
-  button:disabled { opacity: .4; cursor: default; }
-  button.quiet { background: none; border-color: transparent; color: var(--dim); }
-  button.quiet:hover:not(:disabled) { background: var(--raised); color: var(--text); }
-  button.go { background: var(--structure); border-color: var(--structure);
-              color: var(--kolo-chalk); font-weight: 500; }
-  button.go:hover:not(:disabled) { filter: brightness(1.15); }
+  svg { display: block; flex: none; }
+
+  /* Icon-weight controls: no fill, no border, a hover tint. The one shape
+     every clickable thing in this app shares, whether it carries a label
+     or not. */
+  .icon-btn { background: none; border: 1px solid transparent; border-radius: 6px;
+              width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+              color: var(--dim); }
+  .icon-btn:hover { background: var(--raised); color: var(--text); }
+  .icon-btn.off { opacity: 0.35; cursor: default; }
+  .icon-btn.off:hover { background: none; }
+
+  .go { display: inline-flex; align-items: center; gap: 7px; border-radius: 6px;
+        padding: 5px 6px; color: var(--text); font: 500 13px var(--ui); }
+  .go svg { color: var(--faint); }
+  .go:hover { background: color-mix(in srgb, var(--kolo-chalk) 8%, transparent); }
+  .go:active { transform: translateY(1px); }
+
+  /* The mark, wherever it is drawn as text. */
+  .ascii-mark { font-family: var(--mono); font-weight: 700; line-height: var(--kolo-mono-line);
+                white-space: pre; color: var(--text); user-select: none; }
+  .ascii-mark .hot { color: var(--kolo-state-running); }
+  .wordmark { font: 500 15px var(--mono); letter-spacing: var(--kolo-wordmark-tracking);
+              text-transform: lowercase; }
+
+  /* ---- the door ----------------------------------------------------------- */
+
+  .signin { height: 100%; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; text-align: center; padding: 0 20px; gap: 4px; }
+  .signin .ascii-mark { font-size: 13px; margin-bottom: 18px; }
+  .signin h1 { margin: 0 0 10px; }
+  .signin p { color: var(--dim); line-height: 1.7; max-width: 34em; margin: 0 0 22px; }
+  .signin form { display: flex; gap: 8px; }
+  .signin input { width: 26ch; font-family: var(--mono); background: var(--raised);
+                  border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; }
+  .signin input::placeholder { color: var(--faint); }
+  .signin input:focus { outline: none; border-color: color-mix(in srgb, var(--structure) 55%, var(--line)); }
+  .signin .problem { color: var(--kolo-state-failed); margin-top: 14px; }
 
   /* ---- the frame: agents down the side, one agent filling the rest -------- */
 
-  .app { display: grid; grid-template-columns: 248px 1fr; height: 100%; }
+  .app { display: grid; grid-template-columns: 252px 1fr; height: 100%; }
 
-  .side { display: flex; flex-direction: column; min-height: 0;
-          background: var(--panel); border-right: 1px solid var(--line); }
-  .brand { display: flex; align-items: center; gap: 10px; padding: 16px 14px 12px; }
-  /* The mark is drawn at the size it is shown at: it is a screenful of
-     characters, and a browser scaling it down turns them to mush. Every size
-     below is its own asset. */
-  .mark { width: 28px; height: 28px; }
-  .mark.big { width: 160px; height: 160px; margin-bottom: 24px; }
-  .brand .org { color: var(--faint); font-size: 12px; }
-  .side .heading { display: flex; align-items: center; padding: 6px 14px;
-                   color: var(--faint); font-size: 11px; text-transform: uppercase;
-                   letter-spacing: .8px; }
-  .side .heading .spacer { flex: 1; }
-  .agents { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 8px; }
-  .agents .empty { color: var(--faint); padding: 10px 6px; }
+  .side { display: flex; flex-direction: column; min-height: 0; background: var(--bg);
+          border-right: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; padding: 16px 14px 10px; }
+  .brand .mark { width: 26px; height: 26px; color: var(--text); }
+  .brand .spacer { flex: 1; }
+
+  .groups { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 8px; display: flex;
+            flex-direction: column; gap: 2px; }
+  .group { display: flex; flex-direction: column; }
+  .group-head { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+                background: none; border: none; border-radius: 6px; padding: 6px 6px 6px 4px;
+                color: var(--dim); cursor: pointer; }
+  .group-head:hover { background: var(--raised); color: var(--text); }
+  .group-head .chevron { flex: none; color: var(--faint); transition: transform 0.12s ease; }
+  .group-head .chevron.open { transform: rotate(90deg); }
+  .group-head .chip { flex: none; width: 17px; height: 17px; border-radius: 5px; background: var(--raised);
+                       border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
+                       color: var(--dim); }
+  .group-head .label { font: 600 11px var(--ui); text-transform: uppercase; letter-spacing: 0.6px;
+                        color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group-head:hover .label { color: var(--text); }
+  .group-head .spacer { flex: 1; min-width: 4px; }
+  .group-head .icon-btn { opacity: 0; }
+  .group-head:hover .icon-btn { opacity: 1; }
+  .group-body { display: flex; flex-direction: column; gap: 1px; padding-left: 10px; }
+  .group-body.collapsed { display: none; }
+
+  .no-hosts { padding: 18px 14px; text-align: center; }
+  .no-hosts p { margin: 0 0 10px; color: var(--dim); font-size: 12px; line-height: 1.6; }
+  .no-hosts p.fine { margin: 10px 0 0; color: var(--faint); font-size: 11px; }
+  .no-hosts code { display: inline-block; background: var(--raised); border: 1px solid var(--line);
+                    border-radius: 6px; padding: 4px 9px; color: var(--text); font: 12px var(--mono); }
 
   /* One agent in the side. The whole row is the button: a list of things to open
      where only part of each row opens it is a list that feels broken. */
-  .agent { position: relative; display: block; width: 100%; text-align: left;
-           background: none; border: 1px solid transparent; border-radius: var(--r);
-           padding: 8px 10px; margin-bottom: 2px; color: var(--text); }
-  .agent:hover:not(:disabled) { background: var(--raised); border-color: transparent; }
-  .agent.on { background: var(--raised); border-color: var(--line); }
+  .agent { position: relative; display: flex; flex-direction: column; gap: 3px; width: 100%;
+           text-align: left; background: none; border: none; border-radius: var(--r);
+           padding: 7px 10px; color: var(--text); cursor: pointer; }
+  .agent:hover { background: var(--raised); }
+  .agent.on { background: var(--raised-hover); }
+  /* A tint alone reads as "hovered" as easily as "open" — the accent bar is
+     the one cue that means only one thing: this is the agent the main
+     panel is showing right now. */
+  .agent.on::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px;
+                       width: 3px; border-radius: 2px; background: var(--structure); }
+  .agent:focus-visible { outline: 1px solid color-mix(in srgb, var(--structure) 65%, var(--line)); outline-offset: -1px; }
   .agent .row { display: flex; align-items: center; gap: 7px; }
-  .agent .name { font: 500 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .agent .dir { display: block; color: var(--faint); font: 11px var(--mono); margin-top: 2px;
+  .agent .name { font: 500 12.5px var(--mono); flex: 1; min-width: 0; overflow: hidden;
+                 text-overflow: ellipsis; white-space: nowrap; }
+  .agent.on .name { color: var(--kolo-chalk); font-weight: 600; }
+  /* Sits where the name sits, reads as the name still being there rather
+     than a form appearing on top of the row. */
+  .agent .rename { flex: 1; min-width: 0; font: 500 12.5px var(--mono); color: var(--kolo-chalk);
+                    background: var(--bg); border: 1px solid var(--structure); border-radius: 4px;
+                    padding: 1px 5px; margin: -1px 0; }
+  .agent .rename:focus { outline: none; }
+  /* What's actually running, not just what it's named. A mark, not the
+     word — an original glyph, not a logo kolo has no right to redraw. */
+  .kind-chip { flex: none; width: 17px; height: 17px; border-radius: 999px; background: var(--raised);
+               border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
+               color: var(--dim); }
+  .agent .dir { display: block; padding-left: 14px; color: var(--faint); font: 11px var(--mono);
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* A dot rather than a word: the status of eight agents should be readable
-     without reading eight labels. */
-  .dot { width: 7px; height: 7px; border-radius: 999px; flex: none;
-         background: var(--kolo-state-idle); }
-  /* Brass is not decoration: it means this agent is working right now, which
-     the hub only says about the screen being watched. */
-  .dot.busy { background: var(--kolo-state-running); }
-  .dot.failed { background: var(--kolo-state-failed); }
-  .agent .drop { position: absolute; right: 6px; top: 6px; padding: 2px 6px;
-                 opacity: 0; color: var(--dim); }
-  .agent:hover .drop { opacity: 1; }
 
-  .side .me { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-              border-top: 1px solid var(--line); color: var(--dim); }
-  .side .me .who { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .side .me form { margin: 0; }
+  .dot { width: 7px; height: 7px; border-radius: 999px; flex: none; background: var(--kolo-state-idle); }
+  .dot.failed { background: var(--kolo-state-failed); }
+  .spinner { flex: none; }
+  .spinner .track { stroke: color-mix(in srgb, var(--kolo-state-running) 20%, transparent); }
+  .spinner .arc { stroke: var(--kolo-state-running); stroke-dasharray: 9 22.4; transform-origin: 6.5px 6.5px;
+                   animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner .arc { animation: none; stroke-dasharray: 22.4 9; }
+  }
+
+  .drop { flex: none; width: 18px; height: 18px; border-radius: 5px; display: flex;
+          align-items: center; justify-content: center; background: none; border: none;
+          color: var(--faint); opacity: 0; }
+  .agent:hover .drop { opacity: 1; }
+  .drop:hover { background: color-mix(in srgb, var(--kolo-state-failed) 18%, transparent); color: var(--kolo-chalk); }
+
+  .me-wrap { position: relative; border-top: 1px solid var(--line); }
+  .me { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px;
+        background: none; border: none; text-align: left; color: var(--text); cursor: pointer; }
+  .me:hover { background: var(--raised); }
+  .me:focus-visible { outline: 1px solid color-mix(in srgb, var(--structure) 65%, var(--line)); outline-offset: -1px; }
+  .me .avatar { position: relative; flex: none; width: 26px; height: 26px; border-radius: 999px;
+                background: color-mix(in srgb, var(--structure) 35%, var(--raised));
+                border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; }
+  .me .initial { font: 600 11px var(--mono); color: var(--kolo-chalk); }
+  .me .presence { position: absolute; right: -1px; bottom: -1px; width: 8px; height: 8px;
+                   border-radius: 999px; background: var(--structure); border: 2px solid var(--bg); }
+  .me .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .me .name { font: 500 12.5px var(--ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .me .status { font: 11px var(--ui); color: var(--faint); }
+  .me .care { flex: none; color: var(--faint); }
+  .me-menu { position: absolute; left: 10px; right: 10px; bottom: calc(100% + 6px);
+             background: var(--raised); border: 1px solid var(--line); border-radius: 8px;
+             padding: 4px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+  .me-item { display: block; width: 100%; text-align: left; border-radius: 6px;
+             padding: 7px 9px; color: var(--text); font-size: 12.5px; }
+  .me-item:hover { background: var(--raised-hover); }
 
   main { min-width: 0; display: flex; flex-direction: column; }
+
+  /* ---- nothing open ------------------------------------------------------- */
+
+  .home { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column;
+          align-items: center; justify-content: center; gap: 6px; }
+  .mark-big { position: relative; margin-bottom: 22px; }
+  .mark-big::before { content: ''; position: absolute; inset: -70px; z-index: -1;
+                       background: radial-gradient(circle, color-mix(in srgb, var(--structure) 26%, transparent) 0%, transparent 68%);
+                       filter: blur(18px); }
+  .mark-big .ascii-mark { font-size: 13px; margin-bottom: 0; }
+  .home p.lede { color: var(--dim); margin: 0 0 20px; }
+
+  /* ---- the dialog ----------------------------------------------------------- */
+
+  .scrim { position: fixed; inset: 0; background: color-mix(in srgb, black 55%, transparent);
+           display: flex; align-items: center; justify-content: center; z-index: 40; padding: 24px; }
+  .dialog { width: 440px; max-width: 100%; max-height: 100%; display: flex; flex-direction: column;
+            background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
+            box-shadow: 0 20px 60px color-mix(in srgb, black 50%, transparent); overflow: hidden; }
+  .dialog-head { display: flex; align-items: center; gap: 10px; padding: 15px 12px 15px 20px;
+                 border-bottom: 1px solid var(--line); }
+  .dialog-head .mark { flex: none; width: 14px; height: 14px; color: var(--text); }
+  .dialog-head h2 { flex: 1; margin: 0; font: 600 15px var(--ui); }
+  .dialog-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; }
+  .dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px;
+                 border-top: 1px solid var(--line); background: var(--raised); }
+
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field-row.single { grid-template-columns: 1fr; }
+  .field label { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; }
+  .dialog input, .dialog select { background: var(--raised); color: var(--text); border: 1px solid var(--line);
+              border-radius: 7px; padding: 9px 11px; font: 13px var(--mono); width: 100%; }
+  .dialog input:focus, .dialog select:focus { outline: none;
+              border-color: color-mix(in srgb, var(--structure) 55%, var(--line)); }
+
+  /* A native select can't show a mark next to a name, so the agent field is
+     drawn by hand — a short, known set, seen all at once. Falls back to a
+     plain text field with suggestions only when the host lends anything
+     (no fixed set exists to draw). */
+  .kind-picker { display: flex; flex-direction: column; gap: 2px; background: var(--raised);
+                  border: 1px solid var(--line); border-radius: 7px; padding: 4px; max-height: 200px;
+                  overflow-y: auto; }
+  .kind-choice { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 5px;
+                  color: var(--dim); font: 12.5px var(--mono); text-align: left; }
+  .kind-choice .kind-chip { background: var(--bg); }
+  .kind-choice:hover { background: var(--raised-hover); color: var(--text); }
+  .kind-choice.on { background: color-mix(in srgb, var(--structure) 16%, var(--raised)); color: var(--kolo-chalk); }
+  .kind-choice.on .kind-chip { background: color-mix(in srgb, var(--structure) 30%, var(--raised));
+                                 border-color: var(--structure); color: var(--kolo-chalk); }
 
   /* ---- one agent ---------------------------------------------------------- */
 
   .watch { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
-  .bar .title { display: flex; align-items: center; gap: 8px; flex: none;
-                font: 500 14px var(--mono); }
-  /* Buttons keep their words on one line; the directory is what gives way when
-     the window is too narrow for all of it. */
-  .bar button, .bar .typist { white-space: nowrap; }
-  .bar .where { color: var(--faint); font: 11px var(--mono); min-width: 0;
-                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bar .spacer { flex: 1; min-width: 0; }
-  .bar .typist { color: var(--dim); }
 
-  /* The agent's screen is drawn inside a frame of its own, so what the agent
-     wrote and what this page says about it are never mistaken for each other.
-     It fills everything the bar and the note leave. */
-  .screen { flex: 1; min-height: 0; margin: 0 14px; padding: 6px;
+  .screen { position: relative; flex: 1; min-height: 0; margin: 16px; padding: 14px 18px;
             border: 1px solid var(--line); border-radius: 10px; background: var(--kolo-void);
             display: flex; overflow: hidden; }
   /* The terminal is sized to the grid the hub settled on, and centred in
      whatever the frame has left over. */
   #term { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  /* Who's typing is a fact about the keyboard, read at the screen it's
+     driving. */
+  .typist { position: absolute; right: 14px; bottom: 12px; background: var(--raised);
+            border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px;
+            color: var(--dim); font: 11.5px var(--ui); white-space: nowrap; z-index: 1; }
 
   /* One line, always: a note appearing and going must not resize the screen
      above it, which would cost every watcher a repaint at a new size. */
-  .note { height: 30px; margin: 0; padding: 7px 15px; color: var(--dim);
+  .note { height: 30px; margin: 0; padding: 7px 16px; color: var(--dim);
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .note.problem { color: var(--kolo-state-failed); }
-
-  /* ---- nothing open ------------------------------------------------------- */
-
-  .home { flex: 1; min-height: 0; overflow-y: auto; display: flex;
-          flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-  .home h1 { font-size: 17px; font-weight: 600; margin: 0; }
-  .home p { color: var(--dim); margin: 0 0 14px; }
-  form.create { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-                justify-content: center; background: var(--panel); padding: 14px;
-                border: 1px solid var(--line); border-radius: 10px; }
-  form.create input[name=name] { width: 16ch; }
-  form.create select, form.create input[name=command] { max-width: 26ch; }
-
-  /* ---- the door ----------------------------------------------------------- */
-
-  .signin { height: 100%; display: flex; flex-direction: column; align-items: center;
-            justify-content: center; text-align: center; padding: 0 20px; }
-  .signin h1 { font-size: 22px; margin: 0 0 8px; }
-  .signin p { color: var(--dim); line-height: 1.7; max-width: 34em; }
-  .signin form { display: flex; gap: 8px; margin: 20px 0 8px; }
-  .signin input { width: 26ch; font-family: var(--mono); }
-  .signin .problem { color: var(--kolo-state-failed); }
 </style>
 </head>
 <body>
 
 <section class="signin" hidden>
-  <img class="mark big" src="/assets/icon-160.png" alt="">
-  <h1>kolo</h1>
+  <div class="ascii-mark"></div>
+  <h1 class="wordmark">kolo</h1>
   <p>Paste the token your org gave you. It is kept in a cookie this page cannot
      read, so you only do this once.</p>
   <form method="post" action="/login">
     <input name="token" type="password" placeholder="kolo_…" autofocus required>
-    <button type="submit" class="go">sign in</button>
+    <button type="submit" class="go">
+      sign in
+      <svg width="13" height="13" viewBox="0 0 13 13"><path d="M2 6.5h9M7 2.5l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+    </button>
   </form>
   <p class="problem" hidden>That token is not one this hub knows.</p>
 </section>
 
 <div class="app" hidden>
   <aside class="side">
-    <div class="brand"><img class="mark" src="/assets/icon-28.png" alt="kolo" title="kolo"><span class="org"></span></div>
-    <div class="heading"><span>agents</span><span class="spacer"></span>
-      <button class="quiet new" title="new agent">+</button>
+    <div class="brand" title="kolo">
+      <svg class="mark" width="26" height="26" viewBox="0 0 22 22" role="img" aria-label="Kolo">
+        <path fill-rule="evenodd" fill="currentColor"
+          d="M0.88,11 a10.12,10.12 0 1,0 20.24,0 a10.12,10.12 0 1,0 -20.24,0 Z
+             M5.1194,9.6954 a7.1852,7.1852 0 1,0 14.3704,0 a7.1852,7.1852 0 1,0 -14.3704,0 Z"/>
+      </svg>
+      <span class="spacer"></span>
+      <button class="icon-btn new" title="new agent">
+        <svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
     </div>
-    <div class="agents">
-      <p class="empty" hidden>No agents yet.</p>
-    </div>
-    <div class="me">
-      <span class="who"></span>
-      <form method="post" action="/logout"><button class="quiet">sign out</button></form>
+    <div class="groups"></div>
+    <div class="me-wrap">
+      <button class="me" type="button">
+        <span class="avatar"><span class="initial"></span><span class="presence"></span></span>
+        <span class="who"><span class="name"></span><span class="status">online</span></span>
+        <svg class="care" width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
+          <path d="M2 6.5 5.5 3l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </button>
+      <div class="me-menu" hidden>
+        <form method="post" action="/logout"><button class="me-item" type="submit">sign out</button></form>
+      </div>
     </div>
   </aside>
 
   <main>
     <section class="home" hidden>
-      <h1>No agent open</h1>
-      <p>Pick one from the side, or start another.</p>
-      <form class="create">
-        <input name="name" placeholder="name" maxlength="32" required>
-        <select name="host"></select>
-        <select name="dir"></select>
-        <input name="dir" placeholder="anywhere — /home/me/proj" hidden disabled>
-        <select name="command"></select>
-        <input name="command" list="known-commands" placeholder="any command — claude --model opus" hidden disabled>
-        <datalist id="known-commands"></datalist>
-        <button type="submit" class="go">create</button>
-      </form>
-      <p class="note"></p>
+      <div class="mark-big"><div class="ascii-mark"></div></div>
+      <p class="lede">Pick one from the side, or start another.</p>
+      <button type="button" class="go home-new">
+        <svg width="12" height="12" viewBox="0 0 13 13"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        create agent
+      </button>
     </section>
 
     <section class="watch" hidden>
-      <div class="bar">
-        <div class="title"><span class="dot"></span><span class="agent-name"></span></div>
-        <span class="where"></span>
-        <span class="spacer"></span>
-        <span class="typist"></span>
-        <button type="button" class="interrupt" disabled>interrupt</button>
-        <button type="button" class="quiet restart">restart</button>
-        <button type="button" class="quiet fresh">start fresh</button>
+      <div class="screen">
+        <div id="term"></div>
+        <span class="typist" hidden></span>
       </div>
-      <div class="screen"><div id="term"></div></div>
       <p class="note"></p>
     </section>
   </main>
 </div>
 
+<!-- New agent, as a dialog: a deliberate, occasional act, reachable from
+     either + regardless of what's open behind it, and closing back to
+     exactly that. -->
+<div class="scrim" hidden>
+  <div class="dialog" role="dialog" aria-label="new agent">
+    <div class="dialog-head">
+      <svg class="mark" width="14" height="14" viewBox="0 0 18 18" role="img" aria-label="Kolo">
+        <path fill-rule="evenodd" fill="currentColor"
+          d="M0.72,9 a8.28,8.28 0 1,0 16.56,0 a8.28,8.28 0 1,0 -16.56,0 Z
+             M4.1886,7.9326 a5.8788,5.8788 0 1,0 11.7576,0 a5.8788,5.8788 0 1,0 -11.7576,0 Z"/>
+      </svg>
+      <h2>New agent</h2>
+      <button type="button" class="icon-btn close" title="close">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <form class="create">
+      <div class="dialog-body">
+        <div class="field agent-field">
+          <label>agent</label>
+          <div class="kind-picker" hidden></div>
+          <input name="command" list="known-commands" placeholder="any command — claude --model opus" hidden disabled>
+          <datalist id="known-commands"></datalist>
+        </div>
+        <div class="field-row">
+          <div class="field host-field">
+            <label for="new-host">host</label>
+            <select id="new-host" name="host"></select>
+          </div>
+          <div class="field">
+            <label for="new-dir">directory</label>
+            <select id="new-dir" name="dir"></select>
+            <input name="dir" placeholder="anywhere — /home/me/proj" hidden disabled>
+          </div>
+        </div>
+        <div class="field">
+          <label for="new-name">name</label>
+          <input id="new-name" name="name" placeholder="name" maxlength="32" required>
+        </div>
+      </div>
+      <p class="note dialog-note"></p>
+      <div class="dialog-foot">
+        <button type="submit" class="go">
+          <svg width="13" height="13" viewBox="0 0 14 14"><path d="M2.5 7.5 5.5 10.5 11.5 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          create
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script src="/assets/xterm.js"></script>
 <script src="/assets/addon-canvas.js"></script>
 <script>
-// One page, two views: the door, and the org's agents. Which agent is open comes
-// from the URL, so opening one and reloading lands back on it.
+// One page, two views: the door, and the org's agents. Which agent is open
+// comes from the URL, so opening one and reloading lands back on it.
 const el = (sel) => document.querySelector(sel);
 const views = { signin: el('.signin'), app: el('.app') };
 
@@ -232,8 +396,131 @@ function agentInURL() {
   return m && m[1];
 }
 
+// The mark, generated by the same ring geometry the brand tooling uses
+// (docs/brand/ring.ts) — drawn once into every place it appears, not
+// redrawn by hand each time.
+const HOT = new Set(['%', '@']);
+const ASCII_ROWS = [
+  '                .:.                ',
+  '         .:==*********==:.         ',
+  '       :*#####+-::. .::-=+=:       ',
+  '     -#####*-             :=+:     ',
+  '   .+%%%##-                 :+=.   ',
+  '  .#%%%%%-                   :++.  ',
+  '  +%%%%%=                     -*=  ',
+  ' .%%%%%%-                     .**. ',
+  ' -@@@@@@-                     .**: ',
+  ' -@@@@@@#                     -**: ',
+  ' .@@@@@@@-                   :***. ',
+  '  *@@@@@@@+                 =###=  ',
+  '  .%@@@@@@@%+.           .-*###*.  ',
+  '   .*@@@@@@@@@%*=------+*%####+.   ',
+  '     =%@@@@@@@@@@@@%%%%%%%%%#-     ',
+  '       -#@@@@@@@@@@%%%%%%%*-       ',
+  '         .-**@@@@@@%%%++-.         ',
+  '                .-.                ',
+];
+function drawMark(node) {
+  node.textContent = '';
+  for (const line of ASCII_ROWS) {
+    const row = document.createElement('div');
+    for (const ch of line) {
+      if (HOT.has(ch) && row.lastChild && row.lastChild.className === 'hot') {
+        row.lastChild.textContent += ch;
+      } else if (HOT.has(ch)) {
+        const span = document.createElement('span');
+        span.className = 'hot';
+        span.textContent = ch;
+        row.append(span);
+      } else {
+        row.append(document.createTextNode(ch));
+      }
+    }
+    node.append(row);
+  }
+}
+document.querySelectorAll('.ascii-mark').forEach(drawMark);
+
+// programOf mirrors the hub's own Program(): the first word of a command
+// line, basename only.
+function programOf(command) {
+  const first = (command || '').trim().split(/\s+/)[0] || '';
+  return first.split(/[\\/]/).pop();
+}
+
+// A mark for a chip, not the word. Where kolo actually knows the kind, it
+// draws that project's own mark — the CC0 vector traces from simple-icons
+// (simpleicons.org, github.com/simple-icons/simple-icons), not redrawn by
+// hand: the trace is public domain, this is naming what's running rather
+// than claiming any partnership with who built it. A host can lend a
+// command kolo has never heard of besides, so anything unrecognised falls
+// back to one of a small set of original abstract glyphs instead, picked
+// deterministically from the program name.
+const KNOWN_MARKS = {
+  // Claude — simple-icons "claude", viewBox 0 0 24 24.
+  claude: { viewBox: '0 0 24 24', inner: '<path fill="currentColor" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/>' },
+  // opencode — simple-icons "opencode", viewBox 0 0 24 24.
+  opencode: { viewBox: '0 0 24 24', inner: '<path fill="currentColor" d="M22 24H2V0h20zM17 4.8H7v14.4h10z"/>' },
+  // Gemini — simple-icons "googlegemini", viewBox 0 0 24 24.
+  gemini: { viewBox: '0 0 24 24', inner: '<path fill="currentColor" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/>' },
+  // Cursor — simple-icons "cursor", viewBox 0 0 24 24. Two possible binary
+  // names cover the same mark.
+  cursor: { viewBox: '0 0 24 24', inner: '<path fill="currentColor" d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/>' },
+  // GitHub Copilot — simple-icons "githubcopilot", viewBox 0 0 24 24.
+  copilot: { viewBox: '0 0 24 24', inner: '<path fill="currentColor" d="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z"/>' },
+  // Qwen (Code) — simple-icons "qwen", viewBox 0 0 24 24.
+  qwen: { viewBox: '0 0 24 24', inner: '<path fill="currentColor" d="M23.919 14.545 20.817 9.17l1.47-2.544a.56.56 0 0 0 0-.566l-1.633-2.83a.57.57 0 0 0-.49-.283h-6.207L12.487.402a.57.57 0 0 0-.49-.284H8.732a.56.56 0 0 0-.49.284L5.139 5.775h-2.94a.56.56 0 0 0-.49.284L.077 8.887a.56.56 0 0 0 0 .567L3.18 14.83l-1.47 2.545a.56.56 0 0 0 0 .566l1.634 2.83a.57.57 0 0 0 .49.283h6.205l1.47 2.545a.57.57 0 0 0 .49.284h3.266a.57.57 0 0 0 .49-.284l3.104-5.375h2.94a.57.57 0 0 0 .49-.283l1.634-2.828a.55.55 0 0 0-.004-.568M8.733.686l1.634 2.828-1.634 2.828H21.8L20.164 9.17H7.425L5.63 6.06Zm1.306 19.801-6.205-.002 1.634-2.83h3.265L2.201 6.344h3.267q3.182 5.517 6.367 11.032zm10.124-5.66L18.53 12l-6.532 11.315-1.634-2.83c2.129-3.673 4.25-7.351 6.373-11.028h3.592l3.102 5.374z"/>' },
+  // Windsurf — simple-icons "windsurf", viewBox 0 0 24 24.
+  windsurf: { viewBox: '0 0 24 24', inner: '<path fill="currentColor" d="M23.55 5.067c-1.2038-.002-2.1806.973-2.1806 2.1765v4.8676c0 .972-.8035 1.7594-1.7597 1.7594-.568 0-1.1352-.286-1.4718-.7659l-4.9713-7.1003c-.4125-.5896-1.0837-.941-1.8103-.941-1.1334 0-2.1533.9635-2.1533 2.153v4.8957c0 .972-.7969 1.7594-1.7596 1.7594-.57 0-1.1363-.286-1.4728-.7658L.4076 5.1598C.2822 4.9798 0 5.0688 0 5.2882v4.2452c0 .2147.0656.4228.1884.599l5.4748 7.8183c.3234.462.8006.8052 1.3509.9298 1.3771.313 2.6446-.747 2.6446-2.0977v-4.893c0-.972.7875-1.7593 1.7596-1.7593h.003a1.798 1.798 0 0 1 1.4718.7658l4.9723 7.0994c.4135.5905 1.05.941 1.8093.941 1.1587 0 2.1515-.9645 2.1515-2.153v-4.8948c0-.972.7875-1.7594 1.7596-1.7594h.194a.22.22 0 0 0 .2204-.2202v-4.622a.22.22 0 0 0-.2203-.2203Z"/>' },
+  // Replit (Agent) — simple-icons "replit", viewBox 0 0 24 24.
+  replit: { viewBox: '0 0 24 24', inner: '<path fill="currentColor" d="M2 1.5A1.5 1.5 0 0 1 3.5 0h7A1.5 1.5 0 0 1 12 1.5V8H3.5A1.5 1.5 0 0 1 2 6.5ZM12 8h8.5A1.5 1.5 0 0 1 22 9.5v5a1.5 1.5 0 0 1-1.5 1.5H12ZM2 17.5A1.5 1.5 0 0 1 3.5 16H12v6.5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 2 22.5Z"/>' },
+};
+// A second name for the same mark — different tools ship under more than
+// one binary name for the same product.
+KNOWN_MARKS['cursor-agent'] = KNOWN_MARKS.cursor;
+const KIND_GLYPHS = [
+  '<circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="6" cy="6" r="1.1" fill="currentColor"/>',
+  '<path d="M6 1.5 10.5 6 6 10.5 1.5 6Z" stroke="currentColor" stroke-width="1.2" fill="none"/>',
+  '<path d="M6 1.5 10.5 9.5 1.5 9.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/>',
+  '<path d="M6 1 10 3.3v4.4L6 11 2 8.7V3.3Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" fill="none"/>',
+  '<rect x="2" y="2" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="6" cy="6" r="1" fill="currentColor"/>',
+  '<circle cx="6" cy="6" r="4.3" stroke="currentColor" stroke-width="1.1" fill="none"/><path d="M6 3.8v4.4M3.8 6h4.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>',
+  '<path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
+  '<circle cx="4" cy="6" r="1.3" fill="currentColor"/><circle cx="8" cy="6" r="1.3" fill="currentColor"/>',
+  '<path d="M2 6a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/>',
+  '<path d="M3 7.5 6 4.5 9 7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+  '<path d="M9.5 6A3.5 3.5 0 1 1 6 2.5" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/>',
+  '<path d="M4 3v6M6 3v6M8 3v6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>',
+];
+// FNV-1a plus a murmur3-style finalizer: a plain h*31 hash clustered badly
+// on real tool names (claude/codex/crush/gemini/opencode landed 4 of 5 on
+// the same glyph) — this spreads short, similar-looking program names
+// across the palette instead of piling them into one or two buckets.
+// Returns {viewBox, inner} — a known mark at its own native viewBox, or one
+// of the abstract fallbacks at the shared 12x12 grid they were drawn on.
+function kindGlyph(command) {
+  const p = programOf(command).toLowerCase();
+  if (KNOWN_MARKS[p]) return KNOWN_MARKS[p];
+  if (!p) return { viewBox: '0 0 12 12', inner: KIND_GLYPHS[0] };
+  // FNV-1a plus a murmur3-style finalizer: a plain h*31 hash clustered badly
+  // on real tool names (claude/codex/crush/gemini/opencode landed 4 of 5 on
+  // the same glyph) — this spreads short, similar-looking program names
+  // across the palette instead of piling them into one or two buckets.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < p.length; i++) { h ^= p.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  h = h >>> 0;
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return { viewBox: '0 0 12 12', inner: KIND_GLYPHS[(h >>> 0) % KIND_GLYPHS.length] };
+}
+
 let hosts = [];
 let signedIn = false;
+let me = {};
+// The agents from the last successful refresh, kept so a rename can redraw
+// the side without waiting on a round trip that has nothing to do with it.
+let lastAgents = [];
 
 async function refresh() {
   const resp = await fetch('/v1/agents');
@@ -245,76 +532,220 @@ async function refresh() {
   }
   const data = await resp.json();
   show('app');
-  el('.brand .org').textContent = data.org;
-  el('.me .who').textContent = data.you.name;
+  el('.me .name').textContent = data.you.name;
+  el('.me .initial').textContent = (data.you.name.trim().slice(0, 1) || '?').toUpperCase();
   me = data.you;
   hosts = data.hosts;
-  drawAgents(data.agents || []);
+  lastAgents = data.agents || [];
+  drawGroups(lastAgents);
   drawChoices();
   return data;
 }
 
-// drawAgents redraws the side. Which one is open is read from the URL rather
-// than remembered from the click that opened it, so a reload and somebody else's
-// agent appearing land in the same place.
-function drawAgents(agents) {
-  const list = el('.agents');
+// Which agent's name is being edited, and what it currently reads — kept at
+// module level, not per-row state, since drawGroups rebuilds the whole side
+// from scratch on every refresh and has to know to draw an input instead of
+// a name for exactly one row.
+let renamingId = null;
+let renameDraft = '';
+
+function startRename(a) {
+  renamingId = a.name;
+  renameDraft = a.label || a.name;
+  drawGroups(lastAgents);
+}
+
+function cancelRename() {
+  renamingId = null;
+  drawGroups(lastAgents);
+}
+
+async function commitRename() {
+  const id = renamingId;
+  const draft = renameDraft.trim();
+  const current = lastAgents.find((a) => a.name === id);
+  // Nothing worth a round trip: empty is a mis-click, unchanged is a blur
+  // that wasn't really an edit.
+  if (!id || !draft || (current && draft === (current.label || current.name))) {
+    cancelRename();
+    return;
+  }
+  renamingId = null;
+  const resp = await fetch(`/v1/agents/${id}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: draft }),
+  });
+  if (!resp.ok) alert((await resp.text()).trim());
+  refresh();
+}
+
+// drawGroups redraws the side: one collapsible group per host lending
+// itself, its agents nested under it, rather than the host repeated as
+// text on every row.
+const collapsed = {};
+function drawGroups(agents) {
   const open = agentInURL();
-  for (const node of list.querySelectorAll('.agent')) node.remove();
-  el('.agents .empty').hidden = agents.length > 0;
+  const container = el('.groups');
+  container.replaceChildren();
 
+  const byHost = new Map();
   for (const a of agents) {
-    const row = document.createElement('button');
-    row.className = 'agent' + (a.name === open ? ' on' : '');
-    row.innerHTML = `
-      <span class="row"><span class="dot"></span><span class="name"></span></span>
-      <span class="dir"></span>
-      <span class="quiet drop" title="stop">✕</span>`;
-    // Text rather than interpolated: a name and a directory are somebody's, and
-    // they go on the page as-is.
-    row.querySelector('.name').textContent = a.name;
-    row.querySelector('.dot').classList.toggle('failed', a.status === 'failed');
-    if (a.name === open && doing === 'busy') row.querySelector('.dot').classList.add('busy');
-    row.querySelector('.dir').textContent = `${a.host}:${a.dir}`;
-    row.title = a.error ? `${a.status} — ${a.error}` : a.status;
+    if (!byHost.has(a.host)) byHost.set(a.host, []);
+    byHost.get(a.host).push(a);
+  }
+  // Every lending host gets a section, whether or not it has an agent on it
+  // yet — a host that just connected and is waiting for its first agent is
+  // a normal, common state, not one to hide. Order is the host list's own
+  // order, stable across a refresh rather than jumping around with whatever
+  // order agents happen to load in; an agent whose host has since dropped
+  // still gets a group, so it is never silently lost from view.
+  const order = hosts.map((h) => h.id);
+  for (const id of byHost.keys()) if (!order.includes(id)) order.push(id);
 
-    row.onclick = () => { location.hash = `#/agent/${a.name}`; };
-    row.querySelector('.drop').onclick = (ev) => { ev.stopPropagation(); stop(a.name); };
-    list.append(row);
-    if (a.name === open) drawTitle(a);
+  if (order.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'no-hosts';
+    empty.innerHTML = `<p>No machine is lending itself to this org yet.</p>
+      <code>kolo host</code>
+      <p class="fine">Run it on a machine to connect it here.</p>`;
+    container.append(empty);
+    return;
+  }
+
+  for (const host of order) {
+    const members = byHost.get(host) || [];
+    const group = document.createElement('div');
+    group.className = 'group';
+
+    const head = document.createElement('button');
+    head.className = 'group-head';
+    head.type = 'button';
+    head.innerHTML = `
+      <svg class="chevron" width="10" height="10" viewBox="0 0 10 10"><path d="M2.5 1.5l4 3.5-4 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <span class="chip"><svg width="10" height="10" viewBox="0 0 14 14"><rect x="1" y="1.5" width="12" height="8" rx="1.3" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M5 12.5h4M7 9.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+      <span class="label"></span>
+      <span class="spacer"></span>
+      <button type="button" class="icon-btn add" title="new agent on ${host}">
+        <svg width="12" height="12" viewBox="0 0 13 13"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>`;
+    head.querySelector('.label').textContent = host;
+    const isCollapsed = !!collapsed[host];
+    head.querySelector('.chevron').classList.toggle('open', !isCollapsed);
+    head.onclick = () => {
+      collapsed[host] = !collapsed[host];
+      drawGroups(agents);
+    };
+    head.querySelector('.add').onclick = (ev) => {
+      ev.stopPropagation();
+      openCreate(host);
+    };
+
+    const body = document.createElement('div');
+    body.className = 'group-body' + (isCollapsed ? ' collapsed' : '');
+
+    for (const a of members) {
+      // A div, not a button: a real <button> can't legally contain the
+      // .drop stop button nested inside it, so this carries the button role
+      // and keyboard activation by hand instead.
+      const row = document.createElement('div');
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      row.className = 'agent' + (a.name === open ? ' on' : '');
+      row.innerHTML = `
+        <span class="row"></span>
+        <span class="dir"></span>`;
+      const rowInner = row.querySelector('.row');
+      // The registry only knows starting/running/failed — busy-vs-idle is a
+      // fact about the live screen, which only exists for whichever agent
+      // is actually being watched right now.
+      const busy = a.name === open && doing === 'busy';
+      if (busy) {
+        const spinner = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        spinner.setAttribute('class', 'spinner');
+        spinner.setAttribute('width', '13'); spinner.setAttribute('height', '13'); spinner.setAttribute('viewBox', '0 0 13 13');
+        spinner.innerHTML = `<circle class="track" cx="6.5" cy="6.5" r="5" fill="none" stroke-width="1.6"/>
+          <circle class="arc" cx="6.5" cy="6.5" r="5" fill="none" stroke-width="1.6" stroke-linecap="round"/>`;
+        rowInner.append(spinner);
+      } else {
+        const dot = document.createElement('span');
+        dot.className = 'dot' + (a.status === 'failed' ? ' failed' : '');
+        rowInner.append(dot);
+      }
+      if (a.name === renamingId) {
+        const input = document.createElement('input');
+        input.className = 'rename';
+        input.value = renameDraft;
+        input.oninput = (ev) => { renameDraft = ev.target.value; };
+        input.onkeydown = (ev) => {
+          if (ev.key === 'Enter') { ev.preventDefault(); commitRename(); }
+          else if (ev.key === 'Escape') { ev.preventDefault(); cancelRename(); }
+        };
+        input.onblur = () => commitRename();
+        input.onclick = (ev) => ev.stopPropagation();
+        rowInner.append(input);
+        // Queued past the redraw it's born in, so the browser has actually
+        // laid it out before focus and selection try to land on it.
+        setTimeout(() => { input.focus(); input.select(); });
+      } else {
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = a.label || a.name;
+        name.title = 'double-click to rename';
+        name.ondblclick = (ev) => { ev.stopPropagation(); startRename(a); };
+        rowInner.append(name);
+      }
+      const chip = document.createElement('span');
+      chip.className = 'kind-chip';
+      chip.title = programOf(a.command) || a.command;
+      const mark = kindGlyph(a.command);
+      chip.innerHTML = `<svg width="10" height="10" viewBox="${mark.viewBox}">${mark.inner}</svg>`;
+      rowInner.append(chip);
+      const drop = document.createElement('button');
+      drop.type = 'button';
+      drop.className = 'drop';
+      drop.title = 'stop';
+      drop.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+      drop.onclick = (ev) => { ev.stopPropagation(); stop(a.name); };
+      rowInner.append(drop);
+      row.querySelector('.dir').textContent = a.dir;
+      row.title = a.error ? `${a.status} — ${a.error}` : a.status;
+      row.onclick = () => { location.hash = `#/agent/${a.name}`; };
+      row.onkeydown = (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); location.hash = `#/agent/${a.name}`; }
+      };
+      body.append(row);
+    }
+
+    group.append(head, body);
+    container.append(group);
   }
 }
 
-// drawTitle says which agent this screen belongs to, above the screen.
-function drawTitle(a) {
-  el('.bar .agent-name').textContent = a.name;
-  el('.bar .where').textContent = `${a.host}:${a.dir}`;
-  const dot = el('.bar .dot');
-  dot.className = 'dot';
-  dot.classList.toggle('failed', a.status === 'failed');
-  dot.classList.toggle('busy', doing === 'busy');
-  dot.title = a.error ? `${a.status} — ${a.error}` : a.status;
-}
-
-// drawChoices fills the create form with what the hosts are lending. The
-// choices are the host's own terms, so nothing can be picked that will only be
-// refused a moment later — unless the host lent any command or any directory,
-// in which case that box opens up into free text.
+// drawChoices fills the create dialog with what the hosts are lending. The
+// choices are the host's own terms, so nothing can be picked that will only
+// be refused a moment later — unless the host lent any command or any
+// directory, in which case that field opens up into free text.
 function drawChoices() {
-  const hostSel = el('[name=host]'), dirSel = el('select[name=dir]'), cmdSel = el('select[name=command]');
-  const cmdInput = el('input[name=command]'), known = el('#known-commands');
-  const dirInput = el('input[name=dir]');
-  const chosen = hostSel.value;
+  const hostSel = el('#new-host'), dirSel = el('#new-dir'), dirInput = el('input[name=dir]');
+  const picker = el('.kind-picker'), cmdInput = el('input[name=command]'), known = el('#known-commands');
+  const hostField = el('.host-field');
+  const chosen = hostSel.value || createHostPref;
   fill(hostSel, hosts.map((h) => h.id));
-  if (chosen) hostSel.value = chosen;
+  if (chosen && hosts.some((h) => h.id === chosen)) hostSel.value = chosen;
+  // Asking which host is not a question when only one machine is lending
+  // itself — the field disappears rather than making you answer something
+  // that only ever has one answer.
+  hostField.hidden = hosts.length <= 1;
+  el('.field-row').classList.toggle('single', hosts.length <= 1);
 
-  const host = hosts.find((h) => h.id === hostSel.value);
+  const host = hosts.find((h) => h.id === hostSel.value) || hosts[0];
   const lendingEverywhere = !!host && (host.dirs || []).includes('*');
   dirSel.hidden = dirSel.disabled = lendingEverywhere;
   dirInput.hidden = dirInput.disabled = !lendingEverywhere;
   if (!lendingEverywhere) fill(dirSel, host ? host.dirs : []);
+
   const lendingAny = !!host && (host.allow || []).includes('*');
-  cmdSel.hidden = cmdSel.disabled = lendingAny;
+  picker.hidden = lendingAny;
   cmdInput.hidden = cmdInput.disabled = !lendingAny;
   known.replaceChildren();
   if (lendingAny) {
@@ -324,10 +755,30 @@ function drawChoices() {
       known.append(option);
     }
   } else {
-    fill(cmdSel, host ? host.allow : []);
+    drawKindPicker(host ? host.allow : []);
   }
-  el('form.create button').disabled = hosts.length === 0;
-  if (hosts.length === 0) say('.home', 'No machine is lending itself to this org right now.');
+  el('form.create button[type=submit]').disabled = hosts.length === 0;
+  say('.dialog-note', hosts.length === 0 ? 'No machine is lending itself to this org right now.' : '');
+}
+
+// drawKindPicker is the agent field for a host that lends a fixed set of
+// commands: one row per command, a mark next to each rather than a plain
+// list a select could already do.
+let pickedCommand = null;
+function drawKindPicker(commands) {
+  const picker = el('.kind-picker');
+  picker.replaceChildren();
+  if (!commands.includes(pickedCommand)) pickedCommand = commands[0] || null;
+  for (const command of commands) {
+    const choice = document.createElement('button');
+    choice.type = 'button';
+    choice.className = 'kind-choice' + (command === pickedCommand ? ' on' : '');
+    const mark = kindGlyph(command);
+    choice.innerHTML = `<span class="kind-chip"><svg width="10" height="10" viewBox="${mark.viewBox}">${mark.inner}</svg></span><span></span>`;
+    choice.querySelector('span:last-child').textContent = command;
+    choice.onclick = () => { pickedCommand = command; drawKindPicker(commands); };
+    picker.append(choice);
+  }
 }
 
 // options may be absent rather than empty: a host that lends nothing sends null
@@ -345,26 +796,45 @@ function fill(select, options) {
   if ((options || []).includes(chosen)) select.value = chosen;
 }
 
-el('select[name=host]').onchange = drawChoices;
-el('.side .new').onclick = () => { location.hash = ''; el('input[name=name]').focus(); };
+el('#new-host').onchange = drawChoices;
+
+// The dialog is reachable from either + — the heading's and each group's —
+// regardless of what's open behind it, and closes back to exactly that.
+let createHostPref = null;
+function openCreate(hostPref) {
+  createHostPref = hostPref || null;
+  drawChoices();
+  el('.scrim').hidden = false;
+  el('#new-name').focus();
+}
+function closeCreate() {
+  el('.scrim').hidden = true;
+  el('form.create').reset();
+  say('.dialog-note', '');
+}
+el('.side .new').onclick = () => openCreate(null);
+el('.home-new').onclick = () => openCreate(null);
+el('.dialog .close').onclick = closeCreate;
+el('.scrim').onclick = (ev) => { if (ev.target === el('.scrim')) closeCreate(); };
 
 el('form.create').onsubmit = async (ev) => {
   ev.preventDefault();
   const form = new FormData(ev.target);
+  const lendingAny = !el('input[name=command]').hidden;
+  const command = lendingAny ? form.get('command') : pickedCommand;
   const body = JSON.stringify({
     name: form.get('name'), host: form.get('host'),
-    dir: form.get('dir'), command: form.get('command'),
+    dir: form.get('dir'), command,
   });
   const resp = await fetch('/v1/agents', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
   });
   if (!resp.ok) {
-    say('.home', (await resp.text()).trim(), true);
+    say('.dialog-note', (await resp.text()).trim(), true);
     return;
   }
-  ev.target.reset();
-  say('.home', '');
   const made = await resp.json();
+  closeCreate();
   await refresh();
   location.hash = `#/agent/${made.name}`;
 };
@@ -372,17 +842,22 @@ el('form.create').onsubmit = async (ev) => {
 async function stop(name) {
   if (!confirm(`Stop ${name}? Its conversation goes with it.`)) return;
   const resp = await fetch(`/v1/agents/${name}`, { method: 'DELETE' });
-  if (!resp.ok) say('.home', (await resp.text()).trim(), true);
+  if (!resp.ok) alert((await resp.text()).trim());
   if (agentInURL() === name) location.hash = '';
   refresh();
 }
 
-function say(view, message, problem) {
-  const note = el(`${view} .note`);
+function say(sel, message, problem) {
+  const note = el(sel);
   note.textContent = message;
   note.classList.toggle('problem', !!problem);
 }
 
+// The profile control: click opens the menu, click away or sign-out closes it.
+el('.me').onclick = () => { el('.me-menu').hidden = !el('.me-menu').hidden; };
+document.addEventListener('click', (ev) => {
+  if (!el('.me-wrap').contains(ev.target)) el('.me-menu').hidden = true;
+});
 
 // The terminal is drawn at one size and never scaled to fill the window. The
 // grid is the agent's, shared by everybody watching, and the hub already keeps
@@ -432,8 +907,6 @@ term.onData((keys) => {
 
 let socket = null;
 let watching = null;
-// Who the hub says we are. The page never decides this; it only compares.
-let me = {};
 
 // What the agent's terminal is, in cells. The hub decides it from every browser
 // watching, so this follows rather than leads.
@@ -510,7 +983,7 @@ function connect(name) {
   // reports its own close, which would land after the replacement opened.
   ws.onopen = () => {
     if (ws !== socket) return;
-    say('.watch', `watching ${name}`);
+    say('.watch .note', `watching ${name}`);
     // Before anything else: the agent should be drawing a screen this window can
     // show, and it cannot know the size until somebody tells it.
     propose();
@@ -529,10 +1002,10 @@ function connect(name) {
         term.resize(msg.cols, msg.rows);
         break;
       case 'state':
-        say('.watch', describe(msg.state));
+        say('.watch .note', describe(msg.state));
         break;
       case 'interrupted':
-        say('.watch', `${msg.from} stopped the agent`);
+        say('.watch .note', `${msg.from} stopped the agent`);
         break;
       // Who typed last. Announced on the screen everybody is watching, so it
       // arrives in step with what the agent does.
@@ -543,13 +1016,13 @@ function connect(name) {
       // Both arrive just before the screen goes, so they are the last thing
       // anyone watching is told about the process they were watching.
       case 'restarted':
-        say('.watch', `${msg.from} restarted the agent`);
+        say('.watch .note', `${msg.from} restarted the agent`);
         break;
       case 'fresh':
-        say('.watch', `${msg.from} started the agent fresh — its conversation is gone`);
+        say('.watch .note', `${msg.from} started the agent fresh — its conversation is gone`);
         break;
       case 'refused':
-        say('.watch', msg.text, true);
+        say('.watch .note', msg.text, true);
         break;
     }
     // What can be done comes from the same events as what the agent is doing, so
@@ -565,7 +1038,7 @@ function connect(name) {
     // about: the agent may be restarting, or gone.
     offer('unknown');
     typist = null; keyboardChanged();
-    say('.watch', `${name} is not showing a screen — waiting`);
+    say('.watch .note', `${name} is not showing a screen — waiting`);
     setTimeout(() => { if (watching === name) connect(name); }, 1000);
   };
   ws.onerror = () => ws.close();
@@ -585,43 +1058,25 @@ function describe(state) {
   }
 }
 
-// offer draws what a member may do to the agent as it stands. Stop is the only
-// one of them that depends on the screen, and it is read from the same events as
-// everything else so it is never offered for a screen the agent has left behind.
+// offer records what the watched screen is doing. Read back by drawGroups
+// for the sidebar's busy spinner — the only thing left that depends on it,
+// now that the web UI has no controls of its own that care.
 function offer(state) {
   doing = state;
-  el('.interrupt').disabled = state !== 'busy';
-  const dot = el('.bar .dot');
-  if (dot) dot.classList.toggle('busy', state === 'busy');
 }
 
 // keyboardChanged redraws who typed last.
 function keyboardChanged() {
-  el('.bar .typist').textContent = typist
-    ? (typist === me.name ? 'you are typing' : `${typist} is typing`)
-    : '';
+  const bar = el('.typist');
+  bar.hidden = !typist;
+  bar.textContent = typist ? (typist === me.name ? 'you are typing' : `${typist} is typing`) : '';
 }
-
-el('.interrupt').onclick = () => tell({ type: 'interrupt' });
-
-// Restart and start fresh are permitted on any screen — killing a process is
-// safe whatever the agent is showing — so what stands between them and a
-// misclick is the same thing that stands in front of a stop: being asked.
-el('.restart').onclick = () => {
-  if (!confirm(`Restart ${watching}? It comes back with its conversation, but whatever it is doing now is lost.`)) return;
-  tell({ type: 'restart' });
-};
-
-el('.fresh').onclick = () => {
-  if (!confirm(`Start ${watching} fresh? Everything the org has told it is forgotten.`)) return;
-  tell({ type: 'fresh' });
-};
 
 // tell sends one thing to the agent. Who it is from is the hub's word, taken
 // from the connection, so there is nothing to send about that.
 function tell(what) {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
-    say('.watch', 'not connected', true);
+    say('.watch .note', 'not connected', true);
     return false;
   }
   socket.send(JSON.stringify(what));
@@ -649,8 +1104,9 @@ async function route() {
 addEventListener('hashchange', route);
 route();
 // The list is a live thing: agents appear when somebody else makes one, and
-// change status on their own.
-setInterval(() => { if (signedIn) refresh(); }, 3000);
+// change status on their own. Paused mid-rename — a redraw would tear out
+// the input a member is still typing into.
+setInterval(() => { if (signedIn && !renamingId) refresh(); }, 3000);
 </script>
 </body>
 </html>
