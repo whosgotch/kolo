@@ -45,3 +45,10 @@ make brand     # regenerate icons (Node + Chrome)
 
 Commits are small and described in plain sentences; docs live next to the code
 that makes them true.
+
+## License
+
+AGPL-3.0 — see [LICENSE](LICENSE). Kolo is a network service by nature; the
+AGPL's condition is that a modified copy run as a service still owes its
+users the source. Want to embed or host kolo under different terms? Open an
+issue.
