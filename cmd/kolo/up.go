@@ -24,7 +24,7 @@ import (
 func upCmd(args []string) error {
 	fs := flag.NewFlagSet("up", flag.ExitOnError)
 	var dirs, allow list
-	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default the current directory)")
+	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default any directory)")
 	fs.Var(&allow, "allow", "an agent command line the org may run, flags and all (repeat; '*' lends any command on PATH; default whichever kolo knows and finds installed)")
 	orgPath := fs.String("org", config.Path("org.json"), "org file, created if it is not there")
 	name := fs.String("name", "", "org name, used only when creating the org file (default this directory's name)")
@@ -50,13 +50,8 @@ func upCmd(args []string) error {
 	strayOrg(fs)
 
 	if len(dirs) == 0 {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		dirs = list{cwd}
-	}
-	if err := resolveDirs(dirs); err != nil {
+		dirs = list{hub.DirAny}
+	} else if err := resolveDirs(dirs); err != nil {
 		return err
 	}
 	// Before the -allow default below, so kinds configured here are offered
@@ -157,7 +152,7 @@ func upCmd(args []string) error {
 		fmt.Printf("Created %s for %s.\n", *orgPath, org.Name)
 	}
 	fmt.Printf("\n%s is up at %s\n", org.Name, shown)
-	fmt.Printf("Lending %s, running %s.\n", strings.Join(dirs, " "), strings.Join(allow, " "))
+	fmt.Printf("Lending %s, running %s.\n", strings.Join(displayDirs(dirs), " "), strings.Join(allow, " "))
 	if !created {
 		fmt.Printf("Org in %s, %s.\n", *orgPath, members(len(org.Members)))
 	}

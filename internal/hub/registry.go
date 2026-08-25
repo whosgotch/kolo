@@ -26,6 +26,10 @@ const maxLabel = 64
 // A command under it is still named like one on PATH: program name, no directory.
 const AllowAny = "*"
 
+// DirAny is the -dir entry that lends the host's whole filesystem: agents may
+// be started in any directory.
+const DirAny = "*"
+
 // runs reports whether a host lending allow may be asked to start command:
 // one of the command lines it named, or anything on PATH when it lent '*'.
 // Syntax only; whether the program exists is checked on the host.
@@ -199,7 +203,7 @@ func (r *Registry) Add(a Agent) (Sender, error) {
 	if _, taken := r.find(a.Name); taken != nil {
 		return nil, fmt.Errorf("an agent called %q already exists", a.Name)
 	}
-	if !slices.Contains(h.info.Dirs, a.Dir) {
+	if !slices.Contains(h.info.Dirs, a.Dir) && !slices.Contains(h.info.Dirs, DirAny) {
 		return nil, fmt.Errorf("%s does not lend %s", a.Host, a.Dir)
 	}
 	if !runs(h.info.Allow, a.Command) {

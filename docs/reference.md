@@ -36,9 +36,10 @@ $ kolo up
 
 `kolo up` makes whatever is missing: the org file (`~/.kolo/org.json`), a fresh
 credential for this machine, and — the first time — a member token for whoever
-ran it, printed once and stored nowhere. It lends the directory it was started
-in and allows the agents kolo knows about and finds on `PATH`. `-dir` and
-`-allow` say otherwise, and repeat. `-addr 127.0.0.1:7300` keeps it off the
+ran it, printed once and stored nowhere. By default it lends any directory
+this user can reach and allows the agents kolo knows about and finds on
+`PATH`. `-dir` narrows that to specific directories (repeatable); `-allow`
+narrows the commands the same way. `-addr 127.0.0.1:7300` keeps it off the
 network; `-tls-domain hub.acme.com` gets a Let's Encrypt certificate (ports 80
 and 443 reachable, domain resolving here).
 
@@ -70,6 +71,9 @@ Everything a machine remembers lives in `~/.kolo` (`$KOLO_HOME` moves it;
 - `-dir` and `-allow` bound what may be **started**, not what a running agent can
   **reach**: it runs as the host user and can read `~/.ssh`. Run the host as a
   user that owns only what the org should have.
+- Left unset, `-dir` lends every directory this user can reach, not just the
+  one kolo was started in — narrow it explicitly on any host you don't fully
+  trust the org with.
 - The hub is a remote-code-execution endpoint; its authentication is what stands
   between the internet and the host's account. Plain HTTP is fine on a trusted
   network only — across the internet use `-tls-domain`.

@@ -21,9 +21,10 @@ Open it and sign in with this. It is stored nowhere, so keep it:
     kolo_yPNNK8ZnHdvgKFDiQV2Oc…
 ```
 
-`kolo up` starts a hub and lends the directory it was started in. Send the
-printed link to your team; whoever opens it picks a name and is in. Later
-members: `kolo invite`. See the org: `kolo who`.
+`kolo up` starts a hub and, by default, lends any directory this user can
+reach (`-dir` narrows that). Send the printed link to your team; whoever
+opens it picks a name and is in. Later members: `kolo invite`. See the org:
+`kolo who`.
 
 For hub and hosts on separate machines, TLS, and every flag:
 [docs/reference.md](docs/reference.md).

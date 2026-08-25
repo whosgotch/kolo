@@ -190,6 +190,7 @@
         <input name="name" placeholder="name" maxlength="32" required>
         <select name="host"></select>
         <select name="dir"></select>
+        <input name="dir" placeholder="anywhere — /home/me/proj" hidden disabled>
         <select name="command"></select>
         <input name="command" list="known-commands" placeholder="any command — claude --model opus" hidden disabled>
         <datalist id="known-commands"></datalist>
@@ -297,18 +298,21 @@ function drawTitle(a) {
 
 // drawChoices fills the create form with what the hosts are lending. The
 // choices are the host's own terms, so nothing can be picked that will only be
-// refused a moment later — unless the host lent any command, in which case the
-// command box opens up and the host's installed agents are offered as
-// suggestions beside it.
+// refused a moment later — unless the host lent any command or any directory,
+// in which case that box opens up into free text.
 function drawChoices() {
-  const hostSel = el('[name=host]'), dirSel = el('[name=dir]'), cmdSel = el('select[name=command]');
+  const hostSel = el('[name=host]'), dirSel = el('select[name=dir]'), cmdSel = el('select[name=command]');
   const cmdInput = el('input[name=command]'), known = el('#known-commands');
+  const dirInput = el('input[name=dir]');
   const chosen = hostSel.value;
   fill(hostSel, hosts.map((h) => h.id));
   if (chosen) hostSel.value = chosen;
 
   const host = hosts.find((h) => h.id === hostSel.value);
-  fill(dirSel, host ? host.dirs : []);
+  const lendingEverywhere = !!host && (host.dirs || []).includes('*');
+  dirSel.hidden = dirSel.disabled = lendingEverywhere;
+  dirInput.hidden = dirInput.disabled = !lendingEverywhere;
+  if (!lendingEverywhere) fill(dirSel, host ? host.dirs : []);
   const lendingAny = !!host && (host.allow || []).includes('*');
   cmdSel.hidden = cmdSel.disabled = lendingAny;
   cmdInput.hidden = cmdInput.disabled = !lendingAny;

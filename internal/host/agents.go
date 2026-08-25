@@ -156,7 +156,7 @@ func baseOf(command string) string {
 // reserve checks the rules and takes the name, before any process exists.
 func (a *Agents) reserve(spec hub.Agent, fresh bool, session string) error {
 	spec.Dir = filepath.Clean(spec.Dir)
-	if !slices.Contains(a.cfg.Dirs, spec.Dir) {
+	if !slices.Contains(a.cfg.Dirs, spec.Dir) && !slices.Contains(a.cfg.Dirs, hub.DirAny) {
 		return fmt.Errorf("this machine does not lend %s", spec.Dir)
 	}
 	if !a.runs(spec.Command) {

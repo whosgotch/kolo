@@ -20,7 +20,7 @@ import (
 func hostCmd(args []string) error {
 	fs := flag.NewFlagSet("host", flag.ExitOnError)
 	var dirs, allow list
-	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more)")
+	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default any directory)")
 	fs.Var(&allow, "allow", "an agent command line the org may run, flags and all (repeat, or comma-separated; '*' lends any command on PATH)")
 	join := fs.String("join", os.Getenv("KOLO_JOIN"), "the join string the hub printed for this machine; supplies both -hub and -token (default $KOLO_JOIN)")
 	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join, if not joining with -join (default $KOLO_HUB)")
@@ -28,7 +28,7 @@ func hostCmd(args []string) error {
 	state := fs.String("state", config.Path("agents.json"), "where to record the agents running here")
 	kinds := fs.String("kinds", config.Path("kinds.json"), "agent kinds to know about beyond the ones kolo ships with")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: kolo host -dir <path> [-dir <path>...] -allow <command>")
+		fmt.Fprintln(os.Stderr, "usage: kolo host [-dir <path>...] -allow <command>")
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "\nThese flags bound what the org may start here, not what a running")
 		fmt.Fprintln(os.Stderr, "agent may reach: it has this user's whole account. Run a host as a")
@@ -53,13 +53,13 @@ func hostCmd(args []string) error {
 	case *hubURL == "" || *token == "":
 		return fmt.Errorf("-join is needed: the string the hub printed when this machine was added\n" +
 			"(or -hub and -token separately, or $KOLO_HUB and $KOLO_TOKEN)")
-	case len(dirs) == 0:
-		return fmt.Errorf("-dir is needed: a host that lends no directory can run nothing")
 	case len(allow) == 0:
 		return fmt.Errorf("-allow is needed: say which agent commands the org may run, such as -allow claude")
 	}
 
-	if err := resolveDirs(dirs); err != nil {
+	if len(dirs) == 0 {
+		dirs = list{hub.DirAny}
+	} else if err := resolveDirs(dirs); err != nil {
 		return err
 	}
 
@@ -76,7 +76,7 @@ func hostCmd(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("lending %s, running %s", strings.Join(dirs, ", "), strings.Join(allow, ", "))
+	log.Printf("lending %s, running %s", strings.Join(displayDirs(dirs), ", "), strings.Join(allow, ", "))
 
 	// Before the hub is reached, so agents come back whether or not it's up
 	// — they're the org's, not the connection's.
@@ -95,6 +95,14 @@ func hostCmd(args []string) error {
 		}
 	})
 	return nil
+}
+
+// displayDirs says "*" as "anywhere", for people reading logs.
+func displayDirs(dirs list) list {
+	if len(dirs) == 1 && dirs[0] == hub.DirAny {
+		return list{"anywhere"}
+	}
+	return dirs
 }
 
 func resolveDirs(dirs list) error {
