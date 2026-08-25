@@ -88,6 +88,7 @@
   .side { display: flex; flex-direction: column; min-height: 0; background: var(--bg);
           border-right: 1px solid var(--line); }
   .brand { display: flex; align-items: center; padding: 16px 14px 10px; }
+  .brand .home { width: 32px; height: 32px; margin: -3px 0 -3px -5px; }
   .brand .mark { width: 26px; height: 26px; color: var(--text); }
   .brand .spacer { flex: 1; }
 
@@ -283,11 +284,13 @@
 <div class="app" hidden>
   <aside class="side">
     <div class="brand" title="kolo">
-      <svg class="mark" width="26" height="26" viewBox="0 0 22 22" role="img" aria-label="Kolo">
-        <path fill-rule="evenodd" fill="currentColor"
-          d="M0.88,11 a10.12,10.12 0 1,0 20.24,0 a10.12,10.12 0 1,0 -20.24,0 Z
-             M5.1194,9.6954 a7.1852,7.1852 0 1,0 14.3704,0 a7.1852,7.1852 0 1,0 -14.3704,0 Z"/>
-      </svg>
+      <button class="icon-btn home" title="home">
+        <svg class="mark" width="26" height="26" viewBox="0 0 22 22" role="img" aria-label="Kolo">
+          <path fill-rule="evenodd" fill="currentColor"
+            d="M0.88,11 a10.12,10.12 0 1,0 20.24,0 a10.12,10.12 0 1,0 -20.24,0 Z
+               M5.1194,9.6954 a7.1852,7.1852 0 1,0 14.3704,0 a7.1852,7.1852 0 1,0 -14.3704,0 Z"/>
+        </svg>
+      </button>
       <span class="spacer"></span>
       <button class="icon-btn new" title="new agent">
         <svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -814,6 +817,7 @@ function closeCreate() {
 }
 el('.side .new').onclick = () => openCreate(null);
 el('.home-new').onclick = () => openCreate(null);
+el('.brand .home').onclick = () => { location.hash = ''; };
 el('.dialog .close').onclick = closeCreate;
 el('.scrim').onclick = (ev) => { if (ev.target === el('.scrim')) closeCreate(); };
 
