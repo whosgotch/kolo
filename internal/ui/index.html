@@ -86,8 +86,13 @@
   .side { display: flex; flex-direction: column; min-height: 0; background: var(--bg);
           border-right: 1px solid var(--line); }
   .brand { display: flex; align-items: center; padding: 16px 14px 10px; }
-  .brand .home { width: 32px; height: 32px; margin: -3px 0 -3px -5px; }
-  .brand .mark { width: 26px; height: 26px; color: var(--text); fill: var(--text); }
+  .brand-home { width: 32px; height: 32px; margin: -3px 0 -3px -5px; }
+  /* The mark is the one thing here that isn't a control — no tile behind it
+     on hover, just the mark lifting to full strength. */
+  .brand-home:hover { background: none; }
+  .brand .mark { width: 26px; height: 26px; color: var(--text); fill: var(--text);
+                 opacity: 0.85; transition: opacity 120ms ease; }
+  .brand-home:hover .mark { opacity: 1; }
   .dialog-head .mark { width: 14px; height: 14px; color: var(--text); fill: var(--text); }
   .brand .spacer { flex: 1; }
 
@@ -194,12 +199,12 @@
 
   .home { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column;
           align-items: center; justify-content: center; gap: 6px; }
-  .mark-big { position: relative; margin-bottom: 22px; }
-  .mark-big::before { content: ''; position: absolute; inset: -70px; z-index: -1;
-                       background: radial-gradient(circle, color-mix(in srgb, var(--structure) 26%, transparent) 0%, transparent 68%);
-                       filter: blur(18px); }
-  .mark-big .ascii-mark { font-size: 13px; margin-bottom: 0; }
-  .home p.lede { color: var(--dim); margin: 0 0 20px; }
+  /* Held back to near-background weight: the mark is what the empty screen
+     is made of, not something it is asking you to read. */
+  .mark-big .ascii-mark { font-size: 13px; margin-bottom: 0; opacity: 0.4; }
+  /* With no agent anywhere, the mark takes the room it is otherwise politely
+     sharing, and sits back further for having taken it. */
+  .home.empty .mark-big .ascii-mark { font-size: clamp(13px, 2.2vw, 26px); opacity: 0.28; }
 
   /* ---- the dialog ----------------------------------------------------------- */
 
@@ -283,7 +288,7 @@
 <div class="app" hidden>
   <aside class="side">
     <div class="brand" title="kolo">
-      <button class="icon-btn home" title="home">
+      <button class="icon-btn brand-home" title="home">
         <svg class="mark" width="26" height="26" viewBox="0 0 22 22" role="img" aria-label="Kolo">
           <path fill-rule="evenodd" fill="currentColor"
             d="M0.88,11 a10.12,10.12 0 1,0 20.24,0 a10.12,10.12 0 1,0 -20.24,0 Z
@@ -311,13 +316,10 @@
   </aside>
 
   <main>
+    <!-- Nothing open: the mark alone. Starting an agent lives in the side,
+         so this screen does not repeat the offer. -->
     <section class="home" hidden>
       <div class="mark-big"><div class="ascii-mark"></div></div>
-      <p class="lede">Pick one from the side, or start another.</p>
-      <button type="button" class="go home-new">
-        <svg width="12" height="12" viewBox="0 0 13 13"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-        create agent
-      </button>
     </section>
 
     <section class="watch" hidden>
@@ -540,6 +542,9 @@ async function refresh() {
   hosts = data.hosts;
   lastAgents = data.agents || [];
   drawGroups(lastAgents);
+  // Nothing running anywhere: the home screen is the mark, not a mark with
+  // a list beside it.
+  el('.home').classList.toggle('empty', lastAgents.length === 0);
   drawChoices();
   return data;
 }
@@ -815,8 +820,7 @@ function closeCreate() {
   say('.dialog-note', '');
 }
 el('.side .new').onclick = () => openCreate(null);
-el('.home-new').onclick = () => openCreate(null);
-el('.brand .home').onclick = () => { location.hash = ''; };
+el('.brand-home').onclick = () => { location.hash = ''; };
 el('.dialog .close').onclick = closeCreate;
 el('.scrim').onclick = (ev) => { if (ev.target === el('.scrim')) closeCreate(); };
 
