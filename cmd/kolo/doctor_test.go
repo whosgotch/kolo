@@ -49,18 +49,39 @@ func agent(name, dir, command, state string, since time.Time) host.Record {
 }
 
 func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
-	out, ok := report(t, host.State{Allows: []string{"claude", "sh"}}, absent(t))
+	// The file kolo names as the place to describe an agent is the one it
+	// was told to read, not the default path written into a sentence.
+	kinds := filepath.Join(t.TempDir(), "kinds.json")
+	out, ok := report(t, host.State{Allows: []string{"claude", "sh"}}, kinds)
 	if !ok {
 		t.Errorf("a machine with nothing wrong reported a fault:\n%s", out)
 	}
 	for _, want := range []string{
 		"claude", "--resume {session}",
-		"sh runs and is shared, but kolo cannot read its screen",
-		"kinds.json",
+		"sh", "watch and type only",
+		// Wrapped prose is asserted a word at a time: where the lines fall
+		// depends on how long the agent names are.
+		"browser", kinds,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the report does not mention %q:\n%s", want, out)
 		}
+	}
+}
+
+// The cost of an unknown agent is explained once, naming them, however many
+// there are: the same paragraph under each was most of what made the report
+// hard to read.
+func TestDoctorExplainsUnknownAgentsOnce(t *testing.T) {
+	out, ok := report(t, host.State{Allows: []string{"sh", "cat", "env"}}, absent(t))
+	if !ok {
+		t.Errorf("agents kolo cannot read are a limit, not a fault:\n%s", out)
+	}
+	if n := strings.Count(out, "browser"); n != 1 {
+		t.Errorf("the explanation appears %d times, want 1:\n%s", n, out)
+	}
+	if !strings.Contains(out, "sh, cat and env") {
+		t.Errorf("the report does not name them together:\n%s", out)
 	}
 }
 

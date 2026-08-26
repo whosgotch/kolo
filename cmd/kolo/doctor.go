@@ -47,12 +47,12 @@ func doctorCmd(args []string) error {
 
 func doctor(w io.Writer, statePath, kindsPath string) (bool, error) {
 	if _, err := adapter.Load(kindsPath); err != nil {
-		fmt.Fprintf(w, "%s %v\n", bad, err)
+		fmt.Fprintf(w, "%v\n", err)
 		return false, nil
 	}
 	state, err := host.ReadState(statePath)
 	if err != nil {
-		fmt.Fprintf(w, "%s %v\n", bad, err)
+		fmt.Fprintf(w, "%v\n", err)
 		return false, nil
 	}
 	if len(state.Allows) == 0 && len(state.Agents) == 0 {
@@ -61,25 +61,24 @@ func doctor(w io.Writer, statePath, kindsPath string) (bool, error) {
 		return true, nil
 	}
 
-	well := runnable(w, state.Allows)
-	knownKinds(w, state.Allows)
-	return eachAgent(w, state.Agents) && well, nil
+	well := lends(w, state.Allows, kindsPath)
+	return running(w, state.Agents) && well, nil
 }
 
-const (
-	good = "ok  "
-	warn = "note"
-	bad  = "fail"
-)
-
-func runnable(w io.Writer, allows []string) bool {
-	fmt.Fprintf(w, "what this machine runs\n")
+// lends is one line per command the org may start here: whether it is there
+// at all, and which of the three things that vary — showing what an agent is
+// doing, stopping it, resuming it after a restart — kolo can do with it.
+// Watching and typing need nothing, so they are not worth a column.
+func lends(w io.Writer, allows []string, kindsPath string) bool {
+	fmt.Fprintf(w, "what this machine lends\n")
 	well := true
+	var unreadable, missing []string
+	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, command := range allows {
 		// The wildcard is a decision rather than a program, and it is well by
 		// definition: what it lends is whatever turns out to be on PATH.
 		if command == hub.AllowAny {
-			fmt.Fprintf(w, "  %s *  (any command found on PATH)\n", good)
+			fmt.Fprintf(table, "  *\tok\tany command found on PATH\n")
 			continue
 		}
 		argv := adapter.Argv(command)
@@ -87,17 +86,68 @@ func runnable(w io.Writer, allows []string) bool {
 			continue
 		}
 		path, err := exec.LookPath(argv[0])
-		switch {
-		case err != nil:
-			fmt.Fprintf(w, "  %s %s\n      %s is not on PATH, so an agent asked for here will fail to start\n",
-				bad, command, argv[0])
+		if err != nil {
+			// Why it matters goes under the table: a long command name in a
+			// cell stretches the column for every row above and below it.
+			fmt.Fprintf(table, "  %s\tmissing\n", command)
+			missing = append(missing, argv[0])
 			well = false
-		default:
-			fmt.Fprintf(w, "  %s %s\n", good, shown(command, path, argv[0]))
+			continue
 		}
+		name, kind := filepath.Base(argv[0]), adapter.For(command)
+		if kind.Markers.Blank() && len(kind.Resume) == 0 {
+			fmt.Fprintf(table, "  %s\tlimited\twatch and type only\n", shown(command, path, argv[0]))
+			unreadable = append(unreadable, name)
+			continue
+		}
+		fmt.Fprintf(table, "  %s\t%s\t%s\n", shown(command, path, argv[0]), verdict(kind), can(kind))
+	}
+	table.Flush()
+
+	if len(missing) > 0 {
+		fmt.Fprintln(w)
+		wrap(w, "  ", fmt.Sprintf("%s %s not on PATH, so an agent asked for here will fail to start. "+
+			"Install %s, or take %s off what this machine lends.",
+			english(missing), verb(missing, "is", "are"),
+			verb(missing, "it", "them"), verb(missing, "it", "them")))
+	}
+	// Once, naming them, rather than the same three lines under every agent
+	// that happens to be unknown.
+	if len(unreadable) > 0 {
+		fmt.Fprintln(w)
+		wrap(w, "  ", fmt.Sprintf("%s %s screens kolo does not know, so the list will not say what %s doing, "+
+			"nobody can stop one from the browser, and each restart starts it fresh. "+
+			"Describe one in %s — see docs/reference.md.",
+			english(unreadable), verb(unreadable, "draws", "draw"), verb(unreadable, "it is", "they are"), kindsPath))
 	}
 	fmt.Fprintln(w)
 	return well
+}
+
+// verdict is ok when nothing about this kind is missing, partial when
+// something is: the row itself says which.
+func verdict(kind adapter.Adapter) string {
+	if kind.Markers.Blank() || kind.Markers.Busy == "" || len(kind.Resume) == 0 {
+		return "partial"
+	}
+	return "ok"
+}
+
+// can lists the three that vary, each either working or plainly not.
+func can(kind adapter.Adapter) string {
+	parts := []string{"status", "stop", "resume"}
+	if kind.Markers.Blank() {
+		parts[0] = "no status"
+	}
+	if kind.Markers.Busy == "" {
+		parts[1] = "no stop"
+	}
+	if len(kind.Resume) == 0 {
+		parts[2] = "no resume"
+	} else {
+		parts[2] = "resume (" + strings.Join(kind.Resume, " ") + ")"
+	}
+	return strings.Join(parts, " · ")
 }
 
 func shown(command, path, program string) string {
@@ -107,98 +157,39 @@ func shown(command, path, program string) string {
 	return command + "  (" + path + ")"
 }
 
-func knownKinds(w io.Writer, allows []string) {
-	fmt.Fprintf(w, "what kolo knows about them\n")
-	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(table, "  agent\twatch\ttype\tstop\treads screen\tresume\n")
-
-	var notes []string
-	rows := 0
-	for _, command := range allows {
-		// '*' names no agent: what it lends is whatever the org starts, and
-		// each of those is described by its own kind or by nothing.
-		if command == hub.AllowAny {
-			continue
-		}
-		rows++
-		argv := adapter.Argv(command)
-		if len(argv) == 0 {
-			continue
-		}
-		name := filepath.Base(argv[0])
-		kind := adapter.For(command)
-
-		stop, reads, resume := no, no, no
-		if kind.Markers.Busy != "" {
-			stop = yes
-		}
-		if !kind.Markers.Blank() {
-			reads = yes
-		}
-		if len(kind.Resume) > 0 {
-			resume = strings.Join(kind.Resume, " ")
-		}
-		fmt.Fprintf(table, "  %s\t%s\t%s\t%s\t%s\t%s\n", name, yes, yes, stop, reads, resume)
-		notes = append(notes, missing(name, kind)...)
-	}
-	table.Flush()
-	if rows == 0 {
-		fmt.Fprintf(w, "  (whatever the org starts; kinds.json describes one so its screen can be read)\n")
-	}
-	for _, note := range notes {
-		fmt.Fprintf(w, "      %s\n", note)
-	}
-	fmt.Fprintln(w)
-}
-
-const (
-	yes = "yes"
-	no  = "-"
-)
-
-func missing(name string, kind adapter.Adapter) []string {
-	if kind.Markers.Blank() && len(kind.Resume) == 0 {
-		return []string{name + " runs and is shared, but kolo cannot read its screen: the list will" +
-			"\n      not say what it is doing, nobody can stop it from the browser, and it" +
-			"\n      starts fresh every restart. Describe it in kinds.json — see docs/reference.md."}
-	}
-	var notes []string
-	if kind.Markers.Busy == "" {
-		notes = append(notes, name+" has no busy marker, so stop is refused on every screen:"+
-			"\n      the only way to interrupt it is to take its keyboard.")
-	}
-	if len(kind.Resume) == 0 {
-		notes = append(notes, name+" has no resume command, so every restart of one starts fresh.")
-	}
-	return notes
-}
-
-func eachAgent(w io.Writer, records []host.Record) bool {
-	fmt.Fprintf(w, "agents this machine was running\n")
+// running is what this machine last wrote down about its own agents: the one
+// place markers that stopped fitting an upgraded CLI show up.
+func running(w io.Writer, records []host.Record) bool {
+	fmt.Fprintf(w, "what it is running\n")
 	if len(records) == 0 {
-		fmt.Fprintf(w, "  none\n")
+		fmt.Fprintf(w, "  nothing right now\n")
 		return true
 	}
 	well := true
+	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	var lost []string
 	for _, rec := range records {
 		for_ := ""
 		if !rec.Since.IsZero() {
 			for_ = " for " + since(rec.Since)
 		}
 		switch {
-		case rec.State == "" || rec.State == "unknown":
-			if !rec.Since.IsZero() && time.Since(rec.Since) < puzzled {
-				fmt.Fprintf(w, "  %s %s  starting, nothing on its screen yet\n", good, rec.Spec.Name)
-				continue
-			}
-			fmt.Fprintf(w, "  %s %s  its screen has said nothing kolo understands%s\n"+
-				"      the markers for %s do not fit what it is drawing. Nothing else\n"+
-				"      would have told you: watching and typing work either way.\n",
-				warn, rec.Spec.Name, for_, filepath.Base(firstWord(rec.Spec.Command)))
-			well = false
+		case rec.State != "" && rec.State != "unknown":
+			fmt.Fprintf(table, "  %s\t%s%s\n", rec.Spec.Name, rec.State, for_)
+		case !rec.Since.IsZero() && time.Since(rec.Since) < puzzled:
+			fmt.Fprintf(table, "  %s\tstarting, nothing on its screen yet\n", rec.Spec.Name)
 		default:
-			fmt.Fprintf(w, "  %s %s  %s%s\n", good, rec.Spec.Name, rec.State, for_)
+			fmt.Fprintf(table, "  %s\tits screen has said nothing kolo understands%s\n", rec.Spec.Name, for_)
+			lost = append(lost, filepath.Base(firstWord(rec.Spec.Command)))
+			well = false
 		}
+	}
+	table.Flush()
+	if len(lost) > 0 {
+		fmt.Fprintln(w)
+		wrap(w, "  ", fmt.Sprintf("The markers for %s do not fit what %s drawing. Nothing else would have "+
+			"told you: watching and typing work either way.",
+			english(unique(lost)), verb(unique(lost), "it is", "they are")))
 	}
 	return well
 }
