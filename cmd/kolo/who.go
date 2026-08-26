@@ -52,7 +52,7 @@ func whoCmd(args []string) error {
 		fmt.Fprintln(out, "  (none — kolo invite makes one)")
 	}
 	if spent := len(org.Invites) - len(live); spent > 0 {
-		fmt.Fprintf(out, "\n%d spent or expired, still listed in %s.\n", spent, *orgPath)
+		fmt.Fprintf(out, "\n%d spent or expired, still listed in %s — kolo invite -off spent\nclears them.\n", spent, *orgPath)
 	}
 	return out.Flush()
 }

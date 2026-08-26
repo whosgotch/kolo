@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"text/tabwriter"
 	"time"
 
 	"github.com/whosgotch/kolo/internal/adapter"
@@ -88,14 +87,11 @@ func upCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	// Only when none exists: restarts used to hand out several live links,
-	// so a live one is named rather than replaced.
-	var invite string
-	if len(org.Members) == 0 && len(org.Live(time.Now())) == 0 {
-		var err error
-		if org, invite, err = hub.AddInvite(*orgPath, "team", time.Now().Add(inviteDays*24*time.Hour), defaultUses); err != nil {
-			return err
-		}
+	// One standing link rather than a new one per start: an org ends up with
+	// a single invite it can always show, not a drawer of them.
+	org, invite, minted, err := standingInvite(*orgPath, org)
+	if err != nil {
+		return err
 	}
 
 	domains := split(*tlsDomain)
@@ -148,25 +144,25 @@ func upCmd(args []string) error {
 	served := make(chan error, 1)
 	go func() { served <- s.Serve() }()
 
+	// Four lines and a link: what somebody starting kolo has to know, with
+	// everything else a command away.
 	if created {
 		fmt.Printf("Created %s for %s.\n", *orgPath, org.Name)
 	}
 	fmt.Printf("\n%s is up at %s\n", org.Name, shown)
-	fmt.Printf("Lending %s, running %s.\n", strings.Join(displayDirs(dirs), " "), strings.Join(allow, " "))
-	if !created {
-		fmt.Printf("Org in %s, %s.\n", *orgPath, members(len(org.Members)))
+	fmt.Printf("Lending %s · %s · %s\n",
+		strings.Join(displayDirs(dirs), " "), strings.Join(allow, " "), members(len(org.Members)))
+	fmt.Printf("\nInvite  %s\n", hub.InviteURL(shown, invite.Token))
+	fmt.Printf("        %s, until %s · kolo invite -new for a fresh one\n",
+		usesLeft(invite), invite.Expires.Local().Format("Mon 2 Jan 15:04"))
+	if minted && !created {
+		fmt.Printf("        (the last one could not be shown again, so this replaces it)\n")
 	}
-	if invite != "" {
-		fmt.Printf("\nSend your team this. Opening it is the whole of joining:\n\n    %s\n\n", hub.InviteURL(shown, invite))
-		fmt.Printf("%s.\n", bound(defaultUses, inviteDays))
-		fmt.Printf("Anyone holding the link can use it: kolo invite -off team withdraws it,\nand kolo who says who came through.\n")
-	} else {
-		wayIn(org, *orgPath, shown)
+	if others := len(org.Live(time.Now())) - 1; others > 0 {
+		fmt.Printf("        %s still live from before · kolo invite -list\n", links(others))
 	}
 	if len(domains) == 0 && !onLoopback(*addr) {
-		fmt.Printf("\nThis hub serves plain http, so a member's token crosses the network where\n" +
-			"anyone on the path can read it. Fine on a network you trust. To be reached\n" +
-			"from anywhere, point a domain at this machine and pass -tls-domain.\n")
+		fmt.Printf("\nPlain http: a member's token crosses the network readable. Fine on a\nnetwork you trust; -tls-domain to be reached from anywhere.\n")
 	}
 	fmt.Println()
 
@@ -194,10 +190,12 @@ func upCmd(args []string) error {
 	}
 }
 
-// Same bounds kolo invite offers unless told otherwise.
+// Same bounds kolo invite offers unless told otherwise, under the name kolo
+// keeps its standing link by.
 const (
 	inviteDays  = 7
 	defaultUses = 10
+	standingID  = "team"
 )
 
 func installedKinds() list {
@@ -293,29 +291,26 @@ func strayOrg(fs *flag.FlagSet) {
 		"pass -org org.json to use that one instead, or delete it.\n", cwd, config.Dir())
 }
 
-// wayIn lists live invites (their links can't be shown twice) and the command
-// that makes a new one.
-func wayIn(org *hub.Org, orgPath, shown string) {
-	if live := org.Live(time.Now()); len(live) > 0 {
-		fmt.Printf("\nLinks that still work — none of them can be shown again:\n\n")
-		out := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		for _, v := range live {
-			fmt.Fprintf(out, "    %s\t%s\t%s\n", v.ID, usesLeft(v), "until "+v.Expires.Local().Format("Mon 2 Jan 15:04"))
-		}
-		out.Flush()
+// standingInvite returns the org's one standing link, minting it only when
+// there isn't one to show: live invites made before kolo kept their tokens
+// can't be printed again, so they are replaced rather than left in the way.
+func standingInvite(orgPath string, org *hub.Org) (_ *hub.Org, _ hub.Invite, minted bool, err error) {
+	if v, ok := org.Invite(standingID); ok && v.Showable(time.Now()) {
+		return org, v, false, nil
 	}
-	fmt.Printf("\nA link for anyone else:\n\n    %s\n", inviteLine(orgPath, shown))
+	org, _, err = hub.SetInvite(orgPath, standingID, time.Now().Add(inviteDays*24*time.Hour), defaultUses)
+	if err != nil {
+		return nil, hub.Invite{}, false, err
+	}
+	v, _ := org.Invite(standingID)
+	return org, v, true, nil
 }
 
-func inviteLine(orgPath, shown string) string {
-	cmd := "kolo invite"
-	if orgPath != config.Path("org.json") {
-		cmd += " -org " + orgPath
+func links(n int) string {
+	if n == 1 {
+		return "1 older link"
 	}
-	if shown != defaultHubURL {
-		cmd += " -hub " + shown
-	}
-	return cmd
+	return fmt.Sprintf("%d older links", n)
 }
 
 func members(n int) string {

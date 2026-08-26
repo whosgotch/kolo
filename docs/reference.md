@@ -44,9 +44,15 @@ network; `-tls-domain hub.acme.com` gets a Let's Encrypt certificate (ports 80
 and 443 reachable, domain resolving here).
 
 The printed link is the whole of joining: whoever opens it within ten uses /
-seven days picks a name and is in. Later members come from `kolo invite`;
-`kolo who` lists the org; `kolo invite -off team` kills a link without touching
-whoever already came through it.
+seven days picks a name and is in. An org keeps one such link, named `team`,
+and both `kolo up` and `kolo invite` show that same one rather than minting
+another — so its token is kept in the org file, where a member's never is.
+`kolo invite -new` replaces it (the old one stops working), `kolo invite -list`
+says which links there are and which have stopped working, and `kolo invite -id
+contractors` names a second one. `kolo invite -off <name>` withdraws links
+without touching whoever already came through them; it takes several at once
+(repeated or comma-separated), `-off spent` clears the ones that no longer
+work, and `-off all` clears every one. `kolo who` lists the org.
 
 ### Hub and hosts apart
 

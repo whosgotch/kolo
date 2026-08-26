@@ -16,15 +16,18 @@ open a link. One Go binary, no dependencies.
 $ cd ~/work/api
 $ kolo up
 
-Open it and sign in with this. It is stored nowhere, so keep it:
+api is up at http://192.168.0.12:7300
+Lending anywhere · claude codex · 3 members
 
-    kolo_yPNNK8ZnHdvgKFDiQV2Oc…
+Invite  http://192.168.0.12:7300/join#kolo_yPNNK8ZnHdvgKFDiQV2Oc…
+        10 uses left, until Mon 31 Aug 20:34 · kolo invite -new for a fresh one
 ```
 
 `kolo up` starts a hub and, by default, lends any directory this user can
-reach (`-dir` narrows that). Send the printed link to your team; whoever
-opens it picks a name and is in. Later members: `kolo invite`. See the org:
-`kolo who`.
+reach (`-dir` narrows that). Send the invite to your team; whoever opens it
+picks a name and is in. It is one link, printed again on every start and by
+`kolo invite`, not a new one per person — `kolo invite -new` replaces it if it
+leaks. See the org: `kolo who`.
 
 For hub and hosts on separate machines, TLS, and every flag:
 [docs/reference.md](docs/reference.md).

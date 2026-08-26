@@ -51,11 +51,21 @@ type Member struct {
 type Invite struct {
 	ID        string `json:"id"`
 	TokenHash string `json:"token_hash"`
+	// The link's own token, kept where a member's never is. An invite
+	// only mints a member and expires on its own, and anyone who can read
+	// this file can already write themselves into it — so storing it costs
+	// nothing and means the one link can be shown again instead of a new
+	// one being minted every time somebody asks for it. Empty for invites
+	// written before kolo kept them.
+	Token string `json:"token,omitempty"`
 	// When it stops working; always set.
 	Expires time.Time `json:"expires"`
 	// Uses left, or zero for unlimited within the window.
 	Uses int `json:"uses,omitempty"`
 }
+
+// Showable is an invite whose link can be printed again.
+func (i Invite) Showable(now time.Time) bool { return i.Token != "" && !i.Spent(now) }
 
 func (i Invite) Spent(now time.Time) bool { return now.After(i.Expires) }
 
@@ -278,13 +288,53 @@ func AddInvite(path, id string, expires time.Time, uses int) (*Org, string, erro
 		return nil, "", err
 	}
 	org, err := update(path, func(o *Org) error {
-		o.Invites = append(o.Invites, Invite{ID: o.freeID(id), TokenHash: hash, Expires: expires, Uses: uses})
+		o.Invites = append(o.Invites, Invite{
+			ID: o.freeID(id), TokenHash: hash, Token: token, Expires: expires, Uses: uses,
+		})
 		return nil
 	})
 	if err != nil {
 		return nil, "", err
 	}
 	return org, token, nil
+}
+
+// SetInvite mints an invite under exactly this id, replacing any invite that
+// already holds it. Where AddInvite would make team-2, this keeps one link
+// named team and lets the old one stop working.
+func SetInvite(path, id string, expires time.Time, uses int) (*Org, string, error) {
+	token, hash, err := NewToken()
+	if err != nil {
+		return nil, "", err
+	}
+	fresh := Invite{ID: id, TokenHash: hash, Token: token, Expires: expires, Uses: uses}
+	org, err := update(path, func(o *Org) error {
+		for i, v := range o.Invites {
+			if v.ID == id {
+				o.Invites[i] = fresh
+				return nil
+			}
+		}
+		if o.taken(id) {
+			return fmt.Errorf("hub: %q is a member or host here, so an invite cannot have that name", id)
+		}
+		o.Invites = append(o.Invites, fresh)
+		return nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return org, token, nil
+}
+
+// Invite returns the invite with this id, spent or not.
+func (o *Org) Invite(id string) (Invite, bool) {
+	for _, v := range o.Invites {
+		if v.ID == id {
+			return v, true
+		}
+	}
+	return Invite{}, false
 }
 
 // Claim spends an invite on a new member and returns them with a fresh token.
@@ -370,15 +420,41 @@ var ErrNoSuchInvite = errors.New("hub: no invite by that name")
 
 // WithdrawInvite removes an invite; members who joined through it stay.
 func WithdrawInvite(path, id string) (*Org, error) {
-	return update(path, func(o *Org) error {
-		for i, v := range o.Invites {
-			if v.ID == id {
-				o.Invites = append(o.Invites[:i], o.Invites[i+1:]...)
-				return nil
+	org, _, err := WithdrawInvites(path, []string{id})
+	return org, err
+}
+
+// WithdrawInvites removes several links in one write, so withdrawing a
+// drawer of stale ones is one command rather than one command each. It
+// removes none of them if any name is not there: a typo that half-worked
+// would be worse than one that did nothing.
+func WithdrawInvites(path string, ids []string) (_ *Org, gone []string, err error) {
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	org, err := update(path, func(o *Org) error {
+		for _, id := range ids {
+			if _, ok := o.Invite(id); !ok {
+				return fmt.Errorf("%w: %s", ErrNoSuchInvite, id)
 			}
 		}
-		return fmt.Errorf("%w: %s", ErrNoSuchInvite, id)
+		kept := make([]Invite, 0, len(o.Invites))
+		gone = gone[:0]
+		for _, v := range o.Invites {
+			if want[v.ID] {
+				gone = append(gone, v.ID)
+				continue
+			}
+			kept = append(kept, v)
+		}
+		o.Invites = kept
+		return nil
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return org, gone, nil
 }
 
 func (o *Org) Live(now time.Time) []Invite {

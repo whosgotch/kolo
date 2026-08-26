@@ -241,3 +241,111 @@ func TestLiveInvites(t *testing.T) {
 		t.Errorf("live = %+v, want team alone", live)
 	}
 }
+
+// SetInvite is what keeps an org to one link: the same name, minted again,
+// replaces what was there rather than becoming team-2.
+func TestSetInviteReplacesByName(t *testing.T) {
+	path := newOrgFile(t)
+	_, first, err := SetInvite(path, "team", time.Now().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, second, err := SetInvite(path, "team", time.Now().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("the replacement carries the same token as the invite it replaced")
+	}
+	if len(org.Invites) != 1 {
+		t.Fatalf("invites = %d, want 1: replacing a link should not add one", len(org.Invites))
+	}
+
+	// The old link is gone rather than merely unnamed.
+	if _, _, _, err := Claim(path, first, "Dana"); !errors.Is(err, ErrNoInvite) {
+		t.Errorf("claiming the replaced link: %v, want ErrNoInvite", err)
+	}
+	if _, _, _, err := Claim(path, second, "Dana"); err != nil {
+		t.Errorf("claiming the replacement: %v", err)
+	}
+}
+
+// The link kolo shows twice is the one it kept, so a reload still has it.
+func TestInviteTokenSurvivesReload(t *testing.T) {
+	path := newOrgFile(t)
+	_, token, err := SetInvite(path, "team", time.Now().Add(time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, ok := org.Invite("team")
+	if !ok {
+		t.Fatal("no invite named team after reload")
+	}
+	if v.Token != token {
+		t.Errorf("kept token = %q, want the one SetInvite returned", v.Token)
+	}
+	if !v.Showable(time.Now()) {
+		t.Error("a live invite whose token was kept should be showable")
+	}
+}
+
+// An invite from before kolo kept tokens still works; it just can't be shown.
+func TestOlderInviteIsNotShowable(t *testing.T) {
+	org := &Org{Invites: []Invite{{ID: "team", Expires: time.Now().Add(time.Hour)}}}
+	v, _ := org.Invite("team")
+	if v.Showable(time.Now()) {
+		t.Error("an invite with no kept token should not be showable")
+	}
+}
+
+// A name already spoken for is a conflict, not a silent overwrite.
+func TestSetInviteRefusesAName(t *testing.T) {
+	path := orgFile(t, `{"org": "acme", "members": [{"id": "dana", "name": "Dana", "token_hash": "ab"}]}`)
+	if _, _, err := SetInvite(path, "dana", time.Now().Add(time.Hour), 10); err == nil {
+		t.Error("SetInvite took a name a member already holds")
+	}
+}
+
+// Withdrawing several at once is one write, so a hub reloading mid-cull
+// never sees half of them gone.
+func TestWithdrawInvitesTakesSeveral(t *testing.T) {
+	path := newOrgFile(t)
+	for _, id := range []string{"team", "beta", "contractors"} {
+		if _, _, err := SetInvite(path, id, time.Now().Add(time.Hour), 10); err != nil {
+			t.Fatal(err)
+		}
+	}
+	org, gone, err := WithdrawInvites(path, []string{"beta", "contractors"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gone) != 2 || gone[0] != "beta" || gone[1] != "contractors" {
+		t.Errorf("withdrew %v, want beta and contractors", gone)
+	}
+	if len(org.Invites) != 1 || org.Invites[0].ID != "team" {
+		t.Errorf("left %v, want team alone", org.Invites)
+	}
+}
+
+// A name that isn't there takes nothing with it: half a cull is worse than
+// none, because what survived is the part you can't see.
+func TestWithdrawInvitesRefusesAnUnknownName(t *testing.T) {
+	path := newOrgFile(t)
+	if _, _, err := SetInvite(path, "team", time.Now().Add(time.Hour), 10); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := WithdrawInvites(path, []string{"team", "nope"}); !errors.Is(err, ErrNoSuchInvite) {
+		t.Fatalf("err = %v, want ErrNoSuchInvite", err)
+	}
+	org, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := org.Invite("team"); !ok {
+		t.Error("the link named alongside a typo was withdrawn anyway")
+	}
+}

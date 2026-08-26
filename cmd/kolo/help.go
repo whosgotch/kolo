@@ -63,8 +63,9 @@ var longHelp = map[string]string{
 
 Makes whatever is missing on the way: the org file, named after the
 directory it was started in; a credential for this machine, minted fresh
-every start and never written down; and, the first time, an invite link
-to send the team.
+every start and never written down; and the org's invite link, which it
+prints on every start rather than only the first, since it is the same
+link every time.
 
     cd ~/work/api
     kolo up
@@ -107,11 +108,29 @@ certificates browsers do not trust but whose limits are generous.
 
 `,
 
-	"invite": `Makes a link that turns whoever opens it into a member.
+	"invite": `Shows the link that turns whoever opens it into a member.
 
     kolo invite
+    kolo invite -new
+    kolo invite -list
     kolo invite -id contractors -uses 3 -days 1
     kolo invite -off contractors
+    kolo invite -off spent
+
+An org keeps one link, called team, and every kolo invite and kolo up
+shows that same one — a team of thirty is one link sent thirty times, not
+thirty links to keep track of. It is made on the first run and again
+whenever it has expired or run out.
+
+-new is the answer to a link that went somewhere it should not: it
+replaces the old one, which stops working, rather than adding to it. -id
+names a second link for a second group of people, and -list says which
+links still work.
+
+Because kolo shows the same link twice, it keeps that link's token in the
+org file, where a member's token is never kept. An invite can only be
+spent on becoming a member and expires on its own; anyone who can read
+the org file can already write themselves into it.
 
 An invite is bounded twice: by how many people may spend it, ten unless
 -uses says otherwise, and by how long it lasts, seven days unless -days
@@ -119,9 +138,19 @@ does. Neither is security on its own — whoever holds the link can spend
 it, and they choose the name they appear under. The bounds are what keeps
 a leak small enough to notice and undo.
 
--off withdraws one. It takes effect within a couple of seconds and does
-not remove whoever already joined through it: they are members now, and
-kolo who says which link each of them came from.
+-off withdraws links. It takes several — repeated, or comma-separated —
+and two words that stand for a set of them: all, every link there is, and
+spent, the ones that no longer work. A link actually named all or spent is
+that link rather than the set. A name that isn't there withdraws nothing
+at all, so a typo in a list cannot half-empty the drawer.
+
+Withdrawing takes effect within a couple of seconds and does not remove
+whoever already joined through a link: they are members now, and kolo who
+says which link each of them came from.
+
+-list is what to read first. It shows the links that still work, which of
+them kolo can show again, and the ones that have stopped working — those
+last being exactly the ones -off spent clears.
 
 `,
 
