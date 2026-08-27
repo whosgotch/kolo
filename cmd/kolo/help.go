@@ -26,15 +26,15 @@ func helpCmd(args []string) error {
 	}
 	long, ok := longHelp[name]
 	if !ok {
-		fmt.Printf("kolo %s — %s\n\nkolo %s -h lists its flags.\n", name, cmd.brief, name)
+		fmt.Printf("kolo %s: %s\n\nkolo %s -h lists its flags.\n", name, cmd.brief, name)
 		return nil
 	}
-	fmt.Printf("kolo %s — %s\n\n%s\n\nkolo %s -h lists its flags.\n", name, cmd.brief, strings.TrimSpace(long), name)
+	fmt.Printf("kolo %s: %s\n\n%s\n\nkolo %s -h lists its flags.\n", name, cmd.brief, strings.TrimSpace(long), name)
 	return nil
 }
 
 func overview(w io.Writer) {
-	fmt.Fprintln(w, "kolo — shared agents on a machine your team lends.")
+	fmt.Fprintln(w, "kolo runs shared agents on a machine your team lends.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "On the machine you are lending:")
 	fmt.Fprintln(w)
@@ -118,7 +118,7 @@ certificates browsers do not trust but whose limits are generous.
     kolo invite -off spent
 
 An org keeps one link, called team, and every kolo invite and kolo up
-shows that same one — a team of thirty is one link sent thirty times, not
+shows that same one. A team of thirty is one link sent thirty times, not
 thirty links to keep track of. It is made on the first run and again
 whenever it has expired or run out.
 
@@ -134,12 +134,12 @@ the org file can already write themselves into it.
 
 An invite is bounded twice: by how many people may spend it, ten unless
 -uses says otherwise, and by how long it lasts, seven days unless -days
-does. Neither is security on its own — whoever holds the link can spend
+does. Neither is security on its own: whoever holds the link can spend
 it, and they choose the name they appear under. The bounds are what keeps
 a leak small enough to notice and undo.
 
--off withdraws links. It takes several — repeated, or comma-separated —
-and two words that stand for a set of them: all, every link there is, and
+-off withdraws links. It takes several, repeated or comma-separated, and
+two words that stand for a set of them: all, every link there is, and
 spent, the ones that no longer work. A link actually named all or spent is
 that link rather than the set. A name that isn't there withdraws nothing
 at all, so a typo in a list cannot half-empty the drawer.
@@ -149,8 +149,8 @@ whoever already joined through a link: they are members now, and kolo who
 says which link each of them came from.
 
 -list is what to read first. It shows the links that still work, which of
-them kolo can show again, and the ones that have stopped working — those
-last being exactly the ones -off spent clears.
+them kolo can show again, and the ones that have stopped working, which
+are exactly the ones -off spent clears.
 
 `,
 
@@ -213,7 +213,7 @@ Three things, and it changes none of them:
 
 The last is the one worth running after an agent upgrades. Markers are
 strings off that agent's screen, and a CLI that moved one breaks nothing
-that says so — the stop button simply stops working. An agent whose
+that says so. The stop button simply stops working. An agent whose
 screen has read as nothing kolo understands for three days is that,
 and this is the only place it shows up.
 
@@ -228,7 +228,7 @@ was given, and works whether or not kolo is running.
 
 The join string carries the hub and this machine's token together,
 because they were minted together and are useless apart. A host keeping
-its two halves elsewhere — a secret store, a unit file — can pass -hub
+its two halves elsewhere, in a secret store or a unit file, can pass -hub
 and -token, or $KOLO_HUB and $KOLO_TOKEN.
 
 -dir and -allow bound what the org may start here. -allow '*' lends every

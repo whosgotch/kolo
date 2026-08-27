@@ -86,7 +86,7 @@ func Listen(org *Org, addr string) (*Server, error) {
 	// its journal in memory, which is what a test has and nothing else does.
 	s.journal, err = openJournal(journalPath(org.path))
 	if err != nil {
-		log.Printf("hub: %v — this run is not being written down", err)
+		log.Printf("hub: %v. This run is not being written down", err)
 	}
 
 	mux := http.NewServeMux()
@@ -420,7 +420,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	created, _ := s.registry.Agent(agent.Name)
 	s.journal.add(Entry{
 		Agent: created.Name, What: WhatCreated, Who: member.Person(),
-		Text: created.Dir + " — " + created.Command,
+		Text: created.Dir + " · " + created.Command,
 	})
 	if err := send(spawn{Type: "spawn", Agent: created}); err != nil {
 		// The host vanished between choosing and asking; drop the phantom.

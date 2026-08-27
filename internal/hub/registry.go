@@ -213,7 +213,7 @@ func (r *Registry) Add(a Agent) (Sender, error) {
 	}
 	if !runs(h.info.Allow, a.Command) {
 		if slices.Contains(h.info.Allow, AllowAny) && Program(a.Command) != "" {
-			return nil, fmt.Errorf("%s runs commands by name — put %s's directory on PATH, or lend it with -allow",
+			return nil, fmt.Errorf("%s runs commands by name. Put %s's directory on PATH, or lend it with -allow",
 				a.Host, Program(a.Command))
 		}
 		return nil, fmt.Errorf("%s does not run %s", a.Host, a.Command)

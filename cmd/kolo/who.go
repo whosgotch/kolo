@@ -35,7 +35,7 @@ func whoCmd(args []string) error {
 		fmt.Fprintf(out, "  %s\t%s\t%s\n", m.ID, m.Name, joinedHow(m))
 	}
 	if len(org.Members) == 0 {
-		fmt.Fprintln(out, "  (nobody yet — send them an invite)")
+		fmt.Fprintln(out, "  (nobody yet: send them an invite)")
 	}
 
 	fmt.Fprintf(out, "\nmachines\t%d\n", len(org.Hosts))
@@ -49,10 +49,10 @@ func whoCmd(args []string) error {
 		fmt.Fprintf(out, "  %s\t%s\t%s\n", v.ID, usesLeft(v), "until "+v.Expires.Local().Format("Mon 2 Jan 15:04"))
 	}
 	if len(live) == 0 {
-		fmt.Fprintln(out, "  (none — kolo invite makes one)")
+		fmt.Fprintln(out, "  (none: kolo invite makes one)")
 	}
 	if spent := len(org.Invites) - len(live); spent > 0 {
-		fmt.Fprintf(out, "\n%d spent or expired, still listed in %s — kolo invite -off spent\nclears them.\n", spent, *orgPath)
+		fmt.Fprintf(out, "\n%d spent or expired, still listed in %s. kolo invite -off spent\nclears them.\n", spent, *orgPath)
 	}
 	return out.Flush()
 }
