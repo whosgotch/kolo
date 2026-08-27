@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,6 +24,27 @@ func writeState(t *testing.T, state host.State) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// installed says what this machine has, for the length of one test. Without
+// it these tests read the real PATH, so a report about "claude" passed on a
+// laptop with claude installed and failed everywhere else — including CI,
+// which is where it was finally noticed.
+func installed(t *testing.T, names ...string) {
+	t.Helper()
+	was := lookPath
+	t.Cleanup(func() { lookPath = was })
+
+	have := map[string]bool{}
+	for _, name := range names {
+		have[name] = true
+	}
+	lookPath = func(name string) (string, error) {
+		if !have[name] {
+			return "", exec.ErrNotFound
+		}
+		return "/usr/local/bin/" + name, nil
+	}
 }
 
 func absent(t *testing.T) string {
@@ -51,6 +73,7 @@ func agent(name, dir, command, state string, since time.Time) host.Record {
 func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
 	// The file kolo names as the place to describe an agent is the one it
 	// was told to read, not the default path written into a sentence.
+	installed(t, "claude", "sh")
 	kinds := filepath.Join(t.TempDir(), "kinds.json")
 	out, ok := report(t, host.State{Allows: []string{"claude", "sh"}}, kinds)
 	if !ok {
@@ -73,6 +96,7 @@ func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
 // there are: the same paragraph under each was most of what made the report
 // hard to read.
 func TestDoctorExplainsUnknownAgentsOnce(t *testing.T) {
+	installed(t, "sh", "cat", "env")
 	out, ok := report(t, host.State{Allows: []string{"sh", "cat", "env"}}, absent(t))
 	if !ok {
 		t.Errorf("agents kolo cannot read are a limit, not a fault:\n%s", out)
@@ -86,6 +110,7 @@ func TestDoctorExplainsUnknownAgentsOnce(t *testing.T) {
 }
 
 func TestDoctorFindsACommandThatIsNotThere(t *testing.T) {
+	installed(t)
 	out, ok := report(t, host.State{Allows: []string{"definitely-not-installed-xyz"}}, absent(t))
 	if ok {
 		t.Errorf("a command that cannot be started passed:\n%s", out)
@@ -96,6 +121,7 @@ func TestDoctorFindsACommandThatIsNotThere(t *testing.T) {
 }
 
 func TestDoctorNoticesMarkersThatStoppedFitting(t *testing.T) {
+	installed(t, "claude")
 	long := time.Now().Add(-3 * 24 * time.Hour)
 	out, ok := report(t, host.State{
 		Allows: []string{"claude"},
@@ -112,6 +138,7 @@ func TestDoctorNoticesMarkersThatStoppedFitting(t *testing.T) {
 }
 
 func TestDoctorLetsAnAgentStart(t *testing.T) {
+	installed(t, "claude")
 	out, ok := report(t, host.State{
 		Allows: []string{"claude"},
 		Agents: []host.Record{agent("checkups", "/work/api", "claude", "unknown", time.Now())},
@@ -125,6 +152,7 @@ func TestDoctorLetsAnAgentStart(t *testing.T) {
 }
 
 func TestDoctorReportsWhatAgentsAreDoing(t *testing.T) {
+	installed(t, "claude")
 	out, ok := report(t, host.State{
 		Allows: []string{"claude"},
 		Agents: []host.Record{agent("checkups", "/work/api", "claude", "busy", time.Now().Add(-90*time.Minute))},
@@ -142,6 +170,7 @@ func TestDoctorRefusesAKindsFileTheHostWouldRefuse(t *testing.T) {
 	if err := os.WriteFile(kinds, []byte(`{"robo": {}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	installed(t, "claude")
 	out, ok := report(t, host.State{Allows: []string{"claude"}}, kinds)
 	if ok {
 		t.Errorf("a kinds file kolo will not read passed:\n%s", out)
@@ -169,6 +198,7 @@ func TestDoctorOnAMachineThatHasDoneNothing(t *testing.T) {
 // evidence of a fault: lends already called it a limit, and a setup script
 // that ends in kolo doctor must not fail for lending a plain shell.
 func TestDoctorDoesNotFaultAnAgentItWasNeverGoingToRead(t *testing.T) {
+	installed(t, "sh")
 	long := time.Now().Add(-3 * 24 * time.Hour)
 	out, ok := report(t, host.State{
 		Allows: []string{"sh"},

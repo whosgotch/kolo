@@ -20,6 +20,11 @@ import (
 // puzzled is how long an agent may go unrecognised before it counts as a fault.
 const puzzled = 2 * time.Minute
 
+// lookPath is exec.LookPath behind a var, so a test can say what is installed
+// rather than inherit whoever's machine it runs on. Doctor's whole subject is
+// the machine underneath it, which is the one thing a test cannot bring along.
+var lookPath = exec.LookPath
+
 func doctorCmd(args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 	statePath := fs.String("state", config.Path("agents.json"), "what this machine wrote down about its agents")
@@ -85,7 +90,7 @@ func lends(w io.Writer, allows []string, kindsPath string) bool {
 		if len(argv) == 0 {
 			continue
 		}
-		path, err := exec.LookPath(argv[0])
+		path, err := lookPath(argv[0])
 		if err != nil {
 			// Why it matters goes under the table: a long command name in a
 			// cell stretches the column for every row above and below it.
