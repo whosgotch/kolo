@@ -14,9 +14,9 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync, copyFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { markSvg } from './ring.ts';
+import { markSvg, asciiRing, accentRuns } from './ring.ts';
 
-const VOID = '#101314', CHALK = '#E7E9E4';
+const VOID = '#101314', CHALK = '#E7E9E4', BRASS = '#D9A441', BRASS_INK = '#9C6C15';
 const assets = fileURLToPath(new URL('../internal/hub/ui/assets/', import.meta.url));
 const sizes = { 'icon-32': 32, 'icon-180': 180, icon: 256 };
 
@@ -67,8 +67,50 @@ for (const [name, size] of Object.entries(sizes)) {
   console.log(`${name}.png ${size}×${size}`);
 }
 
-// The README's logo, from the same render the page's largest icon uses. It
-// lives here rather than in the page's assets because the README is not the
-// page, and a readme pointing into internal/ reads like a mistake.
-copyFileSync(join(assets, 'icon.png'), fileURLToPath(new URL('./kolo.png', import.meta.url)));
-console.log('kolo.png (the README\'s logo)');
+// The README's logo: the ASCII mark as a picture, because a README cannot ask
+// for JetBrains Mono, and in whatever face the reader's browser picks instead
+// the ring stops being a ring. Drawn from ring.ts rather than kept as art
+// somebody has to redraw when the ring moves. The mark only: the name is text
+// in the README, not a picture of text.
+//
+// On no background, so it sits on whatever GitHub is painting. That costs a
+// second copy: chalk glyphs vanish on a light page, so the light one is drawn
+// in ink, and brass gives way to the brassInk the tokens keep for exactly this.
+const FONT = 16;
+const ADVANCE = 0.60205 * FONT;   // JetBrains Mono glyph width at this size
+const LINE = 1.17 * FONT;         // and its line height; cells are not square
+const PAD = 40;
+
+const rows = asciiRing(18);
+const cols = Math.max(...rows.map((r) => r.length));
+const sheetW = Math.round(cols * ADVANCE + PAD * 2);
+const sheetH = Math.round(rows.length * LINE + PAD * 2);
+
+const art = rows
+  .map((line) => accentRuns(line)
+    .map((run) => `<span${run.hot ? ' class="hot"' : ''}>${run.text.replace(/ /g, '&nbsp;')}</span>`)
+    .join(''))
+  .join('<br>');
+
+for (const [name, ink, hot] of [['logo-dark', CHALK, BRASS], ['logo-light', VOID, BRASS_INK]]) {
+  const page = `<!doctype html><meta charset="utf-8"><style>
+    @font-face { font-family: 'JBM'; font-weight: 700;
+                 src: url('file://${join(assets, 'fonts/jetbrains-mono-700.woff2')}') format('woff2'); }
+    html, body { margin: 0; background: transparent; }
+    .sheet { width: ${sheetW}px; height: ${sheetH}px; box-sizing: border-box;
+             padding: ${PAD}px 0; text-align: center; }
+    .art  { font: 700 ${FONT}px/${LINE}px 'JBM', monospace; color: ${ink}; white-space: pre; }
+    .hot  { color: ${hot}; }
+  </style><div class="sheet"><div class="art">${art}</div></div>`;
+
+  const logoHtml = join(work, `${name}.html`);
+  writeFileSync(logoHtml, page);
+  execFileSync(chrome, [
+    '--headless', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2',
+    '--default-background-color=00000000',
+    `--window-size=${sheetW},${sheetH}`,
+    `--screenshot=${fileURLToPath(new URL(`./${name}.png`, import.meta.url))}`,
+    `file://${logoHtml}`,
+  ], { stdio: 'ignore' });
+  console.log(`${name}.png ${sheetW}×${sheetH} (transparent)`);
+}
