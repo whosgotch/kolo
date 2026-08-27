@@ -5,7 +5,7 @@
  * come from the same geometry: a circle with a smaller circle subtracted,
  * offset up and to the right, so the ring tapers.
  *
- * Edited by hand. The icons are what is generated, by node scripts/brand.mjs.
+ * Edited by hand. The icons are what is generated, by node brand/build.mjs.
  */
 
 export const RAMP = " .:-=+*#%@";

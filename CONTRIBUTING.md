@@ -27,8 +27,8 @@ Running kolo in this repository writes an `org.json` here; it is gitignored,
 and it is a scratch org rather than a real one.
 
 The only build dependency is Go — the version in `go.mod`. The icons are the
-exception: `node scripts/brand.mjs` regenerates them and the token stylesheet,
-needs Node and a Chrome, and is only for changes in `docs/brand`.
+exception: `node brand/build.mjs` regenerates them and the token stylesheet,
+needs Node and a Chrome, and is only for changes under `brand/`.
 
 ## What lands
 

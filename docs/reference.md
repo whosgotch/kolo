@@ -161,6 +161,7 @@ UI; buttons for the interrupt, restart and start-fresh the protocol already
 carries.
 
 ```
+brand             the mark: geometry, tokens, and the icon build
 cmd/kolo          the binary: up, serve, host, invite, token, who, doctor
 cmd/kolorec       records an agent session as a test fixture
 internal/adapter  agent-kind table: markers, resume, pin, interrupt
@@ -173,7 +174,6 @@ internal/relay    sole writer to a PTY; keystroke gating rules
 internal/session  one agent's screen fanned out to viewers
 internal/term     vt10x-backed screen model and repaint
 internal/ui       embedded web page and assets
-docs/brand        geometry and tokens the icon build (make brand) generates from
 ```
 
 The page lives in `internal/ui` rather than a top-level `web/` for two reasons:
@@ -182,6 +182,6 @@ beside the Go file that embeds it, and `internal` keeps it from becoming
 importable API that the module would then owe compatibility on.
 
 The icons and token stylesheet under `internal/ui/assets` are checked in, but
-they are build output: `make brand` regenerates them from `docs/brand/ring.ts`
-and `docs/brand/kolo-tokens.css`, which needs Node and a Chrome. Edit the
-sources in `docs/brand`, never the generated files.
+they are build output: `node brand/build.mjs` regenerates them from
+`brand/ring.ts` and `brand/tokens.css`, which needs Node and a Chrome. Edit the
+sources under `brand/`, never the generated files.
