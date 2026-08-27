@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -224,13 +223,6 @@ func machineID() (string, error) {
 		name = base
 	}
 	return name, nil
-}
-
-func whoami() string {
-	if u, err := user.Current(); err == nil && u.Username != "" {
-		return u.Username
-	}
-	return "owner"
 }
 
 // browseURL turns 0.0.0.0 into this machine's LAN address, for people to open.

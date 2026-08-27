@@ -691,6 +691,25 @@ func TestThePageIsServed(t *testing.T) {
 	}
 }
 
+// The join page is the one that goes through a template rather than being
+// served whole, so it reaches the embedded files by a different route than
+// the page above and is worth asking for separately.
+func TestTheJoinPageIsServedWithTheOrgOnIt(t *testing.T) {
+	s, _, _ := hubFixture(t)
+
+	resp := call(t, s, "GET", "/join", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /join: %s", resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte("acme")) {
+		t.Errorf("the org is not named on the page somebody joins it from: %.200s", body)
+	}
+}
+
 func TestKeysReachTheHost(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)

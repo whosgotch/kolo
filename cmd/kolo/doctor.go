@@ -169,17 +169,23 @@ func running(w io.Writer, records []host.Record) bool {
 	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	var lost []string
 	for _, rec := range records {
-		for_ := ""
+		held := ""
 		if !rec.Since.IsZero() {
-			for_ = " for " + since(rec.Since)
+			held = " for " + since(rec.Since)
 		}
 		switch {
 		case rec.State != "" && rec.State != "unknown":
-			fmt.Fprintf(table, "  %s\t%s%s\n", rec.Spec.Name, rec.State, for_)
+			fmt.Fprintf(table, "  %s\t%s%s\n", rec.Spec.Name, rec.State, held)
+		// A kind nobody described has no markers to stop fitting, so an
+		// unread screen is the limit lends already named, not a fault. Said
+		// here too, because "starting, nothing on its screen yet" promises a
+		// state that is never coming.
+		case adapter.For(rec.Spec.Command).Markers.Blank():
+			fmt.Fprintf(table, "  %s\trunning%s, and kolo does not read this kind\n", rec.Spec.Name, held)
 		case !rec.Since.IsZero() && time.Since(rec.Since) < puzzled:
 			fmt.Fprintf(table, "  %s\tstarting, nothing on its screen yet\n", rec.Spec.Name)
 		default:
-			fmt.Fprintf(table, "  %s\tits screen has said nothing kolo understands%s\n", rec.Spec.Name, for_)
+			fmt.Fprintf(table, "  %s\tits screen has said nothing kolo understands%s\n", rec.Spec.Name, held)
 			lost = append(lost, filepath.Base(firstWord(rec.Spec.Command)))
 			well = false
 		}

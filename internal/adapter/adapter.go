@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -195,7 +194,7 @@ func Kinds() []string {
 	for name := range kinds {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 
@@ -234,7 +233,7 @@ func Discovered() []string {
 			found = append(found, name)
 		}
 	}
-	sort.Strings(found)
+	slices.Sort(found)
 	return found
 }
 
@@ -308,6 +307,6 @@ func Load(path string) (added []string, err error) {
 		added = append(added, name)
 	}
 	kinds = merged
-	sort.Strings(added)
+	slices.Sort(added)
 	return added, nil
 }

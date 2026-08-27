@@ -1,6 +1,6 @@
 # Claude Code through one turn: what the screen says when it is idle, and what
 # it says while it works. Re-run this against a new release before trusting the
-# markers in internal/adapter — findings #7 is what happens when nobody does.
+# markers in internal/adapter: they go stale silently when nobody does.
 #
 # Record in a fresh directory: the trust question comes first and is answered
 # here, because what the recording wants is what comes after it.

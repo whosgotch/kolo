@@ -1,6 +1,6 @@
-// Builds the icons the page serves, from the geometry in docs/brand/ring.ts.
+// Builds the icons the page serves, from the geometry in ring.ts beside it.
 //
-// The mark is generated, never stored (docs/brand/ring.ts is the geometry). At the
+// The mark is generated, never stored (ring.ts is the geometry). At the
 // sizes a browser puts it — a tab, a home screen, a corner of the page — it is
 // under the twelve rows the ASCII build needs, so all of it is the vector build.
 //
@@ -8,16 +8,16 @@
 // favicon is a picture rather than a document. Rasterising wants a browser:
 // pass one in KOLO_CHROME, or let it look in the usual places.
 //
-// Run: make brand
+// Run: node brand/build.mjs
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { markSvg } from '../docs/brand/ring.ts';
+import { markSvg } from './ring.ts';
 
 const VOID = '#101314', CHALK = '#E7E9E4';
-const assets = fileURLToPath(new URL('../internal/ui/assets/', import.meta.url));
+const assets = fileURLToPath(new URL('../internal/hub/ui/assets/', import.meta.url));
 const sizes = { 'icon-32': 32, 'icon-180': 180, icon: 256 };
 
 const browsers = [
@@ -25,6 +25,10 @@ const browsers = [
   `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
 ];
 const chrome = browsers.find((path) => path && existsSync(path));
 if (!chrome) {
@@ -37,7 +41,7 @@ mkdirSync(assets, { recursive: true });
 // they read: served from assets because a page cannot embed a file outside the
 // package it is compiled into.
 copyFileSync(
-  fileURLToPath(new URL('../docs/brand/kolo-tokens.css', import.meta.url)),
+  fileURLToPath(new URL('./tokens.css', import.meta.url)),
   join(assets, 'tokens.css'),
 );
 console.log('tokens.css');
