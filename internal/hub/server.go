@@ -2,10 +2,12 @@ package hub
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -18,9 +20,21 @@ import (
 	"github.com/coder/websocket"
 	"github.com/whosgotch/kolo/internal/detect"
 	"github.com/whosgotch/kolo/internal/session"
-	"github.com/whosgotch/kolo/internal/ui"
 	"golang.org/x/crypto/acme/autocert"
 )
+
+// The org's page, compiled into the binary. It sits here rather than in a
+// package of its own because the hub is the only thing that serves it, and
+// go:embed reaches into a directory below the package it is written in but
+// never outside one.
+//
+//go:embed ui
+var files embed.FS
+
+// pages is files rooted at ui, so every path below is the path a browser asks
+// for: index.html, assets/xterm.js. Sub cannot fail on a directory the
+// compiler has just proved is there.
+var pages, _ = fs.Sub(files, "ui")
 
 const (
 	helloTimeout = 10 * time.Second
@@ -88,7 +102,7 @@ func Listen(org *Org, addr string) (*Server, error) {
 	mux.HandleFunc("POST /join", s.handleJoin)
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("POST /logout", s.handleLogout)
-	mux.Handle("GET /assets/", http.FileServerFS(ui.FS))
+	mux.Handle("GET /assets/", http.FileServerFS(pages))
 	mux.HandleFunc("GET /{$}", s.handlePage)
 	s.srv = &http.Server{Handler: mux}
 	return s, nil
@@ -179,7 +193,7 @@ func (s *Server) authenticate(r *http.Request) (Member, bool) {
 }
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
-	page, err := ui.FS.ReadFile("index.html")
+	page, err := fs.ReadFile(pages, "index.html")
 	if err != nil {
 		http.Error(w, "no page", http.StatusInternalServerError)
 		return
@@ -215,7 +229,7 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request, token string) {
 // handleJoinPage serves the join form. The invite rides in the URL fragment,
 // which never reaches the server.
 func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
-	page, err := template.ParseFS(ui.FS, "join.html")
+	page, err := template.ParseFS(pages, "join.html")
 	if err != nil {
 		http.Error(w, "no page", http.StatusInternalServerError)
 		return

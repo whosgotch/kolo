@@ -169,19 +169,19 @@ internal/agent    PTY process management
 internal/config   ~/.kolo
 internal/detect   screen state classification
 internal/host     the machine half: supervision, state file, streaming
-internal/hub      the server half: auth, registry, screens, keyboard, journal
+internal/hub      the server half: auth, registry, screens, journal, the page
 internal/relay    sole writer to a PTY; keystroke gating rules
 internal/session  one agent's screen fanned out to viewers
 internal/term     vt10x-backed screen model and repaint
-internal/ui       embedded web page and assets
 ```
 
-The page lives in `internal/ui` rather than a top-level `web/` for two reasons:
-`go:embed` cannot reach outside its own package, so `index.html` has to sit
-beside the Go file that embeds it, and `internal` keeps it from becoming
-importable API that the module would then owe compatibility on.
+The page is `internal/hub/ui`, under the only thing that serves it, because
+`go:embed` reaches into a directory below the package it is written in but
+never outside one — so a page in a package of its own would be a package whose
+whole job was holding one embed directive. `internal` keeps it from becoming
+importable API the module would owe compatibility on.
 
-The icons and token stylesheet under `internal/ui/assets` are checked in, but
+The icons and token stylesheet under `internal/hub/ui/assets` are checked in, but
 they are build output: `node brand/build.mjs` regenerates them from
 `brand/ring.ts` and `brand/tokens.css`, which needs Node and a Chrome. Edit the
 sources under `brand/`, never the generated files.

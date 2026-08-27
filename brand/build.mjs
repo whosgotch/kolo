@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { markSvg } from './ring.ts';
 
 const VOID = '#101314', CHALK = '#E7E9E4';
-const assets = fileURLToPath(new URL('../internal/ui/assets/', import.meta.url));
+const assets = fileURLToPath(new URL('../internal/hub/ui/assets/', import.meta.url));
 const sizes = { 'icon-32': 32, 'icon-180': 180, icon: 256 };
 
 const browsers = [

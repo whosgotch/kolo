@@ -63,5 +63,5 @@ AGPL's condition is that a modified copy run as a service still owes its users
 the source. Want to embed or host kolo under different terms? Open an issue.
 
 The page also carries other people's work under their own terms. xterm.js draws
-the terminal (MIT, `internal/ui/assets/xterm-MIT.txt`), and the fonts are
+the terminal (MIT, `internal/hub/ui/assets/xterm-MIT.txt`), and the fonts are
 Archivo and JetBrains Mono (OFL, beside them).
