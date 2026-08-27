@@ -13,7 +13,17 @@ import (
 // it is read back out rather than passed in.
 var version = "dev"
 
-func init() {
+func init() { stamped() }
+
+// stamped fills in version from whatever the build left behind.
+func stamped() {
+	// A release build says what it is with -ldflags, and nothing below may
+	// argue: at a tagged commit the toolchain still reports the commit, and a
+	// binary somebody downloaded should call itself by the tag they chose it
+	// from.
+	if version != "dev" {
+		return
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return

@@ -1,0 +1,88 @@
+# Builds the binaries a tag promises, and the checksums install.sh checks them
+# against. Runs on a v-tag, and by hand for a tag that was pushed before this
+# workflow existed.
+#
+# Cross-compiled from one runner rather than built on four: kolo is pure Go
+# with CGO off, so the machine doing the building has nothing to contribute.
+# Linux and macOS only — a Windows binary compiles, but creack/pty is a Unix
+# package, so the host half could not start an agent and shipping one would be
+# a promise kolo cannot keep.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and release'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: version
+        id: v
+        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      # The tag is passed in rather than read back out of the build: at a
+      # tagged commit the toolchain still reports the commit, and a downloaded
+      # binary should call itself by the tag somebody chose it from.
+      - name: build
+        env:
+          CGO_ENABLED: '0'
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${target%/*} arch=${target#*/}
+            echo "building $os/$arch"
+            GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=$TAG" \
+              -o "dist/kolo" ./cmd/kolo
+            tar -czf "dist/kolo_${TAG}_${os}_${arch}.tar.gz" -C dist kolo -C "$GITHUB_WORKSPACE" LICENSE
+            rm dist/kolo
+          done
+          cd dist && sha256sum *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: sanity-check the linux build
+        run: |
+          tar -xzf dist/kolo_${{ steps.v.outputs.tag }}_linux_amd64.tar.gz -C /tmp kolo
+          /tmp/kolo doctor | head -3
+
+      - name: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "kolo $TAG" \
+              --notes "Install:
+
+          \`\`\`
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh
+          \`\`\`
+
+          Or with Go: \`go install github.com/whosgotch/kolo/cmd/kolo@$TAG\`
+
+          Checksums are in \`SHA256SUMS\`."
+          fi

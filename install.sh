@@ -1,0 +1,101 @@
+#!/bin/sh
+# Installs kolo, the binary a host machine runs.
+#
+#   curl -fsSL https://raw.githubusercontent.com/whosgotch/kolo/main/install.sh | sh
+#
+# It downloads one release binary, checks it against the checksums published
+# with it, and puts it somewhere on your PATH. Nothing else. Read it first if
+# you would rather — that is why it is short, and why it is in the repository
+# rather than somewhere only a URL knows about.
+#
+#   KOLO_VERSION      a tag to install instead of the latest release
+#   KOLO_INSTALL_DIR  where to put it, instead of the first writable of
+#                     /usr/local/bin and ~/.local/bin
+set -eu
+
+REPO=whosgotch/kolo
+
+say()  { printf 'kolo: %s\n' "$1"; }
+fail() { printf 'kolo: %s\n' "$1" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || fail "$1 is needed to install kolo"; }
+
+need uname
+need tar
+
+# curl or wget, whichever is here.
+if command -v curl >/dev/null 2>&1; then
+  fetch() { curl -fsSL "$1" -o "$2"; }
+  read_url() { curl -fsSL "$1"; }
+elif command -v wget >/dev/null 2>&1; then
+  fetch() { wget -qO "$2" "$1"; }
+  read_url() { wget -qO- "$1"; }
+else
+  fail "curl or wget is needed to install kolo"
+fi
+
+case "$(uname -s)" in
+  Linux)  os=linux ;;
+  Darwin) os=darwin ;;
+  *) fail "kolo runs agents under a pseudo-terminal, which $(uname -s) does not have. Linux and macOS only." ;;
+esac
+
+case "$(uname -m)" in
+  x86_64|amd64)  arch=amd64 ;;
+  arm64|aarch64) arch=arm64 ;;
+  *) fail "no kolo build for $(uname -m); go install github.com/$REPO/cmd/kolo@latest builds one" ;;
+esac
+
+version="${KOLO_VERSION:-}"
+if [ -z "$version" ]; then
+  say "looking up the latest release"
+  version=$(read_url "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+  [ -n "$version" ] || fail "could not find a release; set KOLO_VERSION to a tag"
+fi
+
+# Somewhere to put it: a directory this user can actually write to, rather
+# than a sudo nobody asked for.
+dir="${KOLO_INSTALL_DIR:-}"
+if [ -z "$dir" ]; then
+  if [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
+    dir=/usr/local/bin
+  else
+    dir="$HOME/.local/bin"
+  fi
+fi
+mkdir -p "$dir" || fail "cannot write to $dir; set KOLO_INSTALL_DIR"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT INT TERM
+
+archive="kolo_${version}_${os}_${arch}.tar.gz"
+base="https://github.com/$REPO/releases/download/$version"
+
+say "downloading kolo $version for $os/$arch"
+fetch "$base/$archive" "$tmp/$archive" || fail "no build of $version for $os/$arch"
+fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" || fail "could not fetch the checksums for $version"
+
+# Never install something whose checksum was not checked. If neither tool is
+# here, stop and say so rather than shrugging and carrying on.
+if command -v sha256sum >/dev/null 2>&1; then
+  sum=$(sha256sum "$tmp/$archive" | cut -d' ' -f1)
+elif command -v shasum >/dev/null 2>&1; then
+  sum=$(shasum -a 256 "$tmp/$archive" | cut -d' ' -f1)
+else
+  fail "sha256sum or shasum is needed to check the download"
+fi
+want=$(grep " $archive\$" "$tmp/SHA256SUMS" | cut -d' ' -f1)
+[ -n "$want" ] || fail "$archive is not listed in the published checksums"
+[ "$sum" = "$want" ] || fail "checksum mismatch for $archive — refusing to install"
+
+tar -xzf "$tmp/$archive" -C "$tmp" kolo
+chmod +x "$tmp/kolo"
+mv "$tmp/kolo" "$dir/kolo"
+
+say "installed kolo $version to $dir/kolo"
+case ":$PATH:" in
+  *":$dir:"*)
+    printf '\nLend a directory to your team:\n\n    cd ~/work/api && kolo up\n\n' ;;
+  *)
+    printf '\n%s is not on your PATH. Add this to your shell profile:\n\n    export PATH="%s:$PATH"\n\n' "$dir" "$dir" ;;
+esac

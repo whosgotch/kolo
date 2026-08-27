@@ -15,7 +15,7 @@ Members open a link. One Go binary, no dependencies.
 On the machine you are lending, which is the only one that installs anything:
 
 ```
-$ go install github.com/whosgotch/kolo/cmd/kolo@latest
+$ curl -fsSL https://raw.githubusercontent.com/whosgotch/kolo/main/install.sh | sh
 
 $ cd ~/work/api
 $ kolo up
@@ -26,6 +26,10 @@ Lending anywhere · claude codex · 3 members
 Invite  http://192.168.0.12:7300/join#kolo_yPNNK8ZnHdvgKFDiQV2Oc…
         10 uses left, until Mon 31 Aug 20:34 · kolo invite -new for a fresh one
 ```
+
+The installer checks the download against published checksums and puts kolo on
+your PATH. With Go already installed,
+`go install github.com/whosgotch/kolo/cmd/kolo@latest` does the same job.
 
 `kolo up` starts a hub and lends any directory this user can reach; `-dir`
 narrows it. Send the invite to your team. Whoever opens it picks a name and is

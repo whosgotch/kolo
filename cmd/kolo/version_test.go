@@ -55,3 +55,17 @@ func TestVersionFromVCS(t *testing.T) {
 		})
 	}
 }
+
+// A release binary is built with -ldflags, and the build info underneath it
+// still describes a checkout. The flag has to win, or a downloaded kolo calls
+// itself by a commit nobody chose it from.
+func TestVersionPrefersWhatTheBuildWasToldToSay(t *testing.T) {
+	was := version
+	t.Cleanup(func() { version = was })
+
+	version = "v0.1.0"
+	stamped()
+	if version != "v0.1.0" {
+		t.Errorf("version = %q, want the ldflags value to stand", version)
+	}
+}
