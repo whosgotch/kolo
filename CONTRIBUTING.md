@@ -1,5 +1,9 @@
 # Contributing
 
+Contributions are welcome. A patch, a bug report, or a note saying something
+confused you are all useful, and kolo is early enough that any of them still
+changes its shape. Thank you for caring about it.
+
 ```
 go install ./cmd/kolo    # onto $(go env GOPATH)/bin, which may not be on PATH
 go run ./cmd/kolo up     # a hub, lending this directory
@@ -28,13 +32,13 @@ restate the line below.
 
 ## Agent kinds
 
-Markers are literal strings off a real screen, so record one rather than guess:
+Markers are literal strings off a real screen. Record one rather than guess:
 
 ```
 go run ./cmd/kolorec -script cmd/kolorec/scripts/claude-turn.txt -dir /tmp/x claude
 ```
 
-Recordings are gitignored and stay that way. They are a picture of somebody's
+Recordings are gitignored and stay that way: they are a picture of somebody's
 screen.
 
 AGPL-3.0, like the project.
