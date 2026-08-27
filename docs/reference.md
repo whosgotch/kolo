@@ -163,7 +163,7 @@ carries.
 ```
 brand             the mark: geometry, tokens, and the icon build
 cmd/kolo          the binary: up, serve, host, invite, token, who, doctor
-cmd/kolorec       records an agent session as a test fixture
+cmd/kolorec       records an agent session as a test fixture, and its scripts
 internal/adapter  agent-kind table: markers, resume, pin, interrupt
 internal/agent    PTY process management
 internal/config   ~/.kolo

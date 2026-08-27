@@ -67,7 +67,7 @@ Kolo reads an agent's state off its screen, so a new kind is a set of literal
 strings from a real terminal. Record one rather than guessing:
 
 ```
-go run ./cmd/kolorec -script scripts/claude-turn.txt -dir /tmp/scratch claude
+go run ./cmd/kolorec -script cmd/kolorec/scripts/claude-turn.txt -dir /tmp/scratch claude
 ```
 
 That writes a `.raw` recording and `.screen` dumps. **Recordings are gitignored
