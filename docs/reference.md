@@ -1,19 +1,33 @@
-# kolo reference
+# Kolo reference
 
-How kolo works, and why. For *running* it — `kolo up`, a hub and hosts on
-separate machines, TLS, every flag — the binary answers better than a file
-can: `kolo help`, `kolo help <command>`, and `kolo <command> -h`. For the
-threat model and how to report a hole, see [SECURITY.md](../SECURITY.md).
+How kolo works, and why it works that way.
 
-kolo puts long-lived CLI agents (Claude Code, opencode, anything that draws a
-terminal) in front of a whole team. A **host** machine lends itself to the org
-and runs the agents under pseudo-terminals. Everyone else watches each agent's
-screen live in a browser and types at it directly. Whoever types last drives,
-and everybody sees who that is.
+To *run* it, the binary is the better manual: `kolo help`, `kolo help <command>`
+and `kolo <command> -h` cover every command and flag. For the threat model and
+how to report a hole, see [SECURITY.md](../SECURITY.md).
 
-The host dials out to the hub over one websocket and never accepts an inbound
-connection: no open port, no firewall rule, no tunnel. Only hosts install kolo.
-Members open a link. Everything ships as one Go binary.
+## Contents
+
+- [The shape of it](#the-shape-of-it)
+- [Agents](#agents)
+- [Typing and control](#typing-and-control)
+- [Restart and resume](#restart-and-resume)
+- [The log](#the-log)
+- [Screen size](#screen-size)
+- [Where files live](#where-files-live)
+- [What works today](#what-works-today)
+- [Repo layout](#repo-layout)
+
+## The shape of it
+
+Kolo runs long-lived CLI agents (Claude Code, opencode, anything that draws a
+terminal) so a whole team can use them.
+
+There are two halves:
+
+- a **host**, a machine somebody lends to the team, which runs the agents under
+  pseudo-terminals
+- a **hub**, the server everyone opens in a browser
 
 ```
    browser      browser                       host machine
@@ -26,26 +40,38 @@ Members open a link. Everything ships as one Go binary.
         └───────┘
 ```
 
-Agents are communal. Anyone may watch, type at, or stop any of them. There are
-no roles; every action is attributed instead, and that record keeps the
-arrangement workable.
+`kolo up` runs both halves in one process, which is the usual way to start.
+`kolo serve` and `kolo host` split them across machines.
 
-Everything a machine remembers lives in `~/.kolo`: `$KOLO_HOME` moves the lot,
-and `-org`, `-state` and `-tls-cache` move one file each.
+**The host dials out.** It opens one websocket to the hub and never accepts an
+inbound connection. No open port, no firewall rule, no tunnel.
+
+**Only hosts install kolo.** Everyone else opens a link. It is one Go binary
+with nothing beside it.
+
+**Agents are communal.** Anyone in the org can watch any agent, type at it, or
+stop it. There are no roles and no permissions. Instead every action is
+recorded against the person who took it, and that record is what makes the
+arrangement work.
 
 ## Agents
 
-Any command that draws a terminal will run: the org can watch it, type at it
-and stop it. Two things depend on knowing the kind, and both are read off the
+Any command that draws a terminal will run. The org can watch it, type at it,
+and stop it without kolo knowing anything about it.
+
+Two things do need kolo to know the kind of agent, and it reads both off the
 agent's own screen:
 
-- which state it is in (idle, busy, asking something), so the list can say what
-  agents are doing instead of showing black rectangles
-- how to resume its conversation, without which every restart is a fresh start
+1. **What state it is in** (idle, busy, or asking a question), so the agent
+   list can say what each one is doing instead of showing black rectangles.
+2. **How to resume its conversation.** Without this, every restart starts over.
 
-Kolo ships descriptions for `claude` and `opencode`. Describe others in
-`~/.kolo/kinds.json`, which lives on the host. An entry there replaces a
-shipped kind outright; the two are never merged.
+Kolo ships descriptions for `claude` and `opencode`.
+
+### Describing another kind
+
+Put it in `~/.kolo/kinds.json` on the host. An entry there replaces a shipped
+kind completely. The two are never merged.
 
 ```json
 {
@@ -61,104 +87,165 @@ shipped kind outright; the two are never merged.
 }
 ```
 
-| field | meaning |
+**Reading the screen.** These say how to tell what the agent is doing.
+
+| field | what it is |
 |---|---|
-| `idle` | hints the input box shows when it can take a line; any one matches |
-| `busy` | what the screen says while working — without it, working reads as waiting |
-| `dialogFooter` / `dialogSelected` | recognise a question; never used to answer it |
-| `resume` | args appended to continue the last conversation |
-| `pin` | args carrying `{session}`, filled with an id kolo mints at first launch; the same id goes back in `resume`. For agents that take a session id at start (`claude --session-id`) |
-| `continue` | appended when a restart has no id to resume by; only safe while this agent is alone in its directory |
-| `session` | pattern whose capture is the id read off the screen, for kinds that print their conversation id (`resume` carries `{session}`) |
-| `interrupt` | key that stops it: `esc`, `ctrl+c`, or one character; default `esc`. Sent only while `busy` is up |
-| `settle` | seconds the screen must sit unchanged to read idle, for kinds whose idle is silence |
+| `idle` | hints the input box shows when it can take a line. Any one of them matching is enough |
+| `busy` | what the screen says while the agent is working. Without it, working looks the same as waiting |
+| `dialogFooter`, `dialogSelected` | how to recognise that a question is up. Never used to answer one |
+| `settle` | seconds the screen must sit unchanged before it reads as idle. For agents whose idle state is silence |
 
-Markers are literal strings from a real screen. Record one with `cmd/kolorec`
-instead of guessing at it. After an agent upgrades, `kolo doctor` will tell you
-whether its kind still fits; it also reports what a machine can run and lend,
-reads the state file, and exits non-zero, so it can end a setup script.
+**Resuming a conversation.** These say how to bring one back after a restart.
 
-A kind with no description still runs, and the org can watch it and type at it.
-What it loses is the status in the list and its conversation across restarts.
-Its screen reads as *unknown*, and kolo claims nothing more about it.
+| field | what it is |
+|---|---|
+| `resume` | arguments appended to continue the last conversation |
+| `continue` | arguments used when a restart has no id to resume by. Only safe while this agent is alone in its directory |
+| `pin` | arguments carrying `{session}`, filled with an id kolo mints at first launch. The same id goes back into `resume`. For agents that accept a session id at start, like `claude --session-id` |
+| `session` | a pattern whose capture is the conversation id, read off the screen. For agents that print their id. Use it when `resume` carries `{session}` |
 
-**Directory sharing**: one agent of each kind per directory, because most kinds
-resume by "the last conversation in this directory" and two of the same kind
-would come back as each other. Kinds that name or pin their conversations can
-prove which one is theirs and may share. Sharing a directory still means
-sharing its files, and kolo does not referee that.
+**Stopping it.**
 
-## Input model
+| field | what it is |
+|---|---|
+| `interrupt` | the key that stops this agent: `esc`, `ctrl+c`, or a single character. Defaults to `esc`. Only sent while the `busy` marker is on screen |
 
-Members type at the agent themselves. There is nothing to take and nobody to
-ask: keystrokes relay as pressed, whoever's keys arrived last is announced to
-watchers as the typist, and everything typed lands in the log attributed. Two
-people typing at once interleave keystrokes in view of everybody, much like two
-people reaching for one keyboard in a room. Nothing is gated, because the
-member can see the screen their keys land on. Pressing Enter at a question is a
-decision they are making with their eyes open.
+### Getting the markers right
 
-What kolo presses on somebody's behalf, and when:
+Markers are literal strings copied from a real screen, not guesses. Record a
+real session with `cmd/kolorec` and read them off the dump.
 
-| action | offered by | permitted when |
+After an agent updates, run `kolo doctor`. It says whether each kind still fits
+what the agent draws, what this machine can run and lend, and exits non-zero,
+so it can be the last line of a setup script.
+
+An agent kolo has no description for still runs, and the org can still watch it
+and type at it. What it loses is its status in the list and its conversation
+across restarts. Its screen reads as *unknown*, and kolo claims nothing more
+about it.
+
+### One of each kind per directory
+
+Most agents resume by asking for "the last conversation in this directory", so
+two of the same kind in one directory would come back as each other. Kolo
+refuses that.
+
+Agents that name or pin their conversations can prove which one is theirs, so
+they are allowed to share a directory.
+
+Sharing a directory still means sharing its files. Kolo does not referee that.
+
+## Typing and control
+
+Anyone in the org can type at any agent. There is no lock to take and nobody to
+ask.
+
+Keystrokes go to the agent as you press them. Whoever typed last is shown to
+everyone else as the typist. Everything typed goes into the log under your
+name.
+
+If two people type at once their keystrokes interleave, and everyone watching
+sees it happen. It works the way two people reaching for one keyboard works.
+
+Nothing is gated, because you can see the screen your keys are landing on.
+Pressing Enter at a question is a decision made with your eyes open.
+
+### What kolo can press for you
+
+| action | offered by | allowed when |
 |---|---|---|
 | stop | the page | always |
-| interrupt | the protocol only | only while the kind's own busy marker is up, using that kind's key |
-| restart / start fresh | the protocol only | always |
+| interrupt | the protocol only | only while that kind's `busy` marker is on screen, using that kind's key |
+| restart, start fresh | the protocol only | always |
 
 The page draws a stop control and nothing else. Interrupt, restart and start
-fresh travel on the watch websocket and are honoured by the host, but the page
-stopped offering buttons for them once it turned out nobody reached for them.
-Anything that speaks the protocol can still send them, and the log records them
-like every other action.
+fresh travel on the watch websocket and the host honours them, but the page
+stopped offering buttons for them once it was clear nobody used them. Anything
+speaking the protocol can still send them, and the log records them like any
+other action.
 
-Answering a question is not on that list. Kolo says a question is up; the
-question itself is on the screen, and answering it means typing. An earlier
-version read choices off dialogs and offered buttons. It held for exactly one
-agent's dialog and guessed at everybody else's. If an agent ever hands its
-questions over through a real interface, kolo will use that instead.
+### Why there is no button to answer a question
+
+Kolo tells you a question is up. It does not tell you what the question is, and
+it will not answer one for you. The question is on the screen, and answering it
+means typing.
+
+An earlier version read the choices off dialogs and drew buttons. It worked for
+exactly one agent's dialog and guessed at everyone else's. If an agent ever
+offers its questions through a real interface, kolo will use that instead.
 
 ## Restart and resume
 
-Agents are supervised: an exit is restarted, one that will not stay up is
-marked failed instead of being restarted forever, and a human restart does not
-count toward giving up. What is running is written to `-state`, so restarting
-the host, or the whole machine, brings the org's agents back in the order they
-were made.
+**Agents are supervised.** If one exits, kolo starts it again. One that will
+not stay up is marked failed rather than restarted forever. A restart somebody
+asked for does not count toward giving up.
 
-Resume comes in two shapes: ask for the last conversation (`--continue`), or
-name one (`--resume {session}`, with the id read off the screen or pinned at
-birth). The id travels in the state file, so it survives the machine. A failed
-resume starts clean and says so out loud, because losing context silently is
-worse than losing it visibly. Start fresh drops the conversation deliberately,
-and is logged like every other action.
+**What is running is written down**, to the file `-state` names. Restarting the
+host, or the whole machine, brings the org's agents back in the order they were
+created.
+
+**Resume works two ways:**
+
+- ask for the last conversation, with `--continue` or similar
+- name a conversation, with `--resume {session}`, where the id was either read
+  off the screen or pinned when the agent first started
+
+The id is kept in the state file, so it survives the machine restarting.
+
+**A failed resume starts clean and says so.** Losing context quietly is worse
+than losing it visibly.
+
+**Start fresh** drops the conversation on purpose, and is logged like anything
+else.
 
 ## The log
 
-Every member action is recorded on the hub beside the org file (JSON lines,
-`GET /v1/log`): created, said, interrupted, restarted, stopped, failed. Typed
-lines are reconstructed from keystrokes and written only on Enter, so an
-abandoned half-line is never recorded. Because it reconstructs, pastes and
-arrow-key menu choices will not read back exactly. Nothing an agent prints is
-kept.
+Every action a member takes is recorded on the hub, beside the org file, as
+JSON lines. Read it with `GET /v1/log`.
 
-The log stands in for roles. Everyone may do everything, because everyone can
-see who did.
+Recorded: created, said, interrupted, restarted, stopped, failed.
+
+**Typed lines are rebuilt from keystrokes** and only written when you press
+Enter, so a line you abandon halfway is never recorded. Because it is a
+reconstruction, pasted text and menu choices made with arrow keys will not read
+back exactly.
+
+**Nothing an agent prints is kept.** Only what people did.
+
+The log is what stands in for roles. Everyone may do everything, because
+everyone can see who did what.
 
 ## Screen size
 
-Each watching browser proposes the grid it can draw, and the smallest wins, as
-in tmux. Anything wider than the smallest window would be drawn by an agent
-that cannot see where it is being cut off.
+Every browser watching proposes the grid it can draw, and the smallest one
+wins, the same way tmux handles it.
 
-## Status and layout
+Anything wider than the smallest window would be drawn by an agent that cannot
+see where it is being cut off.
 
-Working and tested across two machines: watching, typing, stopping,
-restart/resume (including pinned identities), discovery of installed agents
-(`-allow '*'`), the journal. Not built yet: notification when an agent stalls
-on a dialog while nobody watches; putting the journal in front of people in the
-UI; buttons for the interrupt, restart and start-fresh the protocol already
-carries.
+## Where files live
+
+Everything a machine remembers is in `~/.kolo`.
+
+| | |
+|---|---|
+| `$KOLO_HOME` | moves the whole directory |
+| `-org` | moves the org file |
+| `-state` | moves the record of what is running |
+| `-tls-cache` | moves the certificate store |
+
+## What works today
+
+**Working, and tested across two machines:** watching, typing, stopping,
+restart and resume (including pinned conversation ids), discovery of installed
+agents (`-allow '*'`), and the log.
+
+**Not built yet:** a notification when an agent stalls on a question and nobody
+is watching; the log shown in the browser; buttons for the interrupt, restart
+and start-fresh that the protocol already carries.
+
+## Repo layout
 
 ```
 brand             the mark: geometry, tokens, and the icon build
@@ -175,13 +262,13 @@ internal/session  one agent's screen fanned out to viewers
 internal/term     vt10x-backed screen model and repaint
 ```
 
-The page is `internal/hub/ui`, under the only thing that serves it, because
-`go:embed` reaches into a directory below the package it is written in but
-never outside one — so a page in a package of its own would be a package whose
-whole job was holding one embed directive. `internal` keeps it from becoming
-importable API the module would owe compatibility on.
+**Why the page lives in `internal/hub/ui`.** `go:embed` can reach into a
+directory below the package it is written in, but never outside one. A page in
+a package of its own would be a package whose only job was holding one embed
+directive. `internal` keeps it from becoming importable API the module would
+owe compatibility on.
 
-The icons and token stylesheet under `internal/hub/ui/assets` are checked in, but
-they are build output: `node brand/build.mjs` regenerates them from
-`brand/ring.ts` and `brand/tokens.css`, which needs Node and a Chrome. Edit the
+**The icons and token stylesheet are build output.** They are checked in under
+`internal/hub/ui/assets`, but `node brand/build.mjs` regenerates them from
+`brand/ring.ts` and `brand/tokens.css`. That needs Node and a Chrome. Edit the
 sources under `brand/`, never the generated files.
