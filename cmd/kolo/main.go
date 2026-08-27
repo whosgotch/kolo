@@ -73,14 +73,15 @@ var commands map[string]command
 
 func init() {
 	commands = map[string]command{
-		"up":     {run: upCmd, brief: "start a hub and lend this machine to it"},
-		"serve":  {run: serveCmd, brief: "run the hub for an org"},
-		"invite": {run: inviteCmd, brief: "make a link that lets someone join"},
-		"who":    {run: whoCmd, brief: "say who is in the org"},
-		"token":  {run: tokenCmd, brief: "mint credentials"},
-		"host":   {run: hostCmd, brief: "lend this machine to the org"},
-		"doctor": {run: doctorCmd, brief: "say what will and will not work on this machine"},
-		"help":   {run: helpCmd, brief: "explain kolo, or one of its commands"},
+		"up":      {run: upCmd, brief: "start a hub and lend this machine to it"},
+		"serve":   {run: serveCmd, brief: "run the hub for an org"},
+		"invite":  {run: inviteCmd, brief: "make a link that lets someone join"},
+		"who":     {run: whoCmd, brief: "say who is in the org"},
+		"token":   {run: tokenCmd, brief: "mint credentials"},
+		"host":    {run: hostCmd, brief: "lend this machine to the org"},
+		"doctor":  {run: doctorCmd, brief: "say what will and will not work on this machine"},
+		"version": {run: versionCmd, brief: "say which build this is"},
+		"help":    {run: helpCmd, brief: "explain kolo, or one of its commands"},
 	}
 }
 
@@ -95,6 +96,12 @@ func main() {
 	}
 	if args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {
 		overview(os.Stdout)
+		return
+	}
+	// Answered as flags too, because that is what people type before they
+	// think to look for a command.
+	if args[0] == "-v" || args[0] == "--version" || args[0] == "-version" {
+		fmt.Println(versionLine())
 		return
 	}
 	cmd, ok := commands[args[0]]

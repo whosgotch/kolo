@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	everyday   = []string{"up", "invite", "who", "doctor"}
+	everyday   = []string{"up", "invite", "who", "doctor", "version"}
 	separately = []string{"serve", "token", "host"}
 )
 

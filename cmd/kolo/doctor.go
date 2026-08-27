@@ -51,6 +51,8 @@ func doctorCmd(args []string) error {
 }
 
 func doctor(w io.Writer, statePath, kindsPath string) (bool, error) {
+	// First, so a pasted report says which build produced it.
+	fmt.Fprintf(w, "%s\n\n", versionLine())
 	if _, err := adapter.Load(kindsPath); err != nil {
 		fmt.Fprintf(w, "%v\n", err)
 		return false, nil
