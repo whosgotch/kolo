@@ -27,7 +27,7 @@ func dana() Person { return Person{ID: "dana", Name: "Dana"} }
 
 func TestJournalSurvivesRestart(t *testing.T) {
 	j, path := journalFixture(t)
-	j.add(Entry{Agent: "checkups", What: WhatCreated, Who: dana(), Text: "/work/api — claude"})
+	j.add(Entry{Agent: "checkups", What: WhatCreated, Who: dana(), Text: "/work/api · claude"})
 	j.add(Entry{Agent: "checkups", What: WhatSaid, Who: dana(), Text: "run the migrations"})
 	j.Close()
 
@@ -203,7 +203,7 @@ func TestJournalRecordsWhatMembersDo(t *testing.T) {
 	if got.Entries[0].What != WhatCreated || got.Entries[0].Who.ID != "artem" {
 		t.Errorf("created = %+v", got.Entries[0])
 	}
-	if got.Entries[0].Text != "/work/api — claude" {
+	if got.Entries[0].Text != "/work/api · claude" {
 		t.Errorf("created text = %q", got.Entries[0].Text)
 	}
 	if got.Entries[1].What != WhatStopped {

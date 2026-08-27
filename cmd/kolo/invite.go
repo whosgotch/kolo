@@ -72,8 +72,8 @@ func inviteCmd(args []string) error {
 		fmt.Printf("Send this to whoever should have an agent:\n\n")
 	}
 	fmt.Printf("    %s\n\n", hub.InviteURL(*hubURL, v.Token))
-	fmt.Printf("%s, until %s. They say what to call them and are in —\n", usesLeft(v), v.Expires.Local().Format("Mon 2 Jan 15:04"))
-	fmt.Printf("nothing to install, no token to paste.\n\n")
+	fmt.Printf("%s, until %s. They say what to call them and are in.\n", usesLeft(v), v.Expires.Local().Format("Mon 2 Jan 15:04"))
+	fmt.Printf("Nothing to install, no token to paste.\n\n")
 	fmt.Printf("Anyone holding it can use it: kolo invite -new replaces it, kolo invite\n-off %s withdraws it, and kolo who says who came through.\n", v.ID)
 	return nil
 }

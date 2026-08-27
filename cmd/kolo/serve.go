@@ -49,7 +49,7 @@ func serveCmd(args []string) error {
 	s, err := hub.Listen(org, *addr)
 	if err != nil {
 		if errors.Is(err, syscall.EADDRINUSE) {
-			return fmt.Errorf("%w\n\nSomething is already listening there — another kolo serve, most likely.\n"+
+			return fmt.Errorf("%w\n\nSomething is already listening there, most likely another kolo serve.\n"+
 				"Find it with:   lsof -nP -i:%s\n"+
 				"Or use another: kolo serve -org %s -addr %s",
 				err, portOf(*addr), *orgPath, nextAddr(*addr))

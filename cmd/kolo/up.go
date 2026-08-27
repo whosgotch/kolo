@@ -61,8 +61,8 @@ func upCmd(args []string) error {
 		allow = installedKinds()
 		if len(allow) == 0 {
 			return fmt.Errorf("no agent command found: kolo knows %s, and none of them are on PATH\n"+
-				"Install one, name it with -allow, or lend any command with -allow '*' —\n"+
-				"anything that draws a terminal will run, and %s describes one kolo\ndoes not know so its screen can be read too",
+				"Install one, name it with -allow, or lend any command with -allow '*'.\n"+
+				"Anything that draws a terminal will run, and %s describes one kolo\ndoes not know so its screen can be read too",
 				strings.Join(adapter.Kinds(), ", "), *kinds)
 		}
 	}

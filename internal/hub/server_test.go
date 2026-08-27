@@ -303,7 +303,7 @@ func TestRelabelDoesNotTellTheHost(t *testing.T) {
 	}
 
 	// Name is what the host was told to spawn, and stays what the host is
-	// addressed by — a label is the hub's own field, nothing to relay. Proved
+	// addressed by: a label is the hub's own field, nothing to relay. Proved
 	// by doing something that DOES relay (a stop) right after and checking
 	// that's the very next frame: a canceled read on this library closes the
 	// connection outright, so a short-deadline read can't be used to probe

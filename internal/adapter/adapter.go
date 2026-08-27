@@ -253,14 +253,14 @@ func (a Adapter) validate() error {
 	})
 	pinned := len(a.Pin) > 0
 	if _, ok := parseKey(a.Interrupt); !ok {
-		return fmt.Errorf("interrupt: %q is not a key — try esc, ctrl+c, or a single character", a.Interrupt)
+		return fmt.Errorf("interrupt: %q is not a key. Try esc, ctrl+c, or a single character", a.Interrupt)
 	}
 	if pinned && !slices.Contains(a.Pin, SessionPlaceholder) {
-		return fmt.Errorf("pin must carry %s — it stands for the id kolo minted for this conversation", SessionPlaceholder)
+		return fmt.Errorf("pin must carry %s, which stands for the id kolo minted for this conversation", SessionPlaceholder)
 	}
 	switch {
 	case a.Session == "" && !pinned && wants:
-		return fmt.Errorf("resume asks for %s, but nothing says where the id comes from — describe session, or pin one at birth", SessionPlaceholder)
+		return fmt.Errorf("resume asks for %s, but nothing says where the id comes from. Describe session, or pin one at birth", SessionPlaceholder)
 	case a.Session != "" && !wants:
 		return fmt.Errorf("session says how to read an id that resume never uses; put %s in it", SessionPlaceholder)
 	case a.Session == "":
@@ -271,7 +271,7 @@ func (a Adapter) validate() error {
 		return fmt.Errorf("session: %w", err)
 	}
 	if re.NumSubexp() != 1 {
-		return fmt.Errorf("session must capture exactly one thing — the id — and captures %d", re.NumSubexp())
+		return fmt.Errorf("session must capture exactly one thing, the id, and captures %d", re.NumSubexp())
 	}
 	return nil
 }
