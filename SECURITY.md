@@ -45,8 +45,8 @@ What **is** worth reporting:
 
 ## Where the secrets live
 
-- `~/.kolo/org.json` holds **hashes, never member tokens** — it is meant to be
-  safe in version control. The one exception is the standing invite's own
+- `~/.kolo/org.json` holds **hashes, never member tokens**, so it is meant to
+  be safe in version control. The one exception is the standing invite's own
   token, kept on purpose so the same link can be shown twice; an invite can
   only be spent on becoming a member and expires on its own.
 - Host tokens are minted fresh on every `kolo up` and written down nowhere.

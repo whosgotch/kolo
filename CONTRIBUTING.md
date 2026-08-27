@@ -16,7 +16,7 @@ back out to say which build it is. A `go run` binary calls itself `dev`, which
 is what it is.
 
 `go install` puts kolo wherever `go env GOBIN` points, falling back to
-`$(go env GOPATH)/bin` — which is often not on `PATH`. If `kolo` is not found
+`$(go env GOPATH)/bin`, which is often not on `PATH`. If `kolo` is not found
 after installing, that is why:
 
 ```
@@ -26,7 +26,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Running kolo in this repository writes an `org.json` here; it is gitignored,
 and it is a scratch org rather than a real one.
 
-The only build dependency is Go — the version in `go.mod`. The icons are the
+The only build dependency is Go, at the version `go.mod` names. The icons are the
 exception: `node brand/build.mjs` regenerates them and the token stylesheet,
 needs Node and a Chrome, and is only for changes under `brand/`.
 
@@ -43,7 +43,7 @@ needs Node and a Chrome, and is only for changes under `brand/`.
 ## Commits
 
 Small, and described in a plain sentence that says what changed for somebody
-using kolo — not what was refactored. The log reads as prose on purpose:
+using kolo, not what was refactored. The log reads as prose on purpose:
 
 ```
 feat: one link an org keeps, not a drawer of them
@@ -71,7 +71,7 @@ go run ./cmd/kolorec -script cmd/kolorec/scripts/claude-turn.txt -dir /tmp/scrat
 ```
 
 That writes a `.raw` recording and `.screen` dumps. **Recordings are gitignored
-and must stay that way** — they are a picture of somebody's screen, paths and
+and must stay that way**. They are a picture of somebody's screen, paths and
 all. Put the strings you found in `internal/adapter`, and a written-out screen
 in the tests.
 
