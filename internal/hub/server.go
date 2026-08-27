@@ -318,6 +318,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		conn.Close(websocket.StatusPolicyViolation, err.Error())
 		return
 	}
+	log.Printf("hub: %s joined %s, running %s", h.ID, s.orgName(), build(hello.Version))
 	defer func() {
 		for _, name := range s.registry.Leave(h.ID) {
 			s.journal.add(Entry{Agent: name, What: WhatGone, Text: h.ID + " disconnected"})
@@ -663,6 +664,15 @@ func sender(ctx context.Context, conn *websocket.Conn) Sender {
 		defer mu.Unlock()
 		return write(ctx, conn, v)
 	}
+}
+
+// build is what a host says it is running. Hosts that predate the hub reading
+// this said nothing, which is worth a word of its own rather than a blank.
+func build(version string) string {
+	if version == "" {
+		return "an unknown build"
+	}
+	return "kolo " + version
 }
 
 type hostHello struct {
