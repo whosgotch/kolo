@@ -8,7 +8,7 @@
 // favicon is a picture rather than a document. Rasterising wants a browser:
 // pass one in KOLO_CHROME, or let it look in the usual places.
 //
-// Run: make brand
+// Run: node scripts/brand.mjs
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -1,4 +1,5 @@
-/* Kolo design tokens — the source make brand copies into internal/ui/assets. */
+/* Kolo design tokens — the source node scripts/brand.mjs copies into
+   internal/ui/assets. */
 
 :root {
   /* surfaces + ink */

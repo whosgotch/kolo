@@ -48,9 +48,9 @@ For hub and hosts on separate machines, TLS, and every flag: `kolo help` and
 ## Development
 
 ```
-make install   # build this working tree onto your PATH
-make test      # go test ./...
-make brand     # regenerate icons (Node + Chrome)
+go install ./cmd/kolo     # put this working tree on your PATH as kolo
+go test ./...
+node scripts/brand.mjs    # regenerate icons (Node + Chrome)
 ```
 
 Commits are small and described in plain sentences; docs live next to the code
