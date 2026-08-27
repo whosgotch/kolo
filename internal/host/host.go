@@ -39,7 +39,6 @@ type Event struct {
 	Org, Host string
 	Err       error
 	Retry     time.Duration
-	Note      string
 }
 
 // Run keeps the machine connected until ctx is cancelled. Lost connections

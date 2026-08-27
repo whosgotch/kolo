@@ -129,14 +129,12 @@ type list []string
 func (l *list) String() string { return strings.Join(*l, ",") }
 
 func (l *list) Set(v string) error {
-	for _, part := range strings.Split(v, ",") {
-		if part = strings.TrimSpace(part); part != "" {
-			*l = append(*l, part)
-		}
-	}
+	*l = append(*l, split(v)...)
 	return nil
 }
 
+// split reads one comma-separated flag value, dropping the empties a trailing
+// comma or a stray space would otherwise leave behind.
 func split(v string) []string {
 	var out []string
 	for _, part := range strings.Split(v, ",") {

@@ -94,8 +94,8 @@ func withdraw(orgPath string, org *hub.Org, named []string) error {
 	if err != nil {
 		return missingOrg(err, orgPath)
 	}
-	wrap(os.Stdout, "", fmt.Sprintf("Withdrew %s. %s stop working within a couple of seconds.",
-		english(gone), verb(gone, "The link", "Those links")))
+	wrap(os.Stdout, "", fmt.Sprintf("Withdrew %s. %s working within a couple of seconds.",
+		english(gone), verb(gone, "The link stops", "Those links stop")))
 	fmt.Println()
 	wrap(os.Stdout, "", fmt.Sprintf("Whoever already joined with %s is still a member: kolo who -org %s "+
 		"says who came through which, and removing one is deleting their line.",
@@ -165,13 +165,11 @@ func listInvites(org *hub.Org) error {
 	out.Flush()
 
 	spent := "the ones that no longer work"
-	switch dead {
-	case 1:
+	switch {
+	case dead == 1:
 		spent = "the one that no longer works"
-	default:
-		if dead > 1 {
-			spent = fmt.Sprintf("the %d that no longer work", dead)
-		}
+	case dead > 1:
+		spent = fmt.Sprintf("the %d that no longer work", dead)
 	}
 	fmt.Printf("\nkolo invite -off <name> withdraws one, and takes several: -off all clears\n")
 	fmt.Printf("every link, -off spent %s.\n", spent)

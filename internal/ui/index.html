@@ -496,10 +496,6 @@ const KIND_GLYPHS = [
   '<path d="M9.5 6A3.5 3.5 0 1 1 6 2.5" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/>',
   '<path d="M4 3v6M6 3v6M8 3v6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>',
 ];
-// FNV-1a plus a murmur3-style finalizer: a plain h*31 hash clustered badly
-// on real tool names (claude/codex/crush/gemini/opencode landed 4 of 5 on
-// the same glyph) — this spreads short, similar-looking program names
-// across the palette instead of piling them into one or two buckets.
 // Returns {viewBox, inner} — a known mark at its own native viewBox, or one
 // of the abstract fallbacks at the shared 12x12 grid they were drawn on.
 function kindGlyph(command) {
@@ -915,10 +911,6 @@ term.onData((keys) => {
 let socket = null;
 let watching = null;
 
-// What the agent's terminal is, in cells. The hub decides it from every browser
-// watching, so this follows rather than leads.
-let grid = { cols: 120, rows: 40 };
-
 // room is what the frame has left to draw a terminal in.
 function room() {
   const box = el('#term').getBoundingClientRect();
@@ -1005,7 +997,6 @@ function connect(name) {
     const msg = JSON.parse(ev.data);
     switch (msg.type) {
       case 'size':
-        grid = { cols: msg.cols, rows: msg.rows };
         term.resize(msg.cols, msg.rows);
         break;
       case 'state':
