@@ -15,7 +15,7 @@ Members open a link. One Go binary, no dependencies.
 On the machine you are lending, which is the only one that installs anything:
 
 ```
-$ curl -fsSL https://raw.githubusercontent.com/whosgotch/kolo/main/install.sh | sh
+$ curl -fsSL https://raw.githubusercontent.com/whosgotch/kolo/main/install | sh
 
 $ cd ~/work/api
 $ kolo up

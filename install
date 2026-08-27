@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs kolo, the binary a host machine runs.
 #
-#   curl -fsSL https://raw.githubusercontent.com/whosgotch/kolo/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/whosgotch/kolo/main/install | sh
 #
 # It downloads one release binary, checks it against the checksums published
 # with it, and puts it somewhere on your PATH. Nothing else. Read it first if
