@@ -164,3 +164,23 @@ func TestDoctorOnAMachineThatHasDoneNothing(t *testing.T) {
 		t.Errorf("the report does not say what to do:\n%s", out.String())
 	}
 }
+
+// A kind nobody described never reads as anything, so time passing is not
+// evidence of a fault: lends already called it a limit, and a setup script
+// that ends in kolo doctor must not fail for lending a plain shell.
+func TestDoctorDoesNotFaultAnAgentItWasNeverGoingToRead(t *testing.T) {
+	long := time.Now().Add(-3 * 24 * time.Hour)
+	out, ok := report(t, host.State{
+		Allows: []string{"sh"},
+		Agents: []host.Record{agent("errands", "/work/api", "sh", "unknown", long)},
+	}, absent(t))
+	if !ok {
+		t.Errorf("an agent kolo never claimed to read was reported as a fault:\n%s", out)
+	}
+	if strings.Contains(out, "said nothing kolo understands") {
+		t.Errorf("the report blames markers a kind that has none:\n%s", out)
+	}
+	if !strings.Contains(out, "does not read this kind") {
+		t.Errorf("the report does not say why its screen is unread:\n%s", out)
+	}
+}
