@@ -1,71 +1,79 @@
-# kolo
+<p align="center">
+  <img src="brand/kolo.png" width="84" alt="">
+</p>
 
-Long-lived CLI agents (Claude Code, opencode, anything that draws a terminal)
-shared by a whole team. A **host** machine lends itself to the org and runs the
-agents under pseudo-terminals. Everyone else watches each agent's screen live
-in a browser and types at it directly. Whoever types last drives, and everybody
-sees who that is.
+<h1 align="center">kolo</h1>
 
-The host dials out to the hub over one websocket and never accepts an inbound
-connection: no open port, no firewall rule, no tunnel. Only hosts install kolo.
-Members open a link. One Go binary, no dependencies.
+<p align="center">
+  <b>Shared coding agents for your team.</b><br>
+  One machine runs them. Everyone else opens a link.
+</p>
 
-## Quick start
+<p align="center">
+  <a href="https://github.com/whosgotch/kolo/actions/workflows/ci.yml"><img src="https://github.com/whosgotch/kolo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/whosgotch/kolo/releases/latest"><img src="https://img.shields.io/github/v/release/whosgotch/kolo?color=2C6F62&labelColor=1C2123" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2C6F62?labelColor=1C2123" alt="AGPL-3.0"></a>
+</p>
 
-On the machine you are lending, which is the only one that installs anything:
+<br>
+
+## Install
+
+On the machine you are lending — the only one that installs anything:
 
 ```
-$ curl -fsSL https://raw.githubusercontent.com/whosgotch/kolo/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/whosgotch/kolo/main/install | sh
+```
 
-$ cd ~/work/api
-$ kolo up
+## Run
 
+```
+cd ~/work/api
+kolo up
+```
+
+```
 api is up at http://192.168.0.12:7300
-Lending anywhere · claude codex · 3 members
+Lending anywhere · claude opencode · 3 members
 
 Invite  http://192.168.0.12:7300/join#kolo_yPNNK8ZnHdvgKFDiQV2Oc…
-        10 uses left, until Mon 31 Aug 20:34 · kolo invite -new for a fresh one
+        10 uses left, until Mon 31 Aug 20:34
 ```
 
-The installer checks the download against published checksums and puts kolo on
-your PATH. With Go already installed,
-`go install github.com/whosgotch/kolo/cmd/kolo@latest` does the same job.
+Send the link. Whoever opens it picks a name and is in — nothing to install,
+no token to paste.
 
-`kolo up` starts a hub and lends any directory this user can reach; `-dir`
-narrows it. Send the invite to your team. Whoever opens it picks a name and is
-in. The org gets a single link, reprinted on every start and by `kolo invite`,
-so nobody has to hand out one per person. If it leaks, `kolo invite -new`
-replaces it. To see the org, run `kolo who`.
+## What you get
 
-For hub and hosts on separate machines, TLS, and every flag: `kolo help` and
-`kolo help <command>`.
+**One screen, everybody on it.** Watch an agent work, type at it, take over
+mid-sentence. Whoever typed last drives, and everyone sees who.
 
-## Documentation
+**Nothing to open.** The host dials out over one websocket. No inbound port,
+no firewall rule, no tunnel.
 
-- `kolo help`, `kolo help <command>` and `kolo doctor` — running it, every
-  flag, and what this machine can and cannot do. The binary is the manual.
-- [Reference](docs/reference.md) — how it works and why: agents and
-  `kinds.json`, the input model, restart/resume, the log, repo layout.
-- [Security](SECURITY.md) — the threat model, and reporting a hole.
-- [Contributing](CONTRIBUTING.md) — building it, and what lands.
+**Anything that draws a terminal.** Claude Code and opencode out of the box;
+describe another in one small file.
 
-## Development
+**One binary.** No database, no daemon, no account.
 
-```
-go install ./cmd/kolo     # put this working tree on your PATH as kolo
-go test ./...
-node brand/build.mjs      # regenerate icons (Node + Chrome)
-```
+## Early
 
-Commits are small and described in plain sentences; docs live next to the code
-that makes them true.
+Kolo is pre-1.0 — expect rough edges. It reads what an agent is doing off that
+agent's own screen, so a CLI that changes its wording quietly breaks the status
+line; `kolo doctor` says when that has happened.
+
+The hub runs code on the host by design. Read [SECURITY.md](SECURITY.md)
+before pointing kolo at anything you care about.
+
+## Docs
+
+`kolo help` is the manual. Beyond it:
+[reference](docs/reference.md) · [security](SECURITY.md) · [contributing](CONTRIBUTING.md)
 
 ## License
 
-AGPL-3.0 — see [LICENSE](LICENSE). Kolo is a network service by nature, and the
-AGPL's condition is that a modified copy run as a service still owes its users
-the source. Want to embed or host kolo under different terms? Open an issue.
+[AGPL-3.0](LICENSE) — a modified copy run as a service still owes its users the
+source. Want it under other terms? Open an issue.
 
-The page also carries other people's work under their own terms. xterm.js draws
-the terminal (MIT, `internal/hub/ui/assets/xterm-MIT.txt`), and the fonts are
-Archivo and JetBrains Mono (OFL, beside them).
+The page also carries xterm.js (MIT) and the Archivo and JetBrains Mono faces
+(OFL), licences beside them in `internal/hub/ui/assets`.

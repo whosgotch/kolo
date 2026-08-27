@@ -1,4 +1,4 @@
-# Builds the binaries a tag promises, and the checksums install.sh checks them
+# Builds the binaries a tag promises, and the checksums ./install checks them
 # against. Runs on a v-tag, and by hand for a tag that was pushed before this
 # workflow existed.
 #
@@ -79,7 +79,7 @@ jobs:
               --notes "Install:
 
           \`\`\`
-          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install | sh
           \`\`\`
 
           Or with Go: \`go install github.com/whosgotch/kolo/cmd/kolo@$TAG\`
