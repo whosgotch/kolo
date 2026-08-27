@@ -1,7 +1,9 @@
 package main
 
 import (
+	"runtime"
 	"runtime/debug"
+	"strings"
 	"testing"
 )
 
@@ -67,5 +69,36 @@ func TestVersionPrefersWhatTheBuildWasToldToSay(t *testing.T) {
 	stamped()
 	if version != "v0.1.0" {
 		t.Errorf("version = %q, want the ldflags value to stand", version)
+	}
+}
+
+// The line a bug report is asked for. It names the platform and the toolchain
+// as well, because a version on its own is rarely enough to reproduce with.
+func TestVersionLineSaysWhatIsNeededToReproduce(t *testing.T) {
+	was := version
+	t.Cleanup(func() { version = was })
+	version = "v0.1.1"
+
+	line := versionLine()
+	for _, want := range []string{"kolo", "v0.1.1", runtime.GOOS, runtime.GOARCH, runtime.Version()} {
+		if !strings.Contains(line, want) {
+			t.Errorf("version line %q does not mention %q", line, want)
+		}
+	}
+}
+
+// doctor's report is the thing people paste, so it has to say which binary
+// wrote it without being asked separately.
+func TestDoctorReportOpensWithTheVersion(t *testing.T) {
+	was := version
+	t.Cleanup(func() { version = was })
+	version = "v0.1.1"
+
+	var out strings.Builder
+	if _, err := doctor(&out, absent(t), absent(t)); err != nil {
+		t.Fatal(err)
+	}
+	if first, _, _ := strings.Cut(out.String(), "\n"); first != versionLine() {
+		t.Errorf("doctor opens with %q, want the version line %q", first, versionLine())
 	}
 }
