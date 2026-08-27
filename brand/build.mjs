@@ -66,3 +66,9 @@ for (const [name, size] of Object.entries(sizes)) {
   copyFileSync(join(work, `${name}.png`), join(assets, `${name}.png`));
   console.log(`${name}.png ${size}×${size}`);
 }
+
+// The README's logo, from the same render the page's largest icon uses. It
+// lives here rather than in the page's assets because the README is not the
+// page, and a readme pointing into internal/ reads like a mistake.
+copyFileSync(join(assets, 'icon.png'), fileURLToPath(new URL('./kolo.png', import.meta.url)));
+console.log('kolo.png (the README\'s logo)');
