@@ -1,0 +1,53 @@
+# Build, vet, format and test, on every push and pull request.
+#
+# Two machines rather than one: a host runs agents under a pseudo-terminal, and
+# PTYs are where Linux and macOS differ most, so a green Linux run on its own
+# would not say much about the half of hosts that are laptops.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # go.mod is the one place the version is written down.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: build
+        run: go build ./...
+
+      - name: vet
+        run: go vet ./...
+
+      # gofmt exits zero whatever it finds, so the files it names are the test.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would change these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # -race because almost everything here is a goroutine talking to another:
+      # sessions fanning out, hosts reconnecting, the org file reloading under
+      # live connections.
+      - name: test
+        run: go test -race ./...
