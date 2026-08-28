@@ -8,7 +8,7 @@
 #     }
 #
 # The choice the user has selected is drawn in colour alone, so nothing of it
-# survives in the text kolo reads — which is why the kind declares no
+# survives in the text kolo reads, which is why the kind declares no
 # dialogSelected and the footer carries the state instead.
 waitfor 60s Ask anything
 wait 3s

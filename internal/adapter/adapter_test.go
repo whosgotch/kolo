@@ -212,7 +212,7 @@ func TestDiscoveredFindsWhatIsInstalled(t *testing.T) {
 }
 
 // TestAKindTheHostPinsItsIdentity: an agent whose conversation is named by the
-// host at birth needs no screen to read — the id is kolo's own, minted before
+// host at birth needs no screen to read: the id is kolo's own, minted before
 // the agent could say anything, and filled in wherever it is asked for.
 func TestAKindTheHostPinsItsIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kinds.json")

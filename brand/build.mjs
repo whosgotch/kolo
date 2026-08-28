@@ -1,7 +1,7 @@
 // Builds the icons the page serves, from the geometry in ring.ts beside it.
 //
 // The mark is generated, never stored (ring.ts is the geometry). At the
-// sizes a browser puts it — a tab, a home screen, a corner of the page — it is
+// sizes a browser puts it (a tab, a home screen, a corner of the page), it is
 // under the twelve rows the ASCII build needs, so all of it is the vector build.
 //
 // SVG is what the geometry gives; the PNGs are that rasterised, because a

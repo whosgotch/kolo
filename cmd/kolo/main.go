@@ -28,7 +28,7 @@ func stamped() {
 	if !ok {
 		return
 	}
-	// Built from a checkout — go build or go install of a path here. The
+	// Built from a checkout: go build or go install of a path here. The
 	// commit is read before Main.Version because Main.Version holds a
 	// synthesised pseudo-version in this case (v0.0.0-<time>-<commit>), and
 	// the commit alone is the half of that anybody reads.
@@ -44,7 +44,7 @@ func stamped() {
 	if v := info.Main.Version; v != "" && v != "(devel)" {
 		version = v
 	}
-	// Anything else — go run, most often — stays "dev", which it is.
+	// Anything else, go run most often, stays "dev", which it is.
 }
 
 // fromVCS is the commit a binary was built from, shortened to what a person

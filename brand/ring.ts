@@ -1,5 +1,5 @@
 /**
- * Kolo mark — single source of truth.
+ * Kolo mark: single source of truth.
  *
  * The logo is generated, not stored. Both the ASCII build and the vector build
  * come from the same geometry: a circle with a smaller circle subtracted,
@@ -45,7 +45,7 @@ export interface RingOptions {
 
 /**
  * Render the mark as rows of characters.
- * Minimum 12 rows — below that use the vector mark instead.
+ * Minimum 12 rows. Below that use the vector mark instead.
  */
 export function asciiRing(rows: number, opts: RingOptions = {}): string[] {
   const { phase = REST, span = 1.1, samples: ss = 3 } = opts;

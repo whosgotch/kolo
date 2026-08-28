@@ -53,7 +53,7 @@ type Invite struct {
 	TokenHash string `json:"token_hash"`
 	// The link's own token, kept where a member's never is. An invite
 	// only mints a member and expires on its own, and anyone who can read
-	// this file can already write themselves into it — so storing it costs
+	// this file can already write themselves into it, so storing it costs
 	// nothing and means the one link can be shown again instead of a new
 	// one being minted every time somebody asks for it. Empty for invites
 	// written before kolo kept them.

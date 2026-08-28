@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// newOrgFile is an org with nothing in it but a name — where an invite starts
+// newOrgFile is an org with nothing in it but a name, where an invite starts
 // from.
 func newOrgFile(t *testing.T) string {
 	t.Helper()

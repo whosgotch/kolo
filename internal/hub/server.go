@@ -64,7 +64,7 @@ type Server struct {
 	serving bool
 	extra   []net.Listener
 
-	// Cancelled by Close — the only way to reach hijacked websockets.
+	// Cancelled by Close, the only way to reach hijacked websockets.
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -82,7 +82,7 @@ func Listen(org *Org, addr string) (*Server, error) {
 	}
 
 	// Beside the org file, because the record is the org's rather than the
-	// machine's — moving one moves the other. An org with no file behind it keeps
+	// machine's. Moving one moves the other. An org with no file behind it keeps
 	// its journal in memory, which is what a test has and nothing else does.
 	s.journal, err = openJournal(journalPath(org.path))
 	if err != nil {
@@ -468,7 +468,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.journal.add(Entry{Agent: name, What: WhatStopped, Who: member.Person()})
 	s.journal.forget(name)
-	// A failed send means the host is already gone — the wanted state.
+	// A failed send means the host is already gone, which is the wanted state.
 	send(stop{Type: "stop", Name: name})
 	w.WriteHeader(http.StatusNoContent)
 }

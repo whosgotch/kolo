@@ -5,7 +5,7 @@
 #
 # It downloads one release binary, checks it against the checksums published
 # with it, and puts it somewhere on your PATH. Nothing else. Read it first if
-# you would rather — that is why it is short, and why it is in the repository
+# you would rather. That is why it is short, and why it is in the repository
 # rather than somewhere only a URL knows about.
 #
 #   KOLO_VERSION      a tag to install instead of the latest release
@@ -86,7 +86,7 @@ else
 fi
 want=$(grep " $archive\$" "$tmp/SHA256SUMS" | cut -d' ' -f1)
 [ -n "$want" ] || fail "$archive is not listed in the published checksums"
-[ "$sum" = "$want" ] || fail "checksum mismatch for $archive — refusing to install"
+[ "$sum" = "$want" ] || fail "checksum mismatch for $archive. Refusing to install"
 
 tar -xzf "$tmp/$archive" -C "$tmp" kolo
 chmod +x "$tmp/kolo"

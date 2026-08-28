@@ -167,7 +167,7 @@ func TestJoinRestoresWhatTheHostIsRunning(t *testing.T) {
 }
 
 // TestAHostThatLendsAnyCommand: '*' is the host saying every command named like
-// one on its PATH may be started, and the hub's check follows that shape — a
+// one on its PATH may be started, and the hub's check follows that shape: a
 // name passes, a path does not, and without '*' nothing changes.
 func TestAHostThatLendsAnyCommand(t *testing.T) {
 	r := NewRegistry()
@@ -208,7 +208,7 @@ func TestLendingAnyIsNotTheDefault(t *testing.T) {
 
 // TestAgentsThatNameTheirConversationsShareADirectory: the per-directory rule
 // bends where the host vouches for both kinds, and its word is the only thing
-// that bends it — the hub has no kinds of its own to ask.
+// that bends it: the hub has no kinds of its own to ask.
 func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
 	r := NewRegistry()
 	err := r.Join("devbox", []string{"/work/api"}, []string{"robo", "claude"}, nil,

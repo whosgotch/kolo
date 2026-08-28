@@ -1,7 +1,7 @@
 # The state that makes the gate necessary.
 #
 # A tool-permission dialog is on screen. Enter approves the highlighted option,
-# so a guest's ordinary message — which kolo has to submit with Enter — would
+# so a guest's ordinary message, which kolo has to submit with Enter, would
 # approve a file write and throw the guest's words away.
 #
 # The recording stops with the dialog still up. Nothing is ever approved.
