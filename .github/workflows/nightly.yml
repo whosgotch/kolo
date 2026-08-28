@@ -1,0 +1,112 @@
+# A build of main every night, for people who want to try what is not tagged
+# yet and do not have Go to build it with.
+#
+# Deliberately smaller than the release workflow: one runner, no tests, no
+# macOS. ci.yml already proved this commit builds and passes on both, so this
+# job only packages what that run vouched for.
+#
+# The binaries land on one rolling prerelease tag, `nightly`, which is
+# replaced each time. Prerelease matters: GitHub's "latest release" skips
+# prereleases, so ./install keeps pointing at the newest real version and
+# nobody gets a nightly by accident. Asking for one is explicit:
+#
+#   KOLO_VERSION=nightly curl -fsSL .../install | sh
+
+name: nightly
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      # A quiet day should cost nothing. The published nightly records the
+      # commit it came from, so main sitting still means there is nothing to
+      # build and the rest of the job is skipped.
+      - name: has main moved
+        id: moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          built=$(gh release view nightly --json body -q .body 2>/dev/null \
+            | sed -n 's/.*commit `\([0-9a-f]*\)`.*/\1/p' | head -1)
+          if [ "$built" = "$GITHUB_SHA" ]; then
+            echo "nightly already covers $GITHUB_SHA"
+            echo "build=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Named for the tag rather than the date, so the archive ./install asks
+      # for is the same string every night and KOLO_VERSION=nightly resolves
+      # without knowing today's date. The date is in what the binary reports.
+      - name: build
+        if: steps.moved.outputs.build == 'yes'
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          stamp="nightly-$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)"
+          echo "stamp=$stamp" >> "$GITHUB_ENV"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${target%/*} arch=${target#*/}
+            GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=$stamp" \
+              -o "dist/kolo" ./cmd/kolo
+            tar -czf "dist/kolo_nightly_${os}_${arch}.tar.gz" -C dist kolo -C "$GITHUB_WORKSPACE" LICENSE
+            rm dist/kolo
+          done
+          cd dist && sha256sum *.tar.gz > SHA256SUMS
+
+      - name: sanity-check the linux build
+        if: steps.moved.outputs.build == 'yes'
+        run: |
+          tar -xzf dist/kolo_nightly_linux_amd64.tar.gz -C /tmp kolo
+          /tmp/kolo version
+
+      - name: publish
+        if: steps.moved.outputs.build == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Written to a file rather than passed inline: indenting a heredoc
+          # to match this block would put ten spaces in front of every line,
+          # and markdown reads an indent that deep as a code block.
+          cat > notes.md <<EOF
+          Built from main, commit \`$GITHUB_SHA\`, as \`$stamp\`.
+
+          Untested beyond CI and not a release. For what is supported, see the
+          [latest release](https://github.com/$REPO/releases/latest).
+
+          \`\`\`
+          KOLO_VERSION=nightly curl -fsSL https://raw.githubusercontent.com/$REPO/main/install | sh
+          \`\`\`
+          EOF
+          sed -i 's/^          //' notes.md
+
+          # The asset names never change, so --clobber is the whole update:
+          # last night's binaries are overwritten rather than piling up.
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly --notes-file notes.md --target "$GITHUB_SHA" --prerelease
+            gh release upload nightly dist/* --clobber
+          else
+            gh release create nightly dist/* \
+              --title "kolo nightly" \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --notes-file notes.md
+          fi
