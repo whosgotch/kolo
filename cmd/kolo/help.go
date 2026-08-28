@@ -159,9 +159,16 @@ links still work.
 
     kolo who
 
+    kolo who -remove dana
+
 Members show when they joined and which link let them in, which is the
 question a link that got somewhere it should not have raises. Somebody
 minted by hand with kolo token has no such record and says so.
+
+-remove is the way out of an org, for somebody who has left or a token
+that went astray. They stop reaching it within a couple of seconds, and
+whatever they had open closes. Agents they started keep running, and the
+log keeps their name against what they did.
 
 `,
 

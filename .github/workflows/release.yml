@@ -4,7 +4,7 @@
 #
 # Cross-compiled from one runner rather than built on four: kolo is pure Go
 # with CGO off, so the machine doing the building has nothing to contribute.
-# Linux and macOS only — a Windows binary compiles, but creack/pty is a Unix
+# Linux and macOS only. A Windows binary compiles, but creack/pty is a Unix
 # package, so the host half could not start an agent and shipping one would be
 # a promise kolo cannot keep.
 

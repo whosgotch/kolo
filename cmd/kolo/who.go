@@ -14,8 +14,11 @@ import (
 func whoCmd(args []string) error {
 	fs := flag.NewFlagSet("who", flag.ExitOnError)
 	orgPath := fs.String("org", config.Path("org.json"), "org file to read")
+	var leaving list
+	fs.Var(&leaving, "remove", "take this `person` out of the org instead of listing anyone: repeat or comma-separate for several")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo who [-org <path>]")
+		fmt.Fprintln(os.Stderr, "       kolo who -remove <id>[,<id>...]")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -25,6 +28,9 @@ func whoCmd(args []string) error {
 	org, err := hub.Load(*orgPath)
 	if err != nil {
 		return missingOrg(err, *orgPath)
+	}
+	if len(leaving) > 0 {
+		return remove(*orgPath, org, unique(leaving))
 	}
 
 	out := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -55,6 +61,29 @@ func whoCmd(args []string) error {
 		fmt.Fprintf(out, "\n%d spent or expired, still listed in %s. kolo invite -off spent\nclears them.\n", spent, *orgPath)
 	}
 	return out.Flush()
+}
+
+// remove is the way out of an org. Withdrawing a link stops the next person
+// arriving through it; this is for somebody already here.
+//
+// Names are checked against the org already loaded so a typo can say what to
+// run instead. The write checks them again, which is the check that counts.
+func remove(orgPath string, org *hub.Org, ids []string) error {
+	for _, id := range ids {
+		if _, ok := org.Member(id); !ok {
+			return fmt.Errorf("nobody called %s. kolo who says who is in the org", id)
+		}
+	}
+	_, gone, err := hub.RemoveMembers(orgPath, ids)
+	if err != nil {
+		return missingOrg(err, orgPath)
+	}
+	wrap(os.Stdout, "", fmt.Sprintf("Removed %s. %s reaching the org within a couple of seconds, "+
+		"and whatever they had open closes.", english(gone), verb(gone, "They stop", "They all stop")))
+	fmt.Println()
+	wrap(os.Stdout, "", "Agents they started keep running: an agent belongs to the org, not to "+
+		"whoever asked for it. The log keeps their name against what they did.")
+	return nil
 }
 
 func joinedHow(m hub.Member) string {

@@ -39,7 +39,7 @@ const (
 )
 
 // Entry is one thing that happened to one agent, and who did it. Who is absent
-// when nobody did — an agent going quiet is news with no author.
+// when nobody did: an agent going quiet is news with no author.
 type Entry struct {
 	At    time.Time `json:"at"`
 	Agent string    `json:"agent"`
@@ -69,8 +69,9 @@ type line struct {
 	text string
 }
 
-// journalPath puts the journal beside the org file it belongs to. An org with no
-// file — a test's — gets no journal file either.
+// journalPath puts the journal beside the org file it belongs to. An org with
+// no file gets no journal file either, which is a test's case and nothing
+// else's.
 func journalPath(org string) string {
 	if org == "" {
 		return ""

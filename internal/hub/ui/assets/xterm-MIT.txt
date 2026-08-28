@@ -4,7 +4,7 @@ The terminal this page draws with is xterm.js, vendored unmodified:
     the canvas renderer    @xterm/addon-canvas v0.7.0 addon-canvas.js
 
 Both are MIT, and the MIT licence asks that this notice travel with the copies
-above — the bundles are minified and carry none of their own. Kolo's own terms
+above. The bundles are minified and carry none of their own. Kolo's own terms
 are AGPL-3.0 and are in LICENSE at the root; they do not apply to these files.
 
 https://github.com/xtermjs/xterm.js

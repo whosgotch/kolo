@@ -78,8 +78,8 @@ func hostCmd(args []string) error {
 
 	log.Printf("lending %s, running %s", strings.Join(displayDirs(dirs), ", "), strings.Join(allow, ", "))
 
-	// Before the hub is reached, so agents come back whether or not it's up
-	// — they're the org's, not the connection's.
+	// Before the hub is reached, so agents come back whether or not it's up.
+	// They're the org's, not the connection's.
 	if err := agents.Restore(); err != nil {
 		log.Print(err)
 	}

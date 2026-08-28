@@ -1,6 +1,6 @@
 # OpenCode through one turn: what the screen says when it is idle, and what it
 # says while it works. The status bar under the input box carries both states'
-# hints — "ctrl+p commands" is always there, and a working turn swaps the left
+# hints: "ctrl+p commands" is always there, and a working turn swaps the left
 # half of the bar for "esc interrupt". Re-record against a new release before
 # trusting the markers in internal/adapter.
 #

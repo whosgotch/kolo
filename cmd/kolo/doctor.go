@@ -73,8 +73,8 @@ func doctor(w io.Writer, statePath, kindsPath string) (bool, error) {
 }
 
 // lends is one line per command the org may start here: whether it is there
-// at all, and which of the three things that vary — showing what an agent is
-// doing, stopping it, resuming it after a restart — kolo can do with it.
+// at all, and which of the three things that vary (showing what an agent is
+// doing, stopping it, resuming it after a restart) kolo can do with it.
 // Watching and typing need nothing, so they are not worth a column.
 func lends(w io.Writer, allows []string, kindsPath string) bool {
 	fmt.Fprintf(w, "what this machine lends\n")

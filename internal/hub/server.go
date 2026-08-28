@@ -64,7 +64,7 @@ type Server struct {
 	serving bool
 	extra   []net.Listener
 
-	// Cancelled by Close — the only way to reach hijacked websockets.
+	// Cancelled by Close, the only way to reach hijacked websockets.
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -82,7 +82,7 @@ func Listen(org *Org, addr string) (*Server, error) {
 	}
 
 	// Beside the org file, because the record is the org's rather than the
-	// machine's — moving one moves the other. An org with no file behind it keeps
+	// machine's. Moving one moves the other. An org with no file behind it keeps
 	// its journal in memory, which is what a test has and nothing else does.
 	s.journal, err = openJournal(journalPath(org.path))
 	if err != nil {
@@ -104,7 +104,18 @@ func Listen(org *Org, addr string) (*Server, error) {
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.Handle("GET /assets/", http.FileServerFS(pages))
 	mux.HandleFunc("GET /{$}", s.handlePage)
-	s.srv = &http.Server{Handler: mux}
+
+	// No other site's page may make kolo do something on a member's behalf.
+	// Safe methods are left alone, so the websockets, which upgrade on GET,
+	// keep their own Origin check and nothing else changes. A request with
+	// neither Sec-Fetch-Site nor Origin is a program rather than a page, so
+	// curl and the host half are unaffected.
+	//
+	// Worth having even though every mutating route already needs a token:
+	// /login mints the session rather than requiring one, so without this a
+	// page elsewhere could put somebody on a member they did not choose, and
+	// the log would carry that name against what they went on to do.
+	s.srv = &http.Server{Handler: http.NewCrossOriginProtection().Handler(mux)}
 	return s, nil
 }
 
@@ -468,7 +479,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.journal.add(Entry{Agent: name, What: WhatStopped, Who: member.Person()})
 	s.journal.forget(name)
-	// A failed send means the host is already gone — the wanted state.
+	// A failed send means the host is already gone, which is the wanted state.
 	send(stop{Type: "stop", Name: name})
 	w.WriteHeader(http.StatusNoContent)
 }

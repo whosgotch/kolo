@@ -85,7 +85,7 @@ const (
 `
 
 	autoModeScreen = `
-  9. Nine — one shy of double digits.
+  9. Nine, one shy of double digits.
 
 ────────────────────────────────────────────────────────────────
   Set up auto mode for your environment?
@@ -119,8 +119,8 @@ const (
  Enter to confirm · Esc to cancel
 `
 
-	// OpenCode's three states, reconstructed from recordings the same way —
-	// the real ones carry provider names and paths. Its idle and busy both
+	// OpenCode's three states, reconstructed from recordings the same way.
+	// The real ones carry provider names and paths. Its idle and busy both
 	// live in the status bar, and the busy bar carries the idle hints too.
 	ocIdleScreen = `
   ┃

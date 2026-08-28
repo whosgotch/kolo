@@ -28,7 +28,7 @@ func writeState(t *testing.T, state host.State) string {
 
 // installed says what this machine has, for the length of one test. Without
 // it these tests read the real PATH, so a report about "claude" passed on a
-// laptop with claude installed and failed everywhere else — including CI,
+// laptop with claude installed and failed everywhere else, including CI,
 // which is where it was finally noticed.
 func installed(t *testing.T, names ...string) {
 	t.Helper()

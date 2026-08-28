@@ -8,13 +8,13 @@
   --kolo-slate: #6E7673;
   --kolo-chalk: #E7E9E4;
 
-  /* hues — patina is structural, brass is a signal */
+  /* hues: patina is structural, brass is a signal */
   --kolo-patina: #2C6F62;
   --kolo-brass: #D9A441;
   --kolo-brass-ink: #9C6C15; /* brass as text on light surfaces */
   --kolo-fail: #A63D2E;
 
-  /* state vocabulary — exactly four, do not extend */
+  /* state vocabulary: exactly four, do not extend */
   --kolo-state-idle: var(--kolo-slate);
   --kolo-state-running: var(--kolo-brass);
   --kolo-state-done: var(--kolo-patina);

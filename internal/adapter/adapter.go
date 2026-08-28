@@ -160,7 +160,7 @@ var kinds = map[string]Adapter{
 		Markers: detect.Markers{
 			// Both states live in the status bar under the input box. Idle,
 			// the right half reads "tab agents ctrl+p commands"; working, the
-			// left half becomes "esc interrupt" and the rest stays — which is
+			// left half becomes "esc interrupt" and the rest stays, which is
 			// why Of reads busy before idle. After a turn the tab hint gives
 			// way to the directory and its context, so the command hint is
 			// the one that is always there to be read.

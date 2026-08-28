@@ -563,7 +563,7 @@ func TestTheStateFileSaysHowAScreenIsReading(t *testing.T) {
 
 // TestAHostThatLendsAnyCommandRunsWhatsOnItsPath: with '*' the machine runs any
 // command named like one on PATH, and refuses a path or a program that is not
-// there — the hub cannot know either, so this is where both are found out.
+// there. The hub cannot know either, so this is where both are found out.
 func TestAHostThatLendsAnyCommandRunsWhatsOnItsPath(t *testing.T) {
 	dir := t.TempDir()
 	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{hub.AllowAny}}, "")
@@ -611,7 +611,7 @@ func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
 
 // TestTwoAgentsOfAPinnedKindShareADirectory: claude's arrangement, rehearsed
 // with a fake. Each agent is given its own identity at birth and comes back to
-// it at a restart — so neither can ever come back as the other.
+// it at a restart, so neither can ever come back as the other.
 func TestTwoAgentsOfAPinnedKindShareADirectory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kinds.json")
 	body := `{"pind": {"markers": {"busy": "working"},
@@ -652,7 +652,7 @@ sleep 30
 }
 
 // TestDifferentKindsShareADirectory: a claude and an opencode in one directory
-// cannot come back as each other — each kind's "last conversation here" is
+// cannot come back as each other: each kind's "last conversation here" is
 // read from a store the other never writes to.
 func TestDifferentKindsShareADirectory(t *testing.T) {
 	dir := t.TempDir()

@@ -97,15 +97,15 @@ func withdraw(orgPath string, org *hub.Org, named []string) error {
 	wrap(os.Stdout, "", fmt.Sprintf("Withdrew %s. %s working within a couple of seconds.",
 		english(gone), verb(gone, "The link stops", "Those links stop")))
 	fmt.Println()
-	wrap(os.Stdout, "", fmt.Sprintf("Whoever already joined with %s is still a member: kolo who -org %s "+
-		"says who came through which, and removing one is deleting their line.",
-		verb(gone, "it", "them"), orgPath))
+	wrap(os.Stdout, "", fmt.Sprintf("Whoever already joined with %s is still a member: kolo who "+
+		"says who came through which, and kolo who -remove takes one out.",
+		verb(gone, "it", "them")))
 	return nil
 }
 
 // resolve turns what was asked for into invite ids: a name is itself, and
-// all and spent stand for a set — unless an invite is actually called that,
-// which its own name wins.
+// all and spent stand for a set, unless an invite is actually called that,
+// in which case its own name wins.
 func resolve(org *hub.Org, named []string) ([]string, error) {
 	var ids []string
 	seen := map[string]bool{}
@@ -139,7 +139,7 @@ func resolve(org *hub.Org, named []string) ([]string, error) {
 }
 
 // listInvites is the table kolo up used to print on every start, and now
-// also what an org reads before deciding which links to be rid of — so it
+// also what an org reads before deciding which links to be rid of, so it
 // shows the dead ones too, which are exactly the ones worth withdrawing.
 func listInvites(org *hub.Org) error {
 	if len(org.Invites) == 0 {

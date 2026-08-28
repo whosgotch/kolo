@@ -57,7 +57,7 @@ type Agents struct {
 	// a reconnecting host re-announces what it has anyway.
 	reports chan any
 
-	// One writer to the state file at a time — writes come from whichever
+	// One writer to the state file at a time: writes come from whichever
 	// goroutine noticed a change.
 	saveMu sync.Mutex
 }
@@ -80,7 +80,7 @@ type process struct {
 	// The conversation read off the agent's own screen, kept across restarts,
 	// since a dead process can't be asked what it was doing.
 	session string
-	// How the screen has been reading, and since when — kept for kolo doctor.
+	// How the screen has been reading, and since when. Kept for kolo doctor.
 	state detect.State
 	since time.Time
 }

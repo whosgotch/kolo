@@ -77,7 +77,7 @@ func upCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	// Fresh every start; nothing keeps it — it goes straight to the host half.
+	// Fresh every start; nothing keeps it. It goes straight to the host half.
 	hostToken, hostHash, err := hub.NewToken()
 	if err != nil {
 		return err
@@ -129,7 +129,7 @@ func upCmd(args []string) error {
 		s.Close()
 	}()
 
-	// The host half dials the hub half like any other host would — one
+	// The host half dials the hub half like any other host would. One
 	// process is a deployment, not a second code path.
 	agents := host.NewAgents(host.Config{
 		Hub:     local,

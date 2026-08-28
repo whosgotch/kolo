@@ -1,5 +1,5 @@
-# Working, with the input box still on screen — the state that made a hint under
-# the box necessary for Claude Code. Recorded for a second kind so
+# Working, with the input box still on screen. That is the state that made a
+# hint under the box necessary for Claude Code. Recorded for a second kind so
 # the same question can be asked of it.
 #
 # Sampled once a second across a whole turn rather than dumped once. The hint

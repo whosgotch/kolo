@@ -58,7 +58,7 @@ func (h *host) resumesByName(command string) bool {
 	return slices.Contains(h.info.ByName, command)
 }
 
-// Agent is one agent a host was asked to run. Name is its identifier — it
+// Agent is one agent a host was asked to run. Name is its identifier: it
 // addresses the agent in every URL and protocol message, host included, so
 // it does not change once picked. Label is a member's own word for it, the
 // hub's alone to know: renaming is a label edit, nothing a host needs
@@ -247,7 +247,7 @@ func (r *Registry) SetStatus(name, status, reason string) {
 }
 
 // SetLabel changes what an agent is called on screen. Name, which the host
-// and every open connection address it by, is untouched — this is the hub's
+// and every open connection address it by, is untouched. This is the hub's
 // own field, so nothing beyond the registry needs to hear about it.
 func (r *Registry) SetLabel(name, label string) (Agent, error) {
 	r.mu.Lock()
