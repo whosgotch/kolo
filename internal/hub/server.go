@@ -104,7 +104,18 @@ func Listen(org *Org, addr string) (*Server, error) {
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.Handle("GET /assets/", http.FileServerFS(pages))
 	mux.HandleFunc("GET /{$}", s.handlePage)
-	s.srv = &http.Server{Handler: mux}
+
+	// No other site's page may make kolo do something on a member's behalf.
+	// Safe methods are left alone, so the websockets, which upgrade on GET,
+	// keep their own Origin check and nothing else changes. A request with
+	// neither Sec-Fetch-Site nor Origin is a program rather than a page, so
+	// curl and the host half are unaffected.
+	//
+	// Worth having even though every mutating route already needs a token:
+	// /login mints the session rather than requiring one, so without this a
+	// page elsewhere could put somebody on a member they did not choose, and
+	// the log would carry that name against what they went on to do.
+	s.srv = &http.Server{Handler: http.NewCrossOriginProtection().Handler(mux)}
 	return s, nil
 }
 

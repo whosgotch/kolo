@@ -894,3 +894,67 @@ func TestWatchersSeeWhoIsTyping(t *testing.T) {
 		}
 	}
 }
+
+// A page on another site may not make kolo act for somebody who is signed in.
+// The token is not the defence here: a browser attaches the cookie itself, so
+// what is checked is where the request was written, not who it is from.
+func TestAnotherSitesPageCannotAct(t *testing.T) {
+	s, memberToken, _ := hubFixture(t)
+
+	for _, tc := range []struct {
+		name    string
+		headers map[string]string
+	}{
+		{"a modern browser says so", map[string]string{"Sec-Fetch-Site": "cross-site"}},
+		{"an old one is caught by Origin", map[string]string{"Origin": "http://evil.example"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest("POST", "http://"+s.Addr()+"/v1/agents",
+				bytes.NewBufferString(`{"name":"theirs","host":"devbox","dir":"/work/api","command":"claude"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Cookie", sessionCookie+"="+memberToken)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusForbidden {
+				t.Errorf("status = %d, want 403", resp.StatusCode)
+			}
+		})
+	}
+}
+
+// Kolo's own page, and any program holding a token, are unaffected: one says
+// same-origin, the other sends neither header because it is not a browser.
+func TestKolosOwnPageAndProgramsStillAct(t *testing.T) {
+	s, memberToken, hostToken := hubFixture(t)
+	ctx := testContext(t)
+	joinAsHost(t, ctx, s, hostToken)
+
+	req, err := http.NewRequest("POST", "http://"+s.Addr()+"/v1/agents",
+		bytes.NewBufferString(`{"name":"ours","host":"devbox","dir":"/work/api","command":"claude"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Cookie", sessionCookie+"="+memberToken)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("kolo's own page: status = %d, want 201", resp.StatusCode)
+	}
+
+	// No Sec-Fetch-Site and no Origin, the way curl or a script arrives.
+	if got := create(t, s, memberToken, `{"name":"scripted","host":"devbox","dir":"/work/web","command":"claude"}`); got.StatusCode != http.StatusCreated {
+		t.Errorf("a program: status = %d, want 201", got.StatusCode)
+	}
+}
