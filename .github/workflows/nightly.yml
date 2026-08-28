@@ -15,8 +15,17 @@
 name: nightly
 
 on:
+  # 03:17 UTC, which is early morning where kolo is worked on, so a night's
+  # merges are packaged before anybody is up to want them. Off the hour on
+  # purpose: every repo that writes a schedule writes one at :00, and GitHub
+  # runs these when it has room, so the crowded minute is the one that gets
+  # delayed or dropped.
+  #
+  # GitHub also disables a schedule after 60 days with no activity in the
+  # repository. If kolo ever goes that quiet, the nightly stops without
+  # saying so, and the run below is how it starts again.
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
