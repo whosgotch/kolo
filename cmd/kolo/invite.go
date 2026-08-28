@@ -97,9 +97,9 @@ func withdraw(orgPath string, org *hub.Org, named []string) error {
 	wrap(os.Stdout, "", fmt.Sprintf("Withdrew %s. %s working within a couple of seconds.",
 		english(gone), verb(gone, "The link stops", "Those links stop")))
 	fmt.Println()
-	wrap(os.Stdout, "", fmt.Sprintf("Whoever already joined with %s is still a member: kolo who -org %s "+
-		"says who came through which, and removing one is deleting their line.",
-		verb(gone, "it", "them"), orgPath))
+	wrap(os.Stdout, "", fmt.Sprintf("Whoever already joined with %s is still a member: kolo who "+
+		"says who came through which, and kolo who -remove takes one out.",
+		verb(gone, "it", "them")))
 	return nil
 }
 

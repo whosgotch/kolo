@@ -418,6 +418,59 @@ func slug(name string) string {
 
 var ErrNoSuchInvite = errors.New("hub: no invite by that name")
 
+var ErrNoSuchMember = errors.New("hub: nobody in this org by that id")
+
+// Member finds somebody by the id they are known by in the file.
+func (o *Org) Member(id string) (Member, bool) {
+	for _, m := range o.Members {
+		if m.ID == id {
+			return m, true
+		}
+	}
+	return Member{}, false
+}
+
+// RemoveMembers takes people out of the org in one write, the counterpart to
+// WithdrawInvites: a link that got somewhere it should not is withdrawn, and
+// somebody who should no longer be here is removed. It is the only way out of
+// an org, so it is worth saying what it does not touch. Agents they started
+// keep running, because an agent belongs to the org rather than to whoever
+// asked for it, and the journal keeps their name against what they did.
+//
+// A hub re-reads this file, so removal reaches a running one on its own,
+// including the connections already open under the token being removed.
+//
+// It removes none of them if any id is not there, for WithdrawInvites'
+// reason: a typo that half-worked would be worse than one that did nothing.
+func RemoveMembers(path string, ids []string) (_ *Org, gone []string, err error) {
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	org, err := update(path, func(o *Org) error {
+		for _, id := range ids {
+			if _, ok := o.Member(id); !ok {
+				return fmt.Errorf("%w: %s", ErrNoSuchMember, id)
+			}
+		}
+		kept := make([]Member, 0, len(o.Members))
+		gone = gone[:0]
+		for _, m := range o.Members {
+			if want[m.ID] {
+				gone = append(gone, m.ID)
+				continue
+			}
+			kept = append(kept, m)
+		}
+		o.Members = kept
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return org, gone, nil
+}
+
 // WithdrawInvite removes an invite; members who joined through it stay.
 func WithdrawInvite(path, id string) (*Org, error) {
 	org, _, err := WithdrawInvites(path, []string{id})

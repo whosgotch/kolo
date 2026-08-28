@@ -309,3 +309,65 @@ func TestParseJoinRefusesWhatIsNotOne(t *testing.T) {
 		})
 	}
 }
+
+// Removing several at once is one write, so a hub reloading mid-cull never
+// sees half of them still in.
+func TestRemoveMembersTakesSeveral(t *testing.T) {
+	path := newOrgFile(t)
+	for _, id := range []string{"dana", "artem", "sam"} {
+		_, hash, _ := NewToken()
+		if _, err := AddMember(path, Member{ID: id, Name: id, TokenHash: hash}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	org, gone, err := RemoveMembers(path, []string{"dana", "sam"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gone) != 2 || gone[0] != "dana" || gone[1] != "sam" {
+		t.Errorf("removed %v, want dana and sam", gone)
+	}
+	if len(org.Members) != 1 || org.Members[0].ID != "artem" {
+		t.Errorf("left %v, want artem alone", org.Members)
+	}
+}
+
+// An id that isn't there takes nobody with it: half a cull is worse than
+// none, because whoever survived is the part you can't see.
+func TestRemoveMembersRefusesAnUnknownId(t *testing.T) {
+	path := newOrgFile(t)
+	_, hash, _ := NewToken()
+	if _, err := AddMember(path, Member{ID: "dana", Name: "Dana", TokenHash: hash}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RemoveMembers(path, []string{"dana", "nope"}); !errors.Is(err, ErrNoSuchMember) {
+		t.Fatalf("err = %v, want ErrNoSuchMember", err)
+	}
+	org, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := org.Member("dana"); !ok {
+		t.Error("the member named alongside a typo was removed anyway")
+	}
+}
+
+// The point of removing somebody: the token they hold stops working. Read
+// back from disk, since that is what a running hub reloads.
+func TestRemoveMembersEndsTheirToken(t *testing.T) {
+	path := newOrgFile(t)
+	token, hash, _ := NewToken()
+	if _, err := AddMember(path, Member{ID: "dana", Name: "Dana", TokenHash: hash}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RemoveMembers(path, []string{"dana"}); err != nil {
+		t.Fatal(err)
+	}
+	org, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, ok := org.VerifyMember(token); ok {
+		t.Errorf("a removed member still admits %q", m.ID)
+	}
+}
