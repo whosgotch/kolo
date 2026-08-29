@@ -74,8 +74,13 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
+            # --generate-notes on top of --notes, which gh prepends: every
+            # release said the same three sentences about installing, and
+            # somebody deciding whether kolo is alive reads this page to find
+            # out what changed.
             gh release create "$TAG" dist/* \
               --title "kolo $TAG" \
+              --generate-notes \
               --notes "Install:
 
           \`\`\`
