@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+// referenceURL is the docs as a link rather than a path. Almost everybody
+// running kolo installed a binary and has no checkout to read docs/ out of,
+// so a bare docs/reference.md names a file that is not on their machine.
+const referenceURL = "https://github.com/whosgotch/kolo/blob/main/docs/reference.md"
+
 // wrap prints prose broken at a width a terminal is not asked to reflow.
 // What kolo has to say about an org names its agents and its links, which
 // are as long as somebody made them, so where the lines fall can't be

@@ -124,8 +124,9 @@ func lends(w io.Writer, allows []string, kindsPath string) bool {
 		fmt.Fprintln(w)
 		wrap(w, "  ", fmt.Sprintf("%s %s screens kolo does not know, so the list will not say what %s doing, "+
 			"nobody can stop one from the browser, and each restart starts it fresh. "+
-			"Describe one in %s. See docs/reference.md.",
-			english(unreadable), verb(unreadable, "draws", "draw"), verb(unreadable, "it is", "they are"), kindsPath))
+			"Describe one in %s. See %s.",
+			english(unreadable), verb(unreadable, "draws", "draw"), verb(unreadable, "it is", "they are"),
+			kindsPath, referenceURL))
 	}
 	fmt.Fprintln(w)
 	return well
