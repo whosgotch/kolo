@@ -8,8 +8,8 @@
 <h3 align="center">Kolo</h3>
 
 <p align="center">
-  Shared coding agents for your team.<br>
-  One machine runs them. Everyone else opens a link.
+  Multiplayer AI coding agents.<br>
+  One machine runs them. Everybody else opens a link.
 </p>
 
 <p align="center">
