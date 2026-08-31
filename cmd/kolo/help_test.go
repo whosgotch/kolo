@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/whosgotch/kolo/internal/host"
 )
 
 func TestEveryCommandIsListed(t *testing.T) {
@@ -71,5 +73,28 @@ func TestOverviewLeadsWithUp(t *testing.T) {
 	overview(&b)
 	if !strings.Contains(b.String(), "kolo up") {
 		t.Error("the overview does not mention kolo up")
+	}
+}
+
+// One rule about everything kolo says, so it is tested in one place even
+// though half of what it reaches lives in doctor.go: a reader of this text
+// installed a binary and has no checkout, so a bare docs/reference.md sends
+// them to a file that is not on their machine.
+func TestTheDocsAreALinkNotAPathOnSomebodyElsesMachine(t *testing.T) {
+	var overviewText bytes.Buffer
+	overview(&overviewText)
+
+	installed(t, "sh", "cat", "env")
+	doctorText, _ := report(t, host.State{Allows: []string{"sh", "cat", "env"}}, absent(t))
+
+	texts := map[string]string{"(overview)": overviewText.String(), "(doctor)": doctorText}
+	for name, long := range longHelp {
+		texts[name] = long
+	}
+	for name, text := range texts {
+		// The link itself contains the path, so it goes before the search.
+		if bare := strings.ReplaceAll(text, referenceURL, ""); strings.Contains(bare, "docs/reference.md") {
+			t.Errorf("kolo %s names docs/reference.md as a path rather than %s:\n%s", name, referenceURL, text)
+		}
 	}
 }

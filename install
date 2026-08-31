@@ -26,9 +26,14 @@ need tar
 if command -v curl >/dev/null 2>&1; then
   fetch() { curl -fsSL "$1" -o "$2"; }
   read_url() { curl -fsSL "$1"; }
+  redirect_of() { curl -sSI "$1" | sed -n 's/^[Ll]ocation: *//p' | tr -d '\r' | tail -1; }
 elif command -v wget >/dev/null 2>&1; then
   fetch() { wget -qO "$2" "$1"; }
   read_url() { wget -qO- "$1"; }
+  # --spider asks for the headers alone, and no --max-redirect, which the
+  # busybox wget on a small image does not take. The last Location printed is
+  # where the chain ended either way.
+  redirect_of() { (wget -qS --spider "$1" 2>&1 || true) | sed -n 's/^ *[Ll]ocation: *//p' | tr -d '\r' | tail -1; }
 else
   fail "curl or wget is needed to install kolo"
 fi
@@ -48,8 +53,17 @@ esac
 version="${KOLO_VERSION:-}"
 if [ -z "$version" ]; then
   say "looking up the latest release"
-  version=$(read_url "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
-    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+  # Where /releases/latest redirects to, rather than the API, which allows
+  # sixty unauthenticated calls an hour per address. A company sits behind one
+  # address, and the first person to install kolo there should not be able to
+  # spend the budget for everybody after them.
+  version=$(redirect_of "https://github.com/$REPO/releases/latest" | sed -n 's|.*/tag/||p')
+  # The API is still worth asking when the redirect went nowhere, for a proxy
+  # that answered it itself.
+  if [ -z "$version" ]; then
+    version=$(read_url "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+      | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+  fi
   [ -n "$version" ] || fail "could not find a release; set KOLO_VERSION to a tag"
 fi
 

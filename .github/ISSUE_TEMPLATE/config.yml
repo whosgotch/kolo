@@ -1,0 +1,7 @@
+# Blank issues stay on: CONTRIBUTING invites a note saying something confused
+# you, and a form is the wrong shape for one.
+blank_issues_enabled: true
+contact_links:
+  - name: A security problem
+    url: https://github.com/whosgotch/kolo/security/advisories/new
+    about: Report privately through the advisory form, never a public issue.

@@ -1,0 +1,52 @@
+name: An agent kolo reads wrong
+description: The list will not say what an agent is doing, or kolo has never seen it.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Kolo knows an agent by literal strings off its screen. So this is the
+        report for a CLI that changed its wording underneath kolo, and the
+        report for an agent kolo has never heard of. Both are expected
+        before 1.0 and neither is a nuisance to file.
+
+        `kolo doctor` says which of the two you have: an agent it calls
+        `limited` is one it cannot read at all.
+
+  - type: input
+    id: agent
+    attributes:
+      label: Which agent, and which version of it
+      placeholder: codex 0.30.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What the list said, and what the agent was actually doing
+      placeholder: |
+        The list said idle for the whole four minutes it spent editing,
+        then said it was working after it had stopped and was waiting
+        on me.
+    validations:
+      required: true
+
+  - type: textarea
+    id: screen
+    attributes:
+      label: The lines on the agent's screen at the time
+      description: >
+        The status line, the spinner, the permission prompt, whatever kolo
+        should have matched on. Copy the few lines that matter rather than
+        the whole screen, and read them before you post: this is a picture
+        of your terminal, and it may have your paths and your code in it.
+      render: text
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: kolo doctor
+      render: text
+    validations:
+      required: true

@@ -710,6 +710,25 @@ func TestTheJoinPageIsServedWithTheOrgOnIt(t *testing.T) {
 	}
 }
 
+// Section 13 of the AGPL asks that anybody kolo serves over a network be
+// offered its source, and a team reaches kolo through a browser and nothing
+// else: the person who installed it has the repo, and not one of them does.
+// Both pages, because most of a team only ever sees the second one.
+func TestEveryPageOffersTheSourceTheLicensePromises(t *testing.T) {
+	s, _, _ := hubFixture(t)
+
+	for _, path := range []string{"/", "/join"} {
+		resp := call(t, s, "GET", path, "", "")
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(body, []byte("https://github.com/whosgotch/kolo")) {
+			t.Errorf("%s does not offer the source the AGPL promises whoever it is served to", path)
+		}
+	}
+}
+
 func TestKeysReachTheHost(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)
