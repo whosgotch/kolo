@@ -41,6 +41,17 @@ const (
 	writeTimeout = 10 * time.Second
 )
 
+// What one frame may be. coder/websocket reads 32 KiB by default, which a
+// repaint outgrows: a snapshot is as big as the screen it redraws, and a
+// 120x40 grid in per-cell colour measures over 100 KB. The frame that is
+// refused is the first one a host sends, so the host reconnects and sends the
+// same one again for as long as the agent keeps drawing, and the agent simply
+// never appears.
+const (
+	screenLimit  = 4 << 20
+	controlLimit = 1 << 20
+)
+
 // Server is the hub: one org, its hosts, and the agents running on them.
 type Server struct {
 	// Replaced wholesale on claim or reload; read under the lock.
@@ -319,6 +330,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
+	conn.SetReadLimit(controlLimit)
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
@@ -502,6 +514,8 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
+	// Repaints arrive here, so this is the one that has to be generous.
+	conn.SetReadLimit(screenLimit)
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
@@ -555,6 +569,8 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
+	// A pasted prompt arrives as one keys message, so this is not 32 KiB either.
+	conn.SetReadLimit(controlLimit)
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()

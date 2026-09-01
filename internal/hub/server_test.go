@@ -57,6 +57,7 @@ func joinAsHost(t *testing.T, ctx context.Context, s *Server, token string) *web
 		t.Fatalf("dial: %v", err)
 	}
 	t.Cleanup(func() { conn.CloseNow() })
+	conn.SetReadLimit(controlLimit)
 
 	hello := `{"type":"hello","dirs":["/work/api","/work/web"],"allow":["claude"],"version":"test"}`
 	if err := conn.Write(ctx, websocket.MessageText, []byte(hello)); err != nil {
@@ -428,6 +429,8 @@ func watch(t *testing.T, ctx context.Context, s *Server, token, name string) *we
 		t.Fatalf("watch %s: %v", name, err)
 	}
 	t.Cleanup(func() { conn.CloseNow() })
+	// A browser has no read limit; this stands in for one.
+	conn.SetReadLimit(screenLimit)
 	return conn
 }
 
@@ -444,6 +447,7 @@ func openScreenWith(t *testing.T, ctx context.Context, s *Server, token, name st
 		t.Fatalf("screen %s: %v", name, err)
 	}
 	t.Cleanup(func() { conn.CloseNow() })
+	conn.SetReadLimit(controlLimit)
 	hello, err := json.Marshal(screenHello{Type: "screen", Cols: 80, Rows: 24, Markers: markers})
 	if err != nil {
 		t.Fatal(err)
@@ -975,5 +979,53 @@ func TestKolosOwnPageAndProgramsStillAct(t *testing.T) {
 	// No Sec-Fetch-Site and no Origin, the way curl or a script arrives.
 	if got := create(t, s, memberToken, `{"name":"scripted","host":"devbox","dir":"/work/web","command":"claude"}`); got.StatusCode != http.StatusCreated {
 		t.Errorf("a program: status = %d, want 201", got.StatusCode)
+	}
+}
+
+// A repaint is as big as the screen it draws, and the websocket default of
+// 32 KiB is smaller than a colourful one. The frame that would be refused is
+// the first one a host sends, so the agent would never appear at all.
+func TestABigRepaintReachesAWatcher(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, _, screen := withAgent(t, ctx)
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	readUntilBytes(t, ctx, viewer)
+
+	repaint := bytes.Repeat([]byte("x"), 200<<10)
+	if err := screen.Write(ctx, websocket.MessageBinary, repaint); err != nil {
+		t.Fatalf("a %d-byte repaint could not be sent: %v", len(repaint), err)
+	}
+	if got := readUntilBytes(t, ctx, viewer); len(got) != len(repaint) {
+		t.Errorf("the watcher got %d bytes of a %d-byte repaint", len(got), len(repaint))
+	}
+}
+
+// A pasted prompt arrives as one keys message, well past 32 KiB once the
+// browser has JSON-escaped it.
+func TestALongPasteReachesTheHost(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken := hubFixture(t)
+	control := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, control, &cmd)
+	openScreen(t, ctx, s, hostToken, "checkups")
+	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	paste := strings.Repeat("a", 60<<10)
+	msg, err := json.Marshal(viewerMessage{Type: "keys", Keys: paste})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := viewer.Write(ctx, websocket.MessageText, msg); err != nil {
+		t.Fatalf("a %d-byte paste could not be sent: %v", len(paste), err)
+	}
+	var got toAgent
+	readFrame(t, ctx, control, &got)
+	if got.Type != "keys" || len(got.Keys) != len(paste) {
+		t.Errorf("the host got %s of %d bytes, for a %d-byte paste", got.Type, len(got.Keys), len(paste))
 	}
 }

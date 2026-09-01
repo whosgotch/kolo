@@ -21,6 +21,10 @@ const (
 	maxBackoff = 30 * time.Second
 
 	writeTimeout = 10 * time.Second
+
+	// coder/websocket reads 32 KiB by default. What comes down this socket is
+	// the org's commands, and a pasted prompt rides in one of them.
+	controlLimit = 1 << 20
 )
 
 // Config is what a machine needs to reach a hub as itself.
@@ -75,6 +79,7 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 		return fmt.Errorf("host: dial: %w", err)
 	}
 	defer conn.CloseNow()
+	conn.SetReadLimit(controlLimit)
 
 	// The hello carries what's running, so a reconnect puts its agents back
 	// on the hub's list.

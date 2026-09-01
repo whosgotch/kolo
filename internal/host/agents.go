@@ -687,6 +687,7 @@ func (a *Agents) push(ctx context.Context, name string, live *session.Session) e
 		return err
 	}
 	defer conn.CloseNow()
+	conn.SetReadLimit(controlLimit)
 
 	// Markers travel with the screen, so the hub needs no adapter table of
 	// its own.
