@@ -198,12 +198,18 @@ func readJournal(path string, now time.Time) (kept []Entry, trimmed bool, err er
 	return kept, trimmed, nil
 }
 
+// writeJournal rewrites the file whole. The temporary carries a name nothing
+// else will pick, for the reason Org.replace does: a shared one lets two of
+// these write the same file and rename each other's half of it into place.
 func writeJournal(path string, entries []Entry) error {
-	tmp := path + ".new"
-	f, err := os.OpenFile(tmp, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0o600)
+	dir, base := filepath.Split(path)
+	f, err := os.CreateTemp(dir, base+".*")
 	if err != nil {
 		return fmt.Errorf("hub: journal %s: %w", path, err)
 	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+
 	w := bufio.NewWriter(f)
 	for _, e := range entries {
 		b, err := json.Marshal(e)
@@ -213,11 +219,9 @@ func writeJournal(path string, entries []Entry) error {
 		w.Write(append(b, '\n'))
 	}
 	if err := cmp.Or(w.Flush(), f.Sync(), f.Close()); err != nil {
-		os.Remove(tmp)
 		return fmt.Errorf("hub: journal %s: %w", path, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
 		return fmt.Errorf("hub: journal %s: %w", path, err)
 	}
 	return nil

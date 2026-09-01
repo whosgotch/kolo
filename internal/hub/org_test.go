@@ -3,11 +3,14 @@ package hub
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func orgFile(t *testing.T, body string) string {
@@ -369,5 +372,56 @@ func TestRemoveMembersEndsTheirToken(t *testing.T) {
 	}
 	if m, ok := org.VerifyMember(token); ok {
 		t.Errorf("a removed member still admits %q", m.ID)
+	}
+}
+
+// Two kolo processes writing the org file at once: the hub taking a join
+// while the operator runs kolo invite in another terminal. Members and
+// invites are lists inside one file, so without a lock the writer that
+// loaded it first writes the other's work back out of existence.
+func TestSeveralWritersKeepEachOthersWork(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "org.json")
+	if _, err := Init(path, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	org, token, err := AddInvite(path, "team", time.Now().Add(time.Hour), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = org
+
+	const joiners = 10
+	var wg sync.WaitGroup
+	for i := range joiners {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, _, _, err := Claim(path, token, fmt.Sprintf("person %d", i)); err != nil {
+				t.Errorf("claim %d: %v", i, err)
+			}
+		}()
+	}
+	// And the operator, minting links beside them.
+	for i := range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, _, err := SetInvite(path, fmt.Sprintf("guests-%d", i), time.Now().Add(time.Hour), 5); err != nil {
+				t.Errorf("invite %d: %v", i, err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	final, err := Load(path)
+	if err != nil {
+		t.Fatalf("the org file is unreadable after concurrent writes: %v", err)
+	}
+	if len(final.Members) != joiners {
+		t.Errorf("%d of %d members were lost, each holding a token they were told was theirs",
+			joiners-len(final.Members), joiners)
+	}
+	if len(final.Invites) != 3 {
+		t.Errorf("invites = %d, want the standing one and the two minted beside it", len(final.Invites))
 	}
 }

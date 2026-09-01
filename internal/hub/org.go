@@ -4,6 +4,7 @@
 package hub
 
 import (
+	"cmp"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -132,16 +133,68 @@ func Init(path, name string) (created bool, err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return false, fmt.Errorf("hub: %w", err)
 	}
-	b, _ := json.MarshalIndent(org, "", "  ")
-	if err := os.WriteFile(path, append(b, '\n'), 0o600); err != nil {
-		return false, fmt.Errorf("hub: write %s: %w", path, err)
+	unlock, err := lock(path)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	// Checked again under the lock: two machines starting together both got
+	// this far, and only one of them created it.
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	}
+	if err := replace(path, org); err != nil {
+		return false, err
 	}
 	return true, nil
 }
 
-// update rewrites the org file atomically: written whole and renamed into
-// place, since a concurrently reloading hub must never see a partial file.
+// replace writes org into path whole, by writing a file of its own and
+// renaming it over. The temporary carries a name nothing else will pick: a
+// shared one lets two writers write the same file and rename each other's
+// half-finished work into place, which is the opposite of what writing whole
+// and renaming is for.
+func replace(path string, org *Org) error {
+	b, err := json.MarshalIndent(org, "", "  ")
+	if err != nil {
+		return fmt.Errorf("hub: write %s: %w", path, err)
+	}
+	dir, base := filepath.Split(path)
+	tmp, err := os.CreateTemp(dir, base+".*")
+	if err != nil {
+		return fmt.Errorf("hub: write %s: %w", path, err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.Write(append(b, '\n')); err != nil {
+		tmp.Close()
+		return fmt.Errorf("hub: write %s: %w", path, err)
+	}
+	if err := cmp.Or(tmp.Sync(), tmp.Close()); err != nil {
+		return fmt.Errorf("hub: write %s: %w", path, err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("hub: write %s: %w", path, err)
+	}
+	return nil
+}
+
+// update rewrites the org file: loaded, changed and written back under a lock
+// held across the whole of it, and written whole and renamed into place, since
+// a concurrently reloading hub must never see a partial file.
+//
+// The lock is what makes several writers safe. Members and invites are both
+// lists inside one file, so two writers that each loaded it before either
+// wrote leave only the later one's work: somebody joins, an invite is
+// withdrawn a moment later, and the member is gone with a token the hub
+// already told them was theirs.
 func update(path string, change func(*Org) error) (*Org, error) {
+	unlock, err := lock(path)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
 	org, err := Load(path)
 	if err != nil {
 		return nil, err
@@ -152,18 +205,8 @@ func update(path string, change func(*Org) error) (*Org, error) {
 	if err := org.validate(); err != nil {
 		return nil, fmt.Errorf("hub: %s: %w", path, err)
 	}
-
-	b, err := json.MarshalIndent(org, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("hub: write %s: %w", path, err)
-	}
-	tmp := path + ".new"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
-		return nil, fmt.Errorf("hub: write %s: %w", path, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return nil, fmt.Errorf("hub: write %s: %w", path, err)
+	if err := replace(path, org); err != nil {
+		return nil, err
 	}
 	return org, nil
 }
