@@ -52,6 +52,14 @@ const (
 	controlLimit = 1 << 20
 )
 
+// How often a live connection is pinged, and how long a ping may go
+// unanswered before the peer counts as gone. Carried on the server rather
+// than read straight from here, so a test need not wait half a minute.
+const (
+	pingEvery  = 20 * time.Second
+	pingWithin = 10 * time.Second
+)
+
 // Server is the hub: one org, its hosts, and the agents running on them.
 type Server struct {
 	// Replaced wholesale on claim or reload; read under the lock.
@@ -75,6 +83,9 @@ type Server struct {
 	serving bool
 	extra   []net.Listener
 
+	// How a peer that stopped answering is noticed. See pingEvery.
+	ping, pingBy time.Duration
+
 	// Cancelled by Close, the only way to reach hijacked websockets.
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -90,6 +101,7 @@ func Listen(org *Org, addr string) (*Server, error) {
 	s := &Server{
 		org: org, registry: NewRegistry(), screens: newScreens(),
 		typists: newTypists(), conns: newConns(), ln: ln, ctx: ctx, cancel: cancel,
+		ping: pingEvery, pingBy: pingWithin,
 	}
 
 	// Beside the org file, because the record is the org's rather than the
@@ -342,6 +354,11 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	go func() {
+		defer cancel()
+		session.Keepalive(ctx, conn, s.ping, s.pingBy)
+	}()
+
 	// Recorded before the hello, so removal during connect drops the conn.
 	defer s.conns.add(held{id: h.ID, hash: h.TokenHash, isHost: true, cancel: cancel})()
 
@@ -527,6 +544,11 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	go func() {
+		defer cancel()
+		session.Keepalive(ctx, conn, s.ping, s.pingBy)
+	}()
+
 	hello, err := read[screenHello](ctx, conn, helloTimeout)
 	if err != nil || hello.Type != "screen" || hello.Cols <= 0 || hello.Rows <= 0 {
 		conn.Close(websocket.StatusPolicyViolation, "expected a screen size")
@@ -579,6 +601,10 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer cancel()
 		s.takeFrom(ctx, conn, member, name)
+	}()
+	go func() {
+		defer cancel()
+		session.Keepalive(ctx, conn, s.ping, s.pingBy)
 	}()
 
 	backlog, updates, unsubscribe := live.Subscribe()

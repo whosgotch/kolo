@@ -16,6 +16,7 @@ import (
 	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/hub"
 	"github.com/whosgotch/kolo/internal/relay"
+	"github.com/whosgotch/kolo/internal/session"
 )
 
 const (
@@ -27,6 +28,10 @@ const (
 	// coder/websocket reads 32 KiB by default. What comes down this socket is
 	// the org's commands, and a pasted prompt rides in one of them.
 	controlLimit = 1 << 20
+
+	// How a hub that went away without closing anything is noticed.
+	pingEvery  = 20 * time.Second
+	pingWithin = 10 * time.Second
 )
 
 // Config is what a machine needs to reach a hub as itself.
@@ -117,6 +122,13 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 	failed := make(chan error, 2)
 	go func() { failed <- obey(ctx, conn, agents) }()
 	go func() { failed <- report(ctx, conn, agents) }()
+	// A hub that went away without closing anything is otherwise never
+	// noticed: nothing is expected of it while the org is quiet, so this
+	// machine would sit lending itself to nobody.
+	go func() {
+		defer cancel()
+		session.Keepalive(ctx, conn, pingEvery, pingWithin)
+	}()
 	return <-failed
 }
 

@@ -1029,3 +1029,25 @@ func TestALongPasteReachesTheHost(t *testing.T) {
 		t.Errorf("the host got %s of %d bytes, for a %d-byte paste", got.Type, len(got.Keys), len(paste))
 	}
 }
+
+// A host that dropped off the network answers nothing. Until the hub notices,
+// Registry.Join refuses the machine's reconnect as one already connected, so
+// how long this takes is how long that machine is locked out of its own org.
+func TestASilentHostIsDropped(t *testing.T) {
+	ctx := testContext(t)
+	s, _, hostToken := hubFixture(t)
+	// In test time rather than the half minute a running hub waits. Set
+	// before anything connects, which is the only reader.
+	s.ping, s.pingBy = 20*time.Millisecond, 200*time.Millisecond
+
+	joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+
+	// Nothing reads this connection from here on, so nothing answers a ping.
+	// A machine whose wifi went is indistinguishable from this.
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 0 })
+
+	// And the machine can come back under the same id.
+	joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+}
