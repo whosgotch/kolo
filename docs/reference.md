@@ -151,6 +151,10 @@ sees it happen. It works the way two people reaching for one keyboard works.
 Nothing is gated, because you can see the screen your keys are landing on.
 Pressing Enter at a question is a decision made with your eyes open.
 
+A paste arrives as one message rather than a key at a time, and goes through
+whole up to 64 KB. Past that the host refuses it and says so on the screen,
+because a paste that quietly went nowhere would look like one that worked.
+
 ### What kolo can press for you
 
 | action | offered by | allowed when |

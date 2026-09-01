@@ -5,6 +5,7 @@ package host
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/hub"
+	"github.com/whosgotch/kolo/internal/relay"
 )
 
 const (
@@ -141,9 +143,13 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 		case "stop":
 			agents.Stop(c.Name)
 		case "keys":
-			// Silently: a keystroke just after the agent stopped isn't worth
-			// a line on everybody's screen.
-			agents.Type(c.Name, c.Keys)
+			// A keystroke arriving just after the agent stopped isn't worth a
+			// line on everybody's screen, so that stays silent. A refused
+			// paste is worth one: somebody meant to send it, and without this
+			// it disappears with nothing said anywhere.
+			if err := agents.Type(c.Name, c.Keys); errors.Is(err, relay.ErrTooMuch) {
+				agents.refuse(c.Name, err.Error())
+			}
 		case "resize":
 			agents.Resize(c.Name, c.Cols, c.Rows)
 		case "interrupt":
