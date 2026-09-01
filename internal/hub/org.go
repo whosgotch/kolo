@@ -21,7 +21,12 @@ import (
 // Org is an organisation and the people and machines in it, held in a file
 // the operator edits by hand; a running hub picks up edits as they land.
 type Org struct {
-	Name    string   `json:"org"`
+	Name string `json:"org"`
+	// Where this org is reached, written down by whichever command started
+	// the hub. It is nothing the hub itself reads: it is here so kolo invite
+	// and kolo token can print a link that works from another machine
+	// instead of guessing at loopback.
+	Hub     string   `json:"hub,omitempty"`
 	Members []Member `json:"members"`
 	Hosts   []Host   `json:"hosts"`
 	Invites []Invite `json:"invites,omitempty"`
@@ -117,6 +122,12 @@ func SetHost(path string, h Host) (*Org, error) {
 		o.Hosts = append(o.Hosts, h)
 		return nil
 	})
+}
+
+// SetHubURL records where this org is reached, for the commands that print
+// links. A hub that has moved says so at its next start.
+func SetHubURL(path, url string) (*Org, error) {
+	return update(path, func(o *Org) error { o.Hub = url; return nil })
 }
 
 // Init creates an org file holding only a name; created is false if one existed.

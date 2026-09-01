@@ -425,3 +425,28 @@ func TestSeveralWritersKeepEachOthersWork(t *testing.T) {
 		t.Errorf("invites = %d, want the standing one and the two minted beside it", len(final.Invites))
 	}
 }
+
+// The hub writes down where it is so the commands that print links can read
+// it back, and moving the hub says so at its next start.
+func TestSetHubURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "org.json")
+	if _, err := Init(path, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if org, _ := Load(path); org.Hub != "" {
+		t.Errorf("a fresh org already claims a hub at %q", org.Hub)
+	}
+	if _, err := SetHubURL(path, "http://192.168.0.12:7300"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetHubURL(path, "https://hub.acme.com"); err != nil {
+		t.Fatal(err)
+	}
+	org, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if org.Hub != "https://hub.acme.com" {
+		t.Errorf("org.Hub = %q, want the address of the most recent start", org.Hub)
+	}
+}

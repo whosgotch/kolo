@@ -239,6 +239,10 @@ Everything a machine remembers is in `~/.kolo`.
 | `-state` | moves the record of what is running |
 | `-tls-cache` | moves the certificate store |
 
+The org file also holds `hub`, the address the hub last started on. Nothing
+reads it at runtime: it is there so `kolo invite` and `kolo token` print a
+link that works from another machine. `-hub` overrides it.
+
 ## What works today
 
 **Working, and tested across two machines:** watching, typing, stopping,
