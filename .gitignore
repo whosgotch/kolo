@@ -4,6 +4,7 @@
 *.screen
 **/testdata/*.raw
 /org.json
+/org.json.*
 /.claude/
 /.crush/
 .DS_Store

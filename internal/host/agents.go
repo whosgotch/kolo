@@ -687,6 +687,7 @@ func (a *Agents) push(ctx context.Context, name string, live *session.Session) e
 		return err
 	}
 	defer conn.CloseNow()
+	conn.SetReadLimit(controlLimit)
 
 	// Markers travel with the screen, so the hub needs no adapter table of
 	// its own.
@@ -700,6 +701,12 @@ func (a *Agents) push(ctx context.Context, name string, live *session.Session) e
 	// Reading is how a dead connection gets noticed; without it a quiet agent
 	// never learns the hub restarted.
 	ctx = conn.CloseRead(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		defer cancel()
+		session.Keepalive(ctx, conn, pingEvery, pingWithin)
+	}()
 
 	backlog, updates, unsubscribe := live.Subscribe()
 	defer unsubscribe()

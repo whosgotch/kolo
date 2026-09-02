@@ -41,6 +41,25 @@ const (
 	writeTimeout = 10 * time.Second
 )
 
+// What one frame may be. coder/websocket reads 32 KiB by default, which a
+// repaint outgrows: a snapshot is as big as the screen it redraws, and a
+// 120x40 grid in per-cell colour measures over 100 KB. The frame that is
+// refused is the first one a host sends, so the host reconnects and sends the
+// same one again for as long as the agent keeps drawing, and the agent simply
+// never appears.
+const (
+	screenLimit  = 4 << 20
+	controlLimit = 1 << 20
+)
+
+// How often a live connection is pinged, and how long a ping may go
+// unanswered before the peer counts as gone. Carried on the server rather
+// than read straight from here, so a test need not wait half a minute.
+const (
+	pingEvery  = 20 * time.Second
+	pingWithin = 10 * time.Second
+)
+
 // Server is the hub: one org, its hosts, and the agents running on them.
 type Server struct {
 	// Replaced wholesale on claim or reload; read under the lock.
@@ -64,6 +83,9 @@ type Server struct {
 	serving bool
 	extra   []net.Listener
 
+	// How a peer that stopped answering is noticed. See pingEvery.
+	ping, pingBy time.Duration
+
 	// Cancelled by Close, the only way to reach hijacked websockets.
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -79,6 +101,7 @@ func Listen(org *Org, addr string) (*Server, error) {
 	s := &Server{
 		org: org, registry: NewRegistry(), screens: newScreens(),
 		typists: newTypists(), conns: newConns(), ln: ln, ctx: ctx, cancel: cancel,
+		ping: pingEvery, pingBy: pingWithin,
 	}
 
 	// Beside the org file, because the record is the org's rather than the
@@ -319,6 +342,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
+	conn.SetReadLimit(controlLimit)
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
@@ -328,6 +352,11 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 			cancel()
 		case <-ctx.Done():
 		}
+	}()
+
+	go func() {
+		defer cancel()
+		session.Keepalive(ctx, conn, s.ping, s.pingBy)
 	}()
 
 	// Recorded before the hello, so removal during connect drops the conn.
@@ -502,6 +531,8 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
+	// Repaints arrive here, so this is the one that has to be generous.
+	conn.SetReadLimit(screenLimit)
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
@@ -511,6 +542,11 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 			cancel()
 		case <-ctx.Done():
 		}
+	}()
+
+	go func() {
+		defer cancel()
+		session.Keepalive(ctx, conn, s.ping, s.pingBy)
 	}()
 
 	hello, err := read[screenHello](ctx, conn, helloTimeout)
@@ -555,6 +591,8 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
+	// A pasted prompt arrives as one keys message, so this is not 32 KiB either.
+	conn.SetReadLimit(controlLimit)
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
@@ -563,6 +601,10 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer cancel()
 		s.takeFrom(ctx, conn, member, name)
+	}()
+	go func() {
+		defer cancel()
+		session.Keepalive(ctx, conn, s.ping, s.pingBy)
 	}()
 
 	backlog, updates, unsubscribe := live.Subscribe()

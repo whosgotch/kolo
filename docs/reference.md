@@ -151,6 +151,10 @@ sees it happen. It works the way two people reaching for one keyboard works.
 Nothing is gated, because you can see the screen your keys are landing on.
 Pressing Enter at a question is a decision made with your eyes open.
 
+A paste arrives as one message rather than a key at a time, and goes through
+whole up to 64 KB. Past that the host refuses it and says so on the screen,
+because a paste that quietly went nowhere would look like one that worked.
+
 ### What kolo can press for you
 
 | action | offered by | allowed when |
@@ -234,6 +238,10 @@ Everything a machine remembers is in `~/.kolo`.
 | `-org` | moves the org file |
 | `-state` | moves the record of what is running |
 | `-tls-cache` | moves the certificate store |
+
+The org file also holds `hub`, the address the hub last started on. Nothing
+reads it at runtime: it is there so `kolo invite` and `kolo token` print a
+link that works from another machine. `-hub` overrides it.
 
 ## What works today
 

@@ -122,6 +122,12 @@ func upCmd(args []string) error {
 		local = "http://" + loopback
 	}
 
+	// Written down so kolo invite and kolo token print a link somebody else
+	// can open, rather than the loopback address they used to guess at.
+	if _, err := hub.SetHubURL(*orgPath, shown); err != nil {
+		return err
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {

@@ -67,3 +67,27 @@ func TestResolveDeduplicates(t *testing.T) {
 		t.Errorf("resolve = %v, want one id", ids)
 	}
 }
+
+// Where a link says to go. kolo up serves 0.0.0.0 and shows a LAN address,
+// so a link that guessed at loopback was one only the lending machine could
+// open, which is nobody the link is for.
+func TestReachAt(t *testing.T) {
+	lan := &hub.Org{Name: "acme", Hub: "http://192.168.0.12:7300"}
+	never := &hub.Org{Name: "acme"}
+
+	for _, c := range []struct {
+		why   string
+		given string
+		org   *hub.Org
+		want  string
+	}{
+		{"where the hub said it was", "", lan, "http://192.168.0.12:7300"},
+		{"-hub wins over it", "https://hub.acme.com", lan, "https://hub.acme.com"},
+		{"a hub that never started", "", never, defaultHubURL},
+		{"-hub with nothing written down", "https://hub.acme.com", never, "https://hub.acme.com"},
+	} {
+		if got := reachAt(c.given, c.org); got != c.want {
+			t.Errorf("%s: reachAt(%q) = %q, want %q", c.why, c.given, got, c.want)
+		}
+	}
+}

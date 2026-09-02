@@ -5,6 +5,7 @@
 package relay
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -13,9 +14,17 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// maxKeys is one press worth: an escape sequence or a fast typist's backlog,
-// not a pasted file.
-const maxKeys = 256
+// maxKeys bounds one message. A browser sends a paste as a single one, and
+// pasting a prompt or a stack trace at an agent is most of what people do
+// here, so the ceiling is a paste's rather than a keystroke's. It is still a
+// ceiling: the write blocks until the agent has read it, and nothing else
+// reaches the agent meanwhile.
+const maxKeys = 64 << 10
+
+// ErrTooMuch is a message past maxKeys. Worth telling the org about, where
+// keys arriving after an agent stopped are not: somebody meant to send this
+// and nothing else would say it went nowhere.
+var ErrTooMuch = errors.New("relay: more than one paste at a time")
 
 type Sender interface {
 	Write(p []byte) (int, error)
@@ -45,7 +54,8 @@ func (r *Relay) Type(keys string) error {
 		return nil
 	}
 	if len(keys) > maxKeys {
-		return fmt.Errorf("relay: %d bytes is not a keystroke", len(keys))
+		return fmt.Errorf("%w: %d bytes at once, and %d is the most that goes through in one message",
+			ErrTooMuch, len(keys), maxKeys)
 	}
 	return r.exclusive(func() error {
 		_, err := r.agent.Write([]byte(keys))

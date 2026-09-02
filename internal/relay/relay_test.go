@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -162,5 +163,32 @@ func TestOneWriteAtATime(t *testing.T) {
 	}
 	if err := r.Type("x"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A pasted prompt arrives as one message. It is the thing people do most
+// here, and it used to be refused at 256 bytes with nobody told.
+func TestAPastedPromptGoesThrough(t *testing.T) {
+	r, rec, _ := fixture(detect.Idle)
+
+	paste := strings.Repeat("fix the flaky test in internal/hub. ", 400)
+	if err := r.Type(paste); err != nil {
+		t.Fatalf("a %d-byte paste was refused: %v", len(paste), err)
+	}
+	if got := strings.Join(rec.writes, ""); got != paste {
+		t.Errorf("the agent got %d bytes of a %d-byte paste", len(got), len(paste))
+	}
+}
+
+// Past the ceiling it is refused, and said so rather than dropped.
+func TestAPasteTooBigSaysSo(t *testing.T) {
+	r, rec, _ := fixture(detect.Idle)
+
+	err := r.Type(strings.Repeat("x", maxKeys+1))
+	if !errors.Is(err, ErrTooMuch) {
+		t.Errorf("refusing a paste past the ceiling gave %v, which nothing can tell apart", err)
+	}
+	if len(rec.writes) != 0 {
+		t.Errorf("a refused paste still reached the agent: %v", rec.writes)
 	}
 }

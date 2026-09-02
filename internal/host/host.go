@@ -5,6 +5,7 @@ package host
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"github.com/coder/websocket"
 	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/hub"
+	"github.com/whosgotch/kolo/internal/relay"
+	"github.com/whosgotch/kolo/internal/session"
 )
 
 const (
@@ -21,6 +24,14 @@ const (
 	maxBackoff = 30 * time.Second
 
 	writeTimeout = 10 * time.Second
+
+	// coder/websocket reads 32 KiB by default. What comes down this socket is
+	// the org's commands, and a pasted prompt rides in one of them.
+	controlLimit = 1 << 20
+
+	// How a hub that went away without closing anything is noticed.
+	pingEvery  = 20 * time.Second
+	pingWithin = 10 * time.Second
 )
 
 // Config is what a machine needs to reach a hub as itself.
@@ -75,6 +86,7 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 		return fmt.Errorf("host: dial: %w", err)
 	}
 	defer conn.CloseNow()
+	conn.SetReadLimit(controlLimit)
 
 	// The hello carries what's running, so a reconnect puts its agents back
 	// on the hub's list.
@@ -110,6 +122,13 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 	failed := make(chan error, 2)
 	go func() { failed <- obey(ctx, conn, agents) }()
 	go func() { failed <- report(ctx, conn, agents) }()
+	// A hub that went away without closing anything is otherwise never
+	// noticed: nothing is expected of it while the org is quiet, so this
+	// machine would sit lending itself to nobody.
+	go func() {
+		defer cancel()
+		session.Keepalive(ctx, conn, pingEvery, pingWithin)
+	}()
 	return <-failed
 }
 
@@ -136,9 +155,13 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 		case "stop":
 			agents.Stop(c.Name)
 		case "keys":
-			// Silently: a keystroke just after the agent stopped isn't worth
-			// a line on everybody's screen.
-			agents.Type(c.Name, c.Keys)
+			// A keystroke arriving just after the agent stopped isn't worth a
+			// line on everybody's screen, so that stays silent. A refused
+			// paste is worth one: somebody meant to send it, and without this
+			// it disappears with nothing said anywhere.
+			if err := agents.Type(c.Name, c.Keys); errors.Is(err, relay.ErrTooMuch) {
+				agents.refuse(c.Name, err.Error())
+			}
 		case "resize":
 			agents.Resize(c.Name, c.Cols, c.Rows)
 		case "interrupt":

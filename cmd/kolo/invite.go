@@ -14,7 +14,7 @@ import (
 func inviteCmd(args []string) error {
 	fs := flag.NewFlagSet("invite", flag.ExitOnError)
 	orgPath := fs.String("org", config.Path("org.json"), "org file to record it in")
-	hubURL := fs.String("hub", defaultHubURL, "where the people opening it will reach the hub")
+	hubURL := fs.String("hub", "", "where the people opening it will reach the hub (default where the hub said it was at its last start)")
 	id := fs.String("id", standingID, "which link this is, in the org file and the log")
 	days := fs.Int("days", inviteDays, "how many days a link made now works for")
 	uses := fs.Int("uses", defaultUses, "how many people may use it, or 0 for anyone who has it")
@@ -71,7 +71,7 @@ func inviteCmd(args []string) error {
 	} else {
 		fmt.Printf("Send this to whoever should have an agent:\n\n")
 	}
-	fmt.Printf("    %s\n\n", hub.InviteURL(*hubURL, v.Token))
+	fmt.Printf("    %s\n\n", hub.InviteURL(reachAt(*hubURL, org), v.Token))
 	fmt.Printf("%s, until %s. They say what to call them and are in.\n", usesLeft(v), v.Expires.Local().Format("Mon 2 Jan 15:04"))
 	fmt.Printf("Nothing to install, no token to paste.\n\n")
 	fmt.Printf("Anyone holding it can use it: kolo invite -new replaces it, kolo invite\n-off %s withdraws it, and kolo who says who came through.\n", v.ID)

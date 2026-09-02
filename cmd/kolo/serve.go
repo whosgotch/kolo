@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"flag"
 	"fmt"
@@ -57,6 +58,15 @@ func serveCmd(args []string) error {
 		return err
 	}
 
+	shown := browseURL(s.Addr())
+	if len(domains) > 0 {
+		shown = "https://" + domains[0]
+	}
+	// See kolo up: the commands that print links read this back.
+	if _, err := hub.SetHubURL(*orgPath, shown); err != nil {
+		return err
+	}
+
 	if len(domains) > 0 {
 		if err := s.Secure(hub.TLS{Domains: domains, Cache: *tlsCache, Staging: *tlsStaging}); err != nil {
 			return err
@@ -101,7 +111,7 @@ func tokenCmd(args []string) error {
 	id := fs.String("id", "", "member or host id")
 	name := fs.String("name", "", "member's display name (defaults to the id)")
 	asHost := fs.Bool("host", false, "credentials for a machine that will run agents, not a person")
-	hubURL := fs.String("hub", defaultHubURL, "where they will reach the hub")
+	hubURL := fs.String("hub", "", "where they will reach the hub (default where the hub said it was at its last start)")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: kolo token -id <id> [-name <name>]")
 		fmt.Fprintln(os.Stderr, "       kolo token -host -id <id>")
@@ -124,27 +134,40 @@ func tokenCmd(args []string) error {
 	}
 
 	if *asHost {
-		if _, err := hub.AddHost(*orgPath, hub.Host{ID: *id, TokenHash: hash}); err != nil {
+		org, err := hub.AddHost(*orgPath, hub.Host{ID: *id, TokenHash: hash})
+		if err != nil {
 			return missingOrg(err, *orgPath)
 		}
+		reached := reachAt(*hubURL, org)
 		fmt.Printf("Added %s to %s.\n\n", *id, *orgPath)
 		fmt.Printf("Run this on %s. It carries both the hub and the token, and is stored nowhere:\n\n", *id)
-		fmt.Printf("    kolo host -join %s \\\n        -dir <a directory to lend> -allow claude\n\n", hub.NewJoin(*hubURL, token))
-		fmt.Printf("It will dial %s. Pass -hub to kolo token if %s meets the hub elsewhere.\n", *hubURL, *id)
+		fmt.Printf("    kolo host -join %s \\\n        -dir <a directory to lend> -allow claude\n\n", hub.NewJoin(reached, token))
+		fmt.Printf("It will dial %s. Pass -hub to kolo token if %s meets the hub elsewhere.\n", reached, *id)
 		return nil
 	}
 
-	if _, err := hub.AddMember(*orgPath, hub.Member{ID: *id, Name: *name, TokenHash: hash}); err != nil {
+	org, err := hub.AddMember(*orgPath, hub.Member{ID: *id, Name: *name, TokenHash: hash})
+	if err != nil {
 		return missingOrg(err, *orgPath)
 	}
 	fmt.Printf("Added %s to %s.\n\n", *name, *orgPath)
 	fmt.Printf("Send %s these two, once. The token is stored nowhere:\n\n", *name)
-	fmt.Printf("    %s\n    %s\n\n", *hubURL, token)
+	fmt.Printf("    %s\n    %s\n\n", reachAt(*hubURL, org), token)
 	fmt.Println("The hub keeps only the hash, so a lost token is replaced rather than recovered.")
 	return nil
 }
 
+// Where a hub is if nothing has said otherwise: an org whose hub has never
+// started has nowhere better to point at.
 const defaultHubURL = "http://127.0.0.1:7300"
+
+// reachAt is where somebody else will meet this hub: what was asked for, then
+// what the hub wrote down when it started, then loopback. Guessing at
+// loopback used to be the whole of it, so the link kolo invite printed for a
+// hub on a LAN address was one only that machine could open.
+func reachAt(given string, org *hub.Org) string {
+	return cmp.Or(given, org.Hub, defaultHubURL)
+}
 
 func missingOrg(err error, path string) error {
 	if !errors.Is(err, fs.ErrNotExist) {
