@@ -69,6 +69,15 @@ func (s *screens) propose(name string, at any, cols, rows int) (int, int, bool) 
 }
 
 // open replaces any existing screen, dropping its viewers.
+//
+// The agreed size goes with the old screen. A host opens every screen at the
+// size it starts every PTY at, so what was agreed about the screen before this
+// one describes a terminal that no longer exists. Kept, it matches the
+// proposal each dropped viewer makes on reconnecting, reads as no change, and
+// leaves the hub drawing the host's size into windows that are not that size,
+// with the host never told. The close below clears it too, but only when it
+// wins the race to notice: a host that dropped off the network opens the new
+// screen long before the old connection is known to be dead.
 func (s *screens) open(name string, cols, rows int, markers detect.Markers) *session.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -76,6 +85,7 @@ func (s *screens) open(name string, cols, rows int, markers detect.Markers) *ses
 	if was, ok := s.m[name]; ok {
 		was.Close()
 	}
+	delete(s.agreed, name)
 	live := session.New(cols, rows, markers)
 	s.m[name] = live
 	return live

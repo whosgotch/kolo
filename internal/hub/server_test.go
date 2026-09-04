@@ -438,16 +438,24 @@ func openScreen(t *testing.T, ctx context.Context, s *Server, token, name string
 	return openScreenWith(t, ctx, s, token, name, adapter.For("claude").Markers)
 }
 
+// openScreenSized is a host opening a screen at the grid it starts its PTYs
+// at, which is not the grid anybody is watching from.
+func openScreenSized(t *testing.T, ctx context.Context, s *Server, token, name string, cols, rows int) *websocket.Conn {
+	t.Helper()
+	conn := dialScreen(t, ctx, s, token, name)
+	hello, err := json.Marshal(screenHello{Type: "screen", Cols: cols, Rows: rows, Markers: adapter.For("claude").Markers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, hello); err != nil {
+		t.Fatal(err)
+	}
+	return conn
+}
+
 func openScreenWith(t *testing.T, ctx context.Context, s *Server, token, name string, markers detect.Markers) *websocket.Conn {
 	t.Helper()
-	conn, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/agent/"+name, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
-	})
-	if err != nil {
-		t.Fatalf("screen %s: %v", name, err)
-	}
-	t.Cleanup(func() { conn.CloseNow() })
-	conn.SetReadLimit(controlLimit)
+	conn := dialScreen(t, ctx, s, token, name)
 	hello, err := json.Marshal(screenHello{Type: "screen", Cols: 80, Rows: 24, Markers: markers})
 	if err != nil {
 		t.Fatal(err)
@@ -471,6 +479,19 @@ func withAgent(t *testing.T, ctx context.Context) (_ *Server, memberToken, hostT
 	screen = openScreen(t, ctx, s, hostToken, "checkups")
 	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
 	return s, memberToken, hostToken, screen
+}
+
+func dialScreen(t *testing.T, ctx context.Context, s *Server, token, name string) *websocket.Conn {
+	t.Helper()
+	conn, _, err := websocket.Dial(ctx, "ws://"+s.Addr()+"/v1/agent/"+name, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
+	})
+	if err != nil {
+		t.Fatalf("screen %s: %v", name, err)
+	}
+	t.Cleanup(func() { conn.CloseNow() })
+	conn.SetReadLimit(controlLimit)
+	return conn
 }
 
 func readUntilBytes(t *testing.T, ctx context.Context, conn *websocket.Conn) []byte {
@@ -1050,4 +1071,50 @@ func TestASilentHostIsDropped(t *testing.T) {
 	// And the machine can come back under the same id.
 	joinAsHost(t, ctx, s, hostToken)
 	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+}
+
+// A host opens every screen at the size it starts every PTY at, and its old
+// connection is not known to be dead yet. What was agreed about the screen
+// before this one has to go with it, or every browser watches the host's
+// size in a window that is not that size.
+func TestAReplacedScreenForgetsTheOldSize(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken, _ := withAgent(t, ctx)
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	sized, _ := json.Marshal(viewerMessage{Type: "size", Cols: 80, Rows: 24})
+	if err := viewer.Write(ctx, websocket.MessageText, sized); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return sizeOf(s, "checkups") == size{80, 24} })
+
+	// The agent restarted. Nothing has read the old connection since, which is
+	// what a host that dropped off the network looks like.
+	was, _ := s.screens.get("checkups")
+	openScreenSized(t, ctx, s, hostToken, "checkups", 120, 40)
+	waitFor(t, func() bool {
+		now, ok := s.screens.get("checkups")
+		return ok && now != was
+	})
+
+	// The dropped viewer comes back and proposes the same window again. Held
+	// over from the old screen, that proposal reads as no change and the new
+	// screen is left at the host's size.
+	back := watch(t, ctx, s, memberToken, "checkups")
+	if err := back.Write(ctx, websocket.MessageText, sized); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return sizeOf(s, "checkups") == size{80, 24} })
+}
+
+// sizeOf is the grid a screen is being drawn on, read the way anything else
+// reads it, since the maps behind it belong to whichever goroutine holds the
+// lock.
+func sizeOf(s *Server, name string) size {
+	live, ok := s.screens.get(name)
+	if !ok {
+		return size{}
+	}
+	cols, rows := live.Size()
+	return size{cols, rows}
 }
