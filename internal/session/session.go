@@ -86,6 +86,13 @@ func (s *Session) noteChange() {
 	}
 }
 
+// Size is the grid the screen is being drawn on.
+func (s *Session) Size() (cols, rows int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.screen.Size()
+}
+
 func (s *Session) Text() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

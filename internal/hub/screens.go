@@ -19,8 +19,14 @@ type screens struct {
 
 type size struct{ cols, rows int }
 
-// floor is the smallest terminal kolo will ask a host for.
-var floor = size{cols: 60, rows: 15}
+// The smallest and largest terminal kolo will ask a host for. The roof is
+// there because a proposal is a number a browser sent: the hub builds a grid
+// that size to draw on, and an agent asked for a screen wider than any window
+// draws nothing anybody can read.
+var (
+	floor = size{cols: 60, rows: 15}
+	roof  = size{cols: 400, rows: 150}
+)
 
 func newScreens() *screens {
 	return &screens{
@@ -55,8 +61,8 @@ func (s *screens) propose(name string, at any, cols, rows int) (int, int, bool) 
 		smallest.cols = min(smallest.cols, w.cols)
 		smallest.rows = min(smallest.rows, w.rows)
 	}
-	smallest.cols = max(smallest.cols, floor.cols)
-	smallest.rows = max(smallest.rows, floor.rows)
+	smallest.cols = min(max(smallest.cols, floor.cols), roof.cols)
+	smallest.rows = min(max(smallest.rows, floor.rows), roof.rows)
 
 	if s.agreed[name] == smallest {
 		return 0, 0, false
@@ -69,6 +75,15 @@ func (s *screens) propose(name string, at any, cols, rows int) (int, int, bool) 
 }
 
 // open replaces any existing screen, dropping its viewers.
+//
+// The agreed size goes with the old screen. A host opens every screen at the
+// size it starts every PTY at, so what was agreed about the screen before this
+// one describes a terminal that no longer exists. Kept, it matches the
+// proposal each dropped viewer makes on reconnecting, reads as no change, and
+// leaves the hub drawing the host's size into windows that are not that size,
+// with the host never told. The close below clears it too, but only when it
+// wins the race to notice: a host that dropped off the network opens the new
+// screen long before the old connection is known to be dead.
 func (s *screens) open(name string, cols, rows int, markers detect.Markers) *session.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -76,6 +91,7 @@ func (s *screens) open(name string, cols, rows int, markers detect.Markers) *ses
 	if was, ok := s.m[name]; ok {
 		was.Close()
 	}
+	delete(s.agreed, name)
 	live := session.New(cols, rows, markers)
 	s.m[name] = live
 	return live
