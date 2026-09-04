@@ -1118,3 +1118,20 @@ func sizeOf(s *Server, name string) size {
 	cols, rows := live.Size()
 	return size{cols, rows}
 }
+
+// A size is a number a browser sent, and the hub builds a grid that size.
+func TestProposedSizesAreBounded(t *testing.T) {
+	live := newScreens()
+	live.open("checkups", 120, 40, detect.Markers{})
+
+	cols, rows, _ := live.propose("checkups", "a browser", 1<<20, 1<<20)
+	if cols != roof.cols || rows != roof.rows {
+		t.Errorf("a proposal of 1048576x1048576 agreed on %dx%d, want the roof of %dx%d",
+			cols, rows, roof.cols, roof.rows)
+	}
+	cols, rows, _ = live.propose("checkups", "a browser", 2, 1)
+	if cols != floor.cols || rows != floor.rows {
+		t.Errorf("a proposal of 2x1 agreed on %dx%d, want the floor of %dx%d",
+			cols, rows, floor.cols, floor.rows)
+	}
+}

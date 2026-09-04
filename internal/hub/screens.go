@@ -19,8 +19,14 @@ type screens struct {
 
 type size struct{ cols, rows int }
 
-// floor is the smallest terminal kolo will ask a host for.
-var floor = size{cols: 60, rows: 15}
+// The smallest and largest terminal kolo will ask a host for. The roof is
+// there because a proposal is a number a browser sent: the hub builds a grid
+// that size to draw on, and an agent asked for a screen wider than any window
+// draws nothing anybody can read.
+var (
+	floor = size{cols: 60, rows: 15}
+	roof  = size{cols: 400, rows: 150}
+)
 
 func newScreens() *screens {
 	return &screens{
@@ -55,8 +61,8 @@ func (s *screens) propose(name string, at any, cols, rows int) (int, int, bool) 
 		smallest.cols = min(smallest.cols, w.cols)
 		smallest.rows = min(smallest.rows, w.rows)
 	}
-	smallest.cols = max(smallest.cols, floor.cols)
-	smallest.rows = max(smallest.rows, floor.rows)
+	smallest.cols = min(max(smallest.cols, floor.cols), roof.cols)
+	smallest.rows = min(max(smallest.rows, floor.rows), roof.rows)
 
 	if s.agreed[name] == smallest {
 		return 0, 0, false
