@@ -271,22 +271,6 @@ func (a *Agents) Type(name, keys string) error {
 	return v.input.Type(keys)
 }
 
-// Resize follows the size the org's browsers agreed on.
-func (a *Agents) Resize(name string, cols, rows int) error {
-	a.mu.Lock()
-	p, ok := a.running[name]
-	if !ok || p.agent == nil {
-		a.mu.Unlock()
-		return fmt.Errorf("%s is not running here", name)
-	}
-	running, live := p.agent, p.live
-	a.mu.Unlock()
-
-	// Emulator first, or a redraw arriving at the old size wraps.
-	live.Resize(cols, rows)
-	return running.Resize(cols, rows)
-}
-
 func (a *Agents) Interrupt(name, from string) error {
 	v, err := a.reach(name)
 	if err != nil {

@@ -200,8 +200,8 @@
 
   /* min-height alongside min-width, or the column below this one is only as
      short as what is in it: a grid item's automatic minimum is its content, so
-     a screen taller than the window would stretch the frame past the window
-     instead of being scaled into it, and be measured as room this window has. */
+     a screen drawn taller than the window would stretch the frame past the
+     window, and be measured back as room this window has. */
   main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 
   /* ---- nothing open ------------------------------------------------------- */
@@ -261,13 +261,29 @@
   .screen { position: relative; flex: 1; min-height: 0; margin: 16px; padding: 14px 18px;
             border: 1px solid var(--line); border-radius: 10px; background: var(--kolo-void);
             display: flex; overflow: hidden; }
-  /* The terminal is drawn on the grid the hub settled on and centred in
-     whatever the frame has left over. A grid too big for this window is scaled
-     into it (see fit below), which is a paint, not a layout: the box below has
-     to clip and refuse to grow, or a screen wider than the window would push
-     the frame out and be measured as room this window does not have. */
-  #term { flex: 1; min-width: 0; min-height: 0; overflow: hidden;
-          display: flex; align-items: center; justify-content: center; }
+  /* The agent's grid, drawn at the size this window has room for and centred
+     in what is left over. The box has to refuse to grow, or a zoomed-in screen
+     would push the frame out and be measured back as room it does not have;
+     zoomed in past the room there is, it scrolls to the rest. */
+  #term { flex: 1; min-width: 0; min-height: 0; overflow: hidden; display: flex; }
+  /* Scrolling is for a screen somebody has zoomed past the room they have. Left
+     on, a screen that fits shows a scrollbar for the pixel it rounds to, and
+     the scrollbar takes the width that made it fit. */
+  #term.roam { overflow: auto; }
+  /* Centred by margin and not by alignment: a screen bigger than the frame is
+     pushed off the start edge by alignment, where no scroll can reach it. */
+  #term .xterm { margin: auto; }
+  /* This window's own zoom, and nobody else's. Out of the way until the screen
+     is pointed at, and always there once it is off fit. */
+  .zoom { position: absolute; left: 14px; bottom: 12px; display: flex; align-items: center;
+          gap: 2px; background: var(--raised); border: 1px solid var(--line);
+          border-radius: 999px; padding: 2px; z-index: 1;
+          opacity: 0; transition: opacity 120ms ease; }
+  .screen:hover .zoom, .zoom:focus-within, .zoom.moved { opacity: 1; }
+  .zoom button { color: var(--dim); font: 11.5px var(--ui); border-radius: 999px;
+                 padding: 3px 7px; }
+  .zoom button:hover { background: var(--raised-hover); color: var(--text); }
+  .zoom .at { min-width: 34px; font-variant-numeric: tabular-nums; }
   /* Who's typing is a fact about the keyboard, read at the screen it's
      driving. */
   .typist { position: absolute; right: 14px; bottom: 12px; background: var(--raised);
@@ -341,6 +357,11 @@
     <section class="watch" hidden>
       <div class="screen">
         <div id="term"></div>
+        <div class="zoom">
+          <button class="out" title="smaller">&minus;</button>
+          <button class="at" title="fit the screen to this window">fit</button>
+          <button class="in" title="larger">+</button>
+        </div>
         <span class="typist" hidden></span>
       </div>
       <p class="note"></p>
@@ -878,12 +899,10 @@ document.addEventListener('click', (ev) => {
   if (!el('.me-wrap').contains(ev.target)) el('.me-menu').hidden = true;
 });
 
-// One character is this tall in every window, and is never blown up to fill
-// one: a window with room to spare shows the agent's grid with black around it
-// rather than the same screen enlarged. Shrinking is the other way round. The
-// hub settles the grid on the largest window watching, so a smaller one is
-// shown a screen it cannot draw at this size, and fit below scales it down.
-const fontSize = 13;
+// The size the grid is measured at. Nothing is drawn at it for long: fit below
+// works out the size that puts the agent's screen in this window, and that is
+// this window's business alone.
+const baseFont = 13;
 
 const term = new Terminal({
   // Keystrokes go to the agent as they are pressed. See onData below. Whoever
@@ -893,7 +912,7 @@ const term = new Terminal({
   // What the agent says is what the machine says, so it is said in the
   // brand's mono. The stack behind it is what draws until the file arrives.
   fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
-  fontSize: fontSize,
+  fontSize: baseFont,
   customGlyphs: true,
   scrollback: 5000,
   theme: { background: '#101314', foreground: '#E7E9E4',
@@ -934,78 +953,83 @@ function room() {
   return { w: Math.floor(box.width), h: Math.floor(box.height) };
 }
 
-// cell is what one character measures, read back off the terminal rather than
-// guessed at with a canvas: xterm decides its own line height and letter
-// spacing, and a guess a pixel out puts a column over the edge.
-//
-// Measured once. It is the same for every character at a size that never
-// changes, and measuring it again while a resize is still being drawn reads the
-// old screen against the new grid, which is how a terminal ends up scaled to
-// twice the window.
-let measured = null;
-function cell() {
-  if (measured) return measured;
-  const drawn = term.element && term.element.querySelector('.xterm-screen');
-  if (!drawn || !drawn.offsetWidth || !term.cols || !term.rows) return null;
-  measured = { w: drawn.offsetWidth / term.cols, h: drawn.offsetHeight / term.rows };
-  return measured;
-}
+// How much larger than fitted this window draws the screen. One person's own,
+// and in nothing the hub is told: the grid is the agent's, this is only how
+// big it is drawn here.
+let zoom = 1;
+const zoomRange = { least: 0.5, most: 4 };
 
-// propose tells the hub the grid this window can draw at full size. Everyone
-// watching sends this and the largest wins, so the agent draws the biggest
-// screen anybody in the room can actually read.
+// fit draws the agent's whole screen at the size this window has room for.
 //
-// This is measured against the unscaled cell and so never moves with fit: what
-// the window can draw at full size is the same number whether or not the grid
-// it is currently showing fits.
-function propose() {
-  const box = room(), c = cell();
-  // A view that is not on screen measures zero, and would be proposing a grid
-  // nobody is looking at.
-  if (!c || !box.w || !box.h) return;
-  tell({
-    type: 'size',
-    cols: Math.max(20, Math.floor(box.w / c.w)),
-    rows: Math.max(6, Math.floor(box.h / c.h)),
-  });
-}
-
-// fit puts the whole of the agent's grid inside this window. The grid belongs
-// to everybody watching, so a window smaller than the one it was settled on
-// shows all of it small rather than a readable corner of it: a screen read off
-// its top left is a screen whose bottom right nobody knows is there.
+// The grid is fixed, so this is a font size and not a transform: xterm redraws
+// the glyphs at the size they will be read at, and a screen filling a large
+// monitor is as sharp as one on a laptop.
 //
-// A transform and not a font size, so the grid xterm has laid out, the cell
-// cell() measured and the room room() reports all stay the numbers they were.
-// Scaled up is refused here, per the note on fontSize.
+// What a point of font size buys in pixels is read off the render rather than
+// guessed at with a canvas, since xterm decides its own line height and letter
+// spacing. But the render is not always the one the font size asked for: xterm
+// draws a frame or two behind, and dividing a new size by old pixels is how a
+// screen ends up half again as wide as its window. So this settles instead of
+// solving. Each pass measures what is on the screen now and moves towards the
+// size that fills the frame, and the observer below runs it again on the render
+// that comes back. A step under half a point is not worth the redraw, and
+// stopping there is what keeps this from walking the size on for ever.
+//
+// A font size alone cannot land it exactly. A cell is a whole number of pixels,
+// which at small sizes is most of a column: 120 columns of a 4 pixel cell is
+// 480 wide whatever size is asked for, and in a frame narrower than that no
+// font size fits. The last of the way is a transform, which has no such step.
+// Only ever down, and never against a zoom somebody asked for: zoomed in, the
+// frame scrolls to the rest of the screen rather than shrinking it back.
 function fit() {
-  const drawn = term.element;
-  if (!drawn) return;
-  // Layout, and so the size the grid would be drawn at unscaled, whatever
-  // scale is on it now.
-  const box = room(), natural = { w: drawn.offsetWidth, h: drawn.offsetHeight };
-  if (!box.w || !box.h || !natural.w || !natural.h) return;
-  const scale = Math.min(1, box.w / natural.w, box.h / natural.h);
-  drawn.style.transform = scale < 1 ? `scale(${scale})` : '';
+  const drawn = term.element, grid = drawn && drawn.querySelector('.xterm-screen');
+  const box = room();
+  if (!grid || !grid.offsetWidth || !grid.offsetHeight || !box.w || !box.h) return;
+
+  const at = term.options.fontSize;
+  const fills = Math.min(box.w * at / grid.offsetWidth, box.h * at / grid.offsetHeight);
+  const want = Math.max(4, Math.min(fills * zoom, 60));
+  if (Math.abs(want - at) >= 0.5) term.options.fontSize = want;
+
+  const rest = zoom > 1 ? 1 : Math.min(1, box.w / drawn.offsetWidth, box.h / drawn.offsetHeight);
+  drawn.style.transform = rest < 1 ? `scale(${rest})` : '';
+
+  const roam = zoom > 1, frame = el('#term');
+  frame.classList.toggle('roam', roam);
+  // The grid keeps the whole pixels its cells rounded up to, so its box can
+  // stand a little over the frame even once the paint has been brought inside.
+  // Centred, that slack falls evenly and the screen is whole; left at either
+  // end it is a screen with its top or its bottom held out of sight.
+  if (!roam) {
+    frame.scrollLeft = (frame.scrollWidth - frame.clientWidth) / 2;
+    frame.scrollTop = (frame.scrollHeight - frame.clientHeight) / 2;
+  }
+  sayZoom();
 }
 
-// The scale comes from two boxes, and neither settles on a schedule this page
-// knows: xterm lays a new grid out some frames after it is asked to, and the
-// frame around it moves for reasons of its own. So watch them both rather than
-// guess at a frame to measure on. Fitting cannot set this off again, because a
-// transform draws at a size without laying out at it.
+// Both boxes fit reads: the room the frame has, which moves for reasons this
+// page does not hear about (a note appearing, a view opening, the face
+// arriving), and the grid xterm has drawn, which is how a pass sees the last
+// one land.
 const watcher = new ResizeObserver(() => fit());
 watcher.observe(el('#term'));
 watcher.observe(term.element.querySelector('.xterm-screen'));
 
-addEventListener('resize', propose);
+addEventListener('resize', fit);
 
-// A cell measured in the fallback face is the wrong width, and it is cached: the
-// grid would be proposed from it for as long as the page is open. Measured again
-// once the real face has arrived, and the hub told what changed.
-if (document.fonts) {
-  document.fonts.ready.then(() => { measured = null; propose(); });
+// The zoom control, which belongs to this window and says so: it reads "fit"
+// until somebody has moved it.
+function setZoom(to) {
+  zoom = Math.max(zoomRange.least, Math.min(to, zoomRange.most));
+  fit();
 }
+function sayZoom() {
+  el('.zoom .at').textContent = zoom === 1 ? 'fit' : `${Math.round(zoom * 100)}%`;
+  el('.zoom').classList.toggle('moved', zoom !== 1);
+}
+el('.zoom .out').onclick = () => setZoom(zoom / 1.25);
+el('.zoom .in').onclick = () => setZoom(zoom * 1.25);
+el('.zoom .at').onclick = () => setZoom(1);
 
 function watch(name) {
   close();
@@ -1031,9 +1055,6 @@ function connect(name) {
   ws.onopen = () => {
     if (ws !== socket) return;
     say('.watch .note', `watching ${name}`);
-    // Before anything else: the agent should be drawing a screen this window can
-    // show, and it cannot know the size until somebody tells it.
-    propose();
   };
 
   ws.onmessage = (ev) => {
@@ -1044,8 +1065,12 @@ function connect(name) {
     }
     const msg = JSON.parse(ev.data);
     switch (msg.type) {
+      // The grid the agent is drawing on, which is the host's and arrives
+      // before its first repaint. Only this window's share of the frame
+      // decides how large it is drawn here.
       case 'size':
         term.resize(msg.cols, msg.rows);
+        fit();
         break;
       case 'state':
         say('.watch .note', describe(msg.state));

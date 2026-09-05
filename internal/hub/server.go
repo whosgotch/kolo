@@ -609,7 +609,6 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 
 	backlog, updates, unsubscribe := live.Subscribe()
 	defer unsubscribe()
-	defer s.resize(name, conn, 0, 0)
 
 	for _, m := range backlog {
 		if err := session.Send(ctx, conn, m); err != nil {
@@ -660,9 +659,6 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 			return
 		}
 		switch msg.Type {
-		case "size":
-			s.resize(name, conn, msg.Cols, msg.Rows)
-			continue
 		case "keys":
 			if msg.Keys == "" {
 				continue
@@ -711,17 +707,6 @@ func (s *Server) sayKeyboard(name string, who, was Person) {
 	}{"keyboard", who.Name, who.ID, was.Name})
 }
 
-// resize proposes one browser's size; screens.propose settles what all watch.
-func (s *Server) resize(name string, at any, cols, rows int) {
-	cols, rows, changed := s.screens.propose(name, at, cols, rows)
-	if !changed {
-		return
-	}
-	if send, ok := s.registry.Sender(name); ok {
-		send(toAgent{Type: "resize", Name: name, Cols: cols, Rows: rows})
-	}
-}
-
 // sender serialises writes to one host: two members dispatching at once must
 // not interleave frames on one websocket.
 func sender(ctx context.Context, conn *websocket.Conn) Sender {
@@ -756,8 +741,6 @@ type viewerMessage struct {
 	Type string `json:"type"`
 	// Raw terminal input, already encoded by the browser.
 	Keys string `json:"keys"`
-	Cols int    `json:"cols"`
-	Rows int    `json:"rows"`
 }
 
 type toAgent struct {
@@ -765,8 +748,6 @@ type toAgent struct {
 	Name string `json:"name"`
 	From string `json:"from"`
 	Keys string `json:"keys,omitempty"`
-	Cols int    `json:"cols,omitempty"`
-	Rows int    `json:"rows,omitempty"`
 }
 
 type screenHello struct {

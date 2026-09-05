@@ -222,18 +222,20 @@ everyone can see who did what.
 
 ## Screen size
 
-Every browser watching proposes the grid it can draw at full size, and the
-largest one wins. The agent draws the biggest screen anybody in the room can
-read, and a smaller window scales that whole screen down to fit rather than
-showing a corner of it.
+The agent is one process on one PTY, and a PTY has one size. An agent draws a
+full screen, boxes and all, sized to the width it was told, so there is no
+version of this where it draws differently for different people.
 
-Smallest wins, the way tmux settles it, is wrong here. A tmux client can only
-draw its own grid; a browser can scale. One phone on the invite link should
-cost that phone some legibility, not narrow the agent's interface for everyone
-watching, the people at the machine included.
+That size is the host's, settled when the agent starts, and nothing in a
+browser moves it. What each window does with the grid is its own: the whole
+screen is drawn at whatever size that window has room for, so a large monitor
+gets large text and a laptop gets the same screen smaller, and neither is felt
+by the other. The zoom control on the screen goes off fit for one person
+without touching anybody else's window.
 
-The grid is held between 60x15 and 400x150. A proposal is a number a browser
-sent, and every window watching has to fit whatever it settles on.
+No window is a vote. Smallest wins, the way tmux settles it, put one phone on
+the invite link in charge of the agent's whole interface, for the people
+sitting at the machine included; largest wins only moves who pays for it.
 
 ## Where files live
 
