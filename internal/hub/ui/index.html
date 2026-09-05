@@ -989,18 +989,22 @@ function fit() {
   drawn.style.transform = scale < 1 ? `scale(${scale})` : '';
 }
 
-// xterm lays the new grid out on the frame after the one it is asked on, and a
-// scale worked out before that is a scale for the grid it replaced. Run twice
-// so a resize that has already been drawn is not left unfitted for a frame.
-function refit() { fit(); requestAnimationFrame(fit); }
+// The scale comes from two boxes, and neither settles on a schedule this page
+// knows: xterm lays a new grid out some frames after it is asked to, and the
+// frame around it moves for reasons of its own. So watch them both rather than
+// guess at a frame to measure on. Fitting cannot set this off again, because a
+// transform draws at a size without laying out at it.
+const watcher = new ResizeObserver(() => fit());
+watcher.observe(el('#term'));
+watcher.observe(term.element.querySelector('.xterm-screen'));
 
-addEventListener('resize', () => { propose(); refit(); });
+addEventListener('resize', propose);
 
 // A cell measured in the fallback face is the wrong width, and it is cached: the
 // grid would be proposed from it for as long as the page is open. Measured again
 // once the real face has arrived, and the hub told what changed.
 if (document.fonts) {
-  document.fonts.ready.then(() => { measured = null; propose(); refit(); });
+  document.fonts.ready.then(() => { measured = null; propose(); });
 }
 
 function watch(name) {
@@ -1042,7 +1046,6 @@ function connect(name) {
     switch (msg.type) {
       case 'size':
         term.resize(msg.cols, msg.rows);
-        refit();
         break;
       case 'state':
         say('.watch .note', describe(msg.state));
