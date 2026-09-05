@@ -198,7 +198,11 @@
              text-decoration: none; }
   .me-item:hover { background: var(--raised-hover); }
 
-  main { min-width: 0; display: flex; flex-direction: column; }
+  /* min-height alongside min-width, or the column below this one is only as
+     short as what is in it: a grid item's automatic minimum is its content, so
+     a screen taller than the window would stretch the frame past the window
+     instead of being scaled into it, and be measured as room this window has. */
+  main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 
   /* ---- nothing open ------------------------------------------------------- */
 
@@ -257,9 +261,13 @@
   .screen { position: relative; flex: 1; min-height: 0; margin: 16px; padding: 14px 18px;
             border: 1px solid var(--line); border-radius: 10px; background: var(--kolo-void);
             display: flex; overflow: hidden; }
-  /* The terminal is sized to the grid the hub settled on, and centred in
-     whatever the frame has left over. */
-  #term { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  /* The terminal is drawn on the grid the hub settled on and centred in
+     whatever the frame has left over. A grid too big for this window is scaled
+     into it (see fit below), which is a paint, not a layout: the box below has
+     to clip and refuse to grow, or a screen wider than the window would push
+     the frame out and be measured as room this window does not have. */
+  #term { flex: 1; min-width: 0; min-height: 0; overflow: hidden;
+          display: flex; align-items: center; justify-content: center; }
   /* Who's typing is a fact about the keyboard, read at the screen it's
      driving. */
   .typist { position: absolute; right: 14px; bottom: 12px; background: var(--raised);
@@ -870,10 +878,11 @@ document.addEventListener('click', (ev) => {
   if (!el('.me-wrap').contains(ev.target)) el('.me-menu').hidden = true;
 });
 
-// The terminal is drawn at one size and never scaled to fill the window. The
-// grid is the agent's, shared by everybody watching, and the hub already keeps
-// it inside the smallest of their windows, so a window with room to spare shows
-// the same screen with black around it rather than the same screen blown up.
+// One character is this tall in every window, and is never blown up to fill
+// one: a window with room to spare shows the agent's grid with black around it
+// rather than the same screen enlarged. Shrinking is the other way round. The
+// hub settles the grid on the largest window watching, so a smaller one is
+// shown a screen it cannot draw at this size, and fit below scales it down.
 const fontSize = 13;
 
 const term = new Terminal({
@@ -942,14 +951,17 @@ function cell() {
   return measured;
 }
 
-// propose tells the hub what this window can draw. Everyone watching sends this
-// and the smallest wins, so nobody is shown a screen the agent has drawn wider
-// than their window.
+// propose tells the hub the grid this window can draw at full size. Everyone
+// watching sends this and the largest wins, so the agent draws the biggest
+// screen anybody in the room can actually read.
+//
+// This is measured against the unscaled cell and so never moves with fit: what
+// the window can draw at full size is the same number whether or not the grid
+// it is currently showing fits.
 function propose() {
   const box = room(), c = cell();
-  // A view that is not on screen measures zero, and the smallest proposal wins:
-  // sizing the agent's terminal from a window nobody is looking at would shrink
-  // it for everybody who is.
+  // A view that is not on screen measures zero, and would be proposing a grid
+  // nobody is looking at.
   if (!c || !box.w || !box.h) return;
   tell({
     type: 'size',
@@ -958,13 +970,37 @@ function propose() {
   });
 }
 
-addEventListener('resize', propose);
+// fit puts the whole of the agent's grid inside this window. The grid belongs
+// to everybody watching, so a window smaller than the one it was settled on
+// shows all of it small rather than a readable corner of it: a screen read off
+// its top left is a screen whose bottom right nobody knows is there.
+//
+// A transform and not a font size, so the grid xterm has laid out, the cell
+// cell() measured and the room room() reports all stay the numbers they were.
+// Scaled up is refused here, per the note on fontSize.
+function fit() {
+  const drawn = term.element;
+  if (!drawn) return;
+  // Layout, and so the size the grid would be drawn at unscaled, whatever
+  // scale is on it now.
+  const box = room(), natural = { w: drawn.offsetWidth, h: drawn.offsetHeight };
+  if (!box.w || !box.h || !natural.w || !natural.h) return;
+  const scale = Math.min(1, box.w / natural.w, box.h / natural.h);
+  drawn.style.transform = scale < 1 ? `scale(${scale})` : '';
+}
+
+// xterm lays the new grid out on the frame after the one it is asked on, and a
+// scale worked out before that is a scale for the grid it replaced. Run twice
+// so a resize that has already been drawn is not left unfitted for a frame.
+function refit() { fit(); requestAnimationFrame(fit); }
+
+addEventListener('resize', () => { propose(); refit(); });
 
 // A cell measured in the fallback face is the wrong width, and it is cached: the
 // grid would be proposed from it for as long as the page is open. Measured again
 // once the real face has arrived, and the hub told what changed.
 if (document.fonts) {
-  document.fonts.ready.then(() => { measured = null; propose(); });
+  document.fonts.ready.then(() => { measured = null; propose(); refit(); });
 }
 
 function watch(name) {
@@ -1006,6 +1042,7 @@ function connect(name) {
     switch (msg.type) {
       case 'size':
         term.resize(msg.cols, msg.rows);
+        refit();
         break;
       case 'state':
         say('.watch .note', describe(msg.state));

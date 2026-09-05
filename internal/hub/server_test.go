@@ -1119,6 +1119,31 @@ func sizeOf(s *Server, name string) size {
 	return size{cols, rows}
 }
 
+// The window with the most room settles the grid. One small window costs its
+// own legibility, since it scales what it is shown, and nobody else's.
+func TestTheLargestWindowSettlesTheGrid(t *testing.T) {
+	live := newScreens()
+	live.open("checkups", 120, 40, detect.Markers{})
+
+	if cols, rows, _ := live.propose("checkups", "a wide window", 200, 50); cols != 200 || rows != 50 {
+		t.Errorf("one window of 200x50 agreed on %dx%d, want 200x50", cols, rows)
+	}
+	if cols, rows, changed := live.propose("checkups", "a phone", 62, 20); changed {
+		t.Errorf("a phone joining at 62x20 moved the grid to %dx%d, want it left at 200x50",
+			cols, rows)
+	}
+	screen, _ := live.get("checkups")
+	if cols, rows := screen.Size(); cols != 200 || rows != 50 {
+		t.Errorf("the screen is drawn %dx%d, want the wide window's 200x50", cols, rows)
+	}
+
+	// And the grid follows the room down when the window that had it goes.
+	if cols, rows, _ := live.propose("checkups", "a wide window", 0, 0); cols != 62 || rows != 20 {
+		t.Errorf("the wide window left and the grid went to %dx%d, want the phone's 62x20",
+			cols, rows)
+	}
+}
+
 // A size is a number a browser sent, and the hub builds a grid that size.
 func TestProposedSizesAreBounded(t *testing.T) {
 	live := newScreens()

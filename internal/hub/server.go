@@ -711,7 +711,7 @@ func (s *Server) sayKeyboard(name string, who, was Person) {
 	}{"keyboard", who.Name, who.ID, was.Name})
 }
 
-// resize proposes one browser's size; screens.propose applies smallest-wins.
+// resize proposes one browser's size; screens.propose settles what all watch.
 func (s *Server) resize(name string, at any, cols, rows int) {
 	cols, rows, changed := s.screens.propose(name, at, cols, rows)
 	if !changed {

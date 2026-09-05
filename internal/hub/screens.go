@@ -21,8 +21,8 @@ type size struct{ cols, rows int }
 
 // The smallest and largest terminal kolo will ask a host for. The roof is
 // there because a proposal is a number a browser sent: the hub builds a grid
-// that size to draw on, and an agent asked for a screen wider than any window
-// draws nothing anybody can read.
+// that size to draw on, and every window watching has to scale a grid it
+// cannot draw at full size down into the room it has.
 var (
 	floor = size{cols: 60, rows: 15}
 	roof  = size{cols: 400, rows: 150}
@@ -36,8 +36,16 @@ func newScreens() *screens {
 	}
 }
 
-// propose records one browser's size and returns the size all can use,
-// smallest wins as in tmux. A zero size removes the browser.
+// propose records one browser's size and returns the size all can use, the
+// largest window winning. A zero size removes the browser.
+//
+// Smallest wins is how tmux settles this, and it is wrong here. A tmux client
+// can only ever draw its own grid, so the smallest window is the most anyone
+// can be shown. A browser can scale, so it can be shown a grid larger than it
+// can draw at full size, and the cost of that lands on that one window. Under
+// smallest wins the cost lands everywhere: one phone on the invite link and
+// the agent redraws its whole interface narrow, for everybody, including the
+// people sitting at the machine it is running on.
 func (s *screens) propose(name string, at any, cols, rows int) (int, int, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -56,22 +64,22 @@ func (s *screens) propose(name string, at any, cols, rows int) (int, int, bool) 
 	if len(windows) == 0 {
 		return 0, 0, false
 	}
-	smallest := size{cols: 1 << 30, rows: 1 << 30}
+	var largest size
 	for _, w := range windows {
-		smallest.cols = min(smallest.cols, w.cols)
-		smallest.rows = min(smallest.rows, w.rows)
+		largest.cols = max(largest.cols, w.cols)
+		largest.rows = max(largest.rows, w.rows)
 	}
-	smallest.cols = min(max(smallest.cols, floor.cols), roof.cols)
-	smallest.rows = min(max(smallest.rows, floor.rows), roof.rows)
+	largest.cols = min(max(largest.cols, floor.cols), roof.cols)
+	largest.rows = min(max(largest.rows, floor.rows), roof.rows)
 
-	if s.agreed[name] == smallest {
+	if s.agreed[name] == largest {
 		return 0, 0, false
 	}
-	s.agreed[name] = smallest
+	s.agreed[name] = largest
 	if live, ok := s.m[name]; ok {
-		live.Resize(smallest.cols, smallest.rows)
+		live.Resize(largest.cols, largest.rows)
 	}
-	return smallest.cols, smallest.rows, true
+	return largest.cols, largest.rows, true
 }
 
 // open replaces any existing screen, dropping its viewers.
