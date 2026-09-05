@@ -1073,65 +1073,52 @@ func TestASilentHostIsDropped(t *testing.T) {
 	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
 }
 
-// A host opens every screen at the size it starts every PTY at, and its old
-// connection is not known to be dead yet. What was agreed about the screen
-// before this one has to go with it, or every browser watches the host's
-// size in a window that is not that size.
-func TestAReplacedScreenForgetsTheOldSize(t *testing.T) {
+// The grid is the host's, settled when the agent started. A browser draws it
+// at whatever size its own window has room for, and nothing it sends can move
+// it for anybody else.
+func TestABrowserCannotMoveTheGrid(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken, _ := withAgent(t, ctx)
 
+	// The fixture's host opened this screen at 80x24.
 	viewer := watch(t, ctx, s, memberToken, "checkups")
-	sized, _ := json.Marshal(viewerMessage{Type: "size", Cols: 80, Rows: 24})
+	sized, _ := json.Marshal(map[string]any{"type": "size", "cols": 200, "rows": 50})
 	if err := viewer.Write(ctx, websocket.MessageText, sized); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return sizeOf(s, "checkups") == size{80, 24} })
 
-	// The agent restarted. Nothing has read the old connection since, which is
-	// what a host that dropped off the network looks like.
+	// A viewer's messages are read in order, so a keystroke landing after it is
+	// proof the size was read, and ignored, rather than still in flight.
+	typed, _ := json.Marshal(viewerMessage{Type: "keys", Keys: "x"})
+	if err := viewer.Write(ctx, websocket.MessageText, typed); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { _, who := s.typists.get("checkups"); return who })
+
+	if cols, rows := gridOf(t, s, "checkups"); cols != 80 || rows != 24 {
+		t.Errorf("a browser asking for 200x50 left the screen at %dx%d, want the host's 80x24",
+			cols, rows)
+	}
+
+	// And a screen the host opens again is the size the host opened it at.
 	was, _ := s.screens.get("checkups")
-	openScreenSized(t, ctx, s, hostToken, "checkups", 120, 40)
+	openScreenSized(t, ctx, s, hostToken, "checkups", 100, 30)
 	waitFor(t, func() bool {
 		now, ok := s.screens.get("checkups")
 		return ok && now != was
 	})
-
-	// The dropped viewer comes back and proposes the same window again. Held
-	// over from the old screen, that proposal reads as no change and the new
-	// screen is left at the host's size.
-	back := watch(t, ctx, s, memberToken, "checkups")
-	if err := back.Write(ctx, websocket.MessageText, sized); err != nil {
-		t.Fatal(err)
+	if cols, rows := gridOf(t, s, "checkups"); cols != 100 || rows != 30 {
+		t.Errorf("the reopened screen is %dx%d, want the host's 100x30", cols, rows)
 	}
-	waitFor(t, func() bool { return sizeOf(s, "checkups") == size{80, 24} })
 }
 
-// sizeOf is the grid a screen is being drawn on, read the way anything else
-// reads it, since the maps behind it belong to whichever goroutine holds the
-// lock.
-func sizeOf(s *Server, name string) size {
+// gridOf is the grid a screen is drawn on, read the way anything else reads
+// it, since the map behind it belongs to whichever goroutine holds the lock.
+func gridOf(t *testing.T, s *Server, name string) (int, int) {
+	t.Helper()
 	live, ok := s.screens.get(name)
 	if !ok {
-		return size{}
+		t.Fatalf("%s has no screen", name)
 	}
-	cols, rows := live.Size()
-	return size{cols, rows}
-}
-
-// A size is a number a browser sent, and the hub builds a grid that size.
-func TestProposedSizesAreBounded(t *testing.T) {
-	live := newScreens()
-	live.open("checkups", 120, 40, detect.Markers{})
-
-	cols, rows, _ := live.propose("checkups", "a browser", 1<<20, 1<<20)
-	if cols != roof.cols || rows != roof.rows {
-		t.Errorf("a proposal of 1048576x1048576 agreed on %dx%d, want the roof of %dx%d",
-			cols, rows, roof.cols, roof.rows)
-	}
-	cols, rows, _ = live.propose("checkups", "a browser", 2, 1)
-	if cols != floor.cols || rows != floor.rows {
-		t.Errorf("a proposal of 2x1 agreed on %dx%d, want the floor of %dx%d",
-			cols, rows, floor.cols, floor.rows)
-	}
+	return live.Size()
 }

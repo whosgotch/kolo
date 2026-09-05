@@ -162,8 +162,6 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 			if err := agents.Type(c.Name, c.Keys); errors.Is(err, relay.ErrTooMuch) {
 				agents.refuse(c.Name, err.Error())
 			}
-		case "resize":
-			agents.Resize(c.Name, c.Cols, c.Rows)
 		case "interrupt":
 			if err := agents.Interrupt(c.Name, c.From); err != nil {
 				agents.refuse(c.Name, err.Error())
@@ -214,8 +212,6 @@ type command struct {
 	Name  string    `json:"name"`
 	From  string    `json:"from"`
 	Keys  string    `json:"keys"`
-	Cols  int       `json:"cols"`
-	Rows  int       `json:"rows"`
 	Agent hub.Agent `json:"agent"`
 }
 
