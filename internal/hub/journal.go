@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,11 +45,13 @@ type Entry struct {
 }
 
 type journal struct {
-	mu      sync.Mutex
-	file    *os.File
-	entries []Entry
-	typing  map[string]line
-	now     func() time.Time
+	mu       sync.Mutex
+	file     *os.File
+	path     string
+	entries  []Entry
+	appended int
+	typing   map[string]line
+	now      func() time.Time
 }
 
 type line struct {
@@ -86,8 +89,29 @@ func openJournal(path string) (*journal, error) {
 	if err != nil {
 		return j, fmt.Errorf("hub: journal %s: %w", path, err)
 	}
-	j.file = f
+	j.file, j.path = f, path
 	return j, nil
+}
+
+// Callers must hold j.mu.
+func (j *journal) compactLocked() {
+	j.appended = 0
+	if j.file == nil || j.path == "" {
+		return
+	}
+	if err := writeJournal(j.path, j.entries); err != nil {
+		log.Printf("hub: %v. The journal is still being written, just not trimmed", err)
+		return
+	}
+	// The old handle points at the file that was renamed away.
+	j.file.Close()
+	f, err := os.OpenFile(j.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		log.Printf("hub: journal %s: %v. This run is no longer being written down", j.path, err)
+		j.file = nil
+		return
+	}
+	j.file = f
 }
 
 func (j *journal) Close() error {
@@ -126,6 +150,9 @@ func (j *journal) addLocked(e Entry) {
 	}
 	if b, err := json.Marshal(e); err == nil {
 		j.file.Write(append(b, '\n'))
+	}
+	if j.appended++; j.appended >= keepEntries {
+		j.compactLocked()
 	}
 }
 
