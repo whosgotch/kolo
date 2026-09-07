@@ -5,6 +5,8 @@
 **/testdata/*.raw
 /org.json
 /org.json.*
+.lock
+*.lock
 /.claude/
 /.crush/
 .DS_Store
