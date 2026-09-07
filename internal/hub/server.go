@@ -57,6 +57,9 @@ type Server struct {
 	journal  *journal
 	// Held across any read-modify-write of the org file.
 	orgFile sync.Mutex
+	// Last read error for the org file, so a lasting one is logged once.
+	// Under orgFile.
+	unreadable string
 	// Open connections, so revocation reaches streams, not just next requests.
 	conns *conns
 	ln    net.Listener

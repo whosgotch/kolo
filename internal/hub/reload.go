@@ -42,9 +42,13 @@ func (s *Server) reload(path string, last []byte) ([]byte, bool) {
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		log.Printf("hub: %s cannot be read: %v; keeping the org already loaded", path, err)
+		if s.unreadable != err.Error() {
+			s.unreadable = err.Error()
+			log.Printf("hub: %s cannot be read: %v; keeping the org already loaded", path, err)
+		}
 		return nil, false
 	}
+	s.unreadable = ""
 	if bytes.Equal(raw, last) {
 		return nil, false
 	}
