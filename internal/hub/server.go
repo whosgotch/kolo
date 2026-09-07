@@ -583,13 +583,19 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	if err := session.Send(ctx, conn, catchUp(live)); err != nil {
 		return
 	}
-	// Joiners learn who typed last.
+	// To this joiner alone. Announce would send it to everybody watching, who
+	// have known who holds the keyboard since they arrived.
 	if who, typed := s.typists.get(name); typed {
-		live.Announce(struct {
+		b, err := json.Marshal(struct {
 			Type string `json:"type"`
 			Who  string `json:"who"`
 			ID   string `json:"id"`
 		}{"keyboard", who.Name, who.ID})
+		if err == nil {
+			if err := session.Send(ctx, conn, session.Message{Control: true, Data: b}); err != nil {
+				return
+			}
+		}
 	}
 	for {
 		select {
