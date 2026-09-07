@@ -120,10 +120,17 @@ func (r *Registry) Join(id string, dirs, allow, found, byName []string, running 
 	r.hosts[id] = h
 
 	for _, a := range running {
+		// Held to what handleCreate holds a new agent to: these arrive from the
+		// host, and a name addresses an agent in every URL.
+		if !ValidName(a.Name) {
+			continue
+		}
 		if _, taken := r.find(a.Name); taken != nil {
 			continue
 		}
 		a.Host = id
+		a.Label = label(a.Label, maxLabel)
+		a.Error = label(a.Error, maxLabel)
 		h.agents[a.Name] = &a
 	}
 	return nil
