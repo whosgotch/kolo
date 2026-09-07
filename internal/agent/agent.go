@@ -11,8 +11,14 @@ import (
 	"github.com/creack/pty"
 )
 
-// COLORTERM breaks vt10x; the other stops nested transcript saving.
-var scrubbed = []string{"COLORTERM", "CLAUDE_CODE_CHILD_SESSION"}
+// KOLO_TOKEN and KOLO_JOIN are this machine's credential, and an agent is a
+// shell somebody else is typing into.
+var scrubbed = []string{
+	"COLORTERM",
+	"CLAUDE_CODE_CHILD_SESSION",
+	"KOLO_TOKEN",
+	"KOLO_JOIN",
+}
 
 type Agent struct {
 	cmd *exec.Cmd
