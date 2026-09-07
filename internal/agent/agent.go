@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/creack/pty"
 )
@@ -58,11 +59,15 @@ func (a *Agent) Resize(cols, rows int) error {
 
 func (a *Agent) Wait() error { return a.cmd.Wait() }
 
-// Close kills the process if it's still running, and releases the PTY,
-// ending any in-flight Read.
+// Close kills the process group and releases the PTY, ending any in-flight
+// Read. The group, because closing the PTY only sends children a SIGHUP they
+// are free to ignore.
 func (a *Agent) Close() error {
-	if a.cmd.Process != nil {
-		a.cmd.Process.Kill()
+	if p := a.cmd.Process; p != nil {
+		if pgid, err := syscall.Getpgid(p.Pid); err == nil {
+			syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+		p.Kill()
 	}
 	return a.pty.Close()
 }
