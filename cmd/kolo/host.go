@@ -79,7 +79,6 @@ func hostCmd(args []string) error {
 	log.Printf("lending %s, running %s", strings.Join(displayDirs(dirs), ", "), strings.Join(allow, ", "))
 
 	// Before the hub is reached, so agents come back whether or not it's up.
-	// They're the org's, not the connection's.
 	if err := agents.Restore(); err != nil {
 		log.Print(err)
 	}
@@ -97,7 +96,6 @@ func hostCmd(args []string) error {
 	return nil
 }
 
-// displayDirs says "*" as "anywhere", for people reading logs.
 func displayDirs(dirs list) list {
 	if len(dirs) == 1 && dirs[0] == hub.DirAny {
 		return list{"anywhere"}
@@ -133,8 +131,6 @@ func (l *list) Set(v string) error {
 	return nil
 }
 
-// split reads one comma-separated flag value, dropping the empties a trailing
-// comma or a stray space would otherwise leave behind.
 func split(v string) []string {
 	var out []string
 	for _, part := range strings.Split(v, ",") {

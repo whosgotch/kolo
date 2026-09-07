@@ -28,14 +28,12 @@ func TestVersionFromVCS(t *testing.T) {
 		wantDirty:    true,
 		wantOK:       true,
 	}, {
-		// go install pkg@version builds from the module cache, which is not a
-		// checkout: the tag in Main.Version is all there is to go on.
+		// The module cache is not a checkout; Main.Version is all there is.
 		name:     "a released build carries no commit",
 		settings: []debug.BuildSetting{{Key: "GOARCH", Value: "amd64"}},
 		wantOK:   false,
 	}, {
-		// A revision shorter than the twelve it is trimmed to must not panic
-		// the binary on start.
+		// Shorter than the twelve it is trimmed to must not panic.
 		name:         "a short revision is left as it is",
 		settings:     []debug.BuildSetting{{Key: "vcs.revision", Value: "78a6230"}},
 		wantRevision: "78a6230",
@@ -58,9 +56,7 @@ func TestVersionFromVCS(t *testing.T) {
 	}
 }
 
-// A release binary is built with -ldflags, and the build info underneath it
-// still describes a checkout. The flag has to win, or a downloaded kolo calls
-// itself by a commit nobody chose it from.
+// The -ldflags value has to beat the build info underneath it.
 func TestVersionPrefersWhatTheBuildWasToldToSay(t *testing.T) {
 	was := version
 	t.Cleanup(func() { version = was })
@@ -72,8 +68,7 @@ func TestVersionPrefersWhatTheBuildWasToldToSay(t *testing.T) {
 	}
 }
 
-// The line a bug report is asked for. It names the platform and the toolchain
-// as well, because a version on its own is rarely enough to reproduce with.
+// The line a bug report is asked for.
 func TestVersionLineSaysWhatIsNeededToReproduce(t *testing.T) {
 	was := version
 	t.Cleanup(func() { version = was })
@@ -87,8 +82,7 @@ func TestVersionLineSaysWhatIsNeededToReproduce(t *testing.T) {
 	}
 }
 
-// doctor's report is the thing people paste, so it has to say which binary
-// wrote it without being asked separately.
+// The report people paste has to say which binary wrote it.
 func TestDoctorReportOpensWithTheVersion(t *testing.T) {
 	was := version
 	t.Cleanup(func() { version = was })

@@ -20,9 +20,7 @@ import (
 // puzzled is how long an agent may go unrecognised before it counts as a fault.
 const puzzled = 2 * time.Minute
 
-// lookPath is exec.LookPath behind a var, so a test can say what is installed
-// rather than inherit whoever's machine it runs on. Doctor's whole subject is
-// the machine underneath it, which is the one thing a test cannot bring along.
+// Behind a var so a test can say what is installed.
 var lookPath = exec.LookPath
 
 func doctorCmd(args []string) error {
@@ -51,7 +49,6 @@ func doctorCmd(args []string) error {
 }
 
 func doctor(w io.Writer, statePath, kindsPath string) (bool, error) {
-	// First, so a pasted report says which build produced it.
 	fmt.Fprintf(w, "%s\n\n", versionLine())
 	if _, err := adapter.Load(kindsPath); err != nil {
 		fmt.Fprintf(w, "%v\n", err)
@@ -72,18 +69,14 @@ func doctor(w io.Writer, statePath, kindsPath string) (bool, error) {
 	return running(w, state.Agents) && well, nil
 }
 
-// lends is one line per command the org may start here: whether it is there
-// at all, and which of the three things that vary (showing what an agent is
-// doing, stopping it, resuming it after a restart) kolo can do with it.
-// Watching and typing need nothing, so they are not worth a column.
+// One line per command the org may start here.
 func lends(w io.Writer, allows []string, kindsPath string) bool {
 	fmt.Fprintf(w, "what this machine lends\n")
 	well := true
 	var unreadable, missing []string
 	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, command := range allows {
-		// The wildcard is a decision rather than a program, and it is well by
-		// definition: what it lends is whatever turns out to be on PATH.
+		// The wildcard lends whatever turns out to be on PATH.
 		if command == hub.AllowAny {
 			fmt.Fprintf(table, "  *\tok\tany command found on PATH\n")
 			continue
@@ -94,8 +87,7 @@ func lends(w io.Writer, allows []string, kindsPath string) bool {
 		}
 		path, err := lookPath(argv[0])
 		if err != nil {
-			// Why it matters goes under the table: a long command name in a
-			// cell stretches the column for every row above and below it.
+			// Under the table: a long name in a cell stretches every row.
 			fmt.Fprintf(table, "  %s\tmissing\n", command)
 			missing = append(missing, argv[0])
 			well = false
@@ -118,8 +110,6 @@ func lends(w io.Writer, allows []string, kindsPath string) bool {
 			english(missing), verb(missing, "is", "are"),
 			verb(missing, "it", "them"), verb(missing, "it", "them")))
 	}
-	// Once, naming them, rather than the same three lines under every agent
-	// that happens to be unknown.
 	if len(unreadable) > 0 {
 		fmt.Fprintln(w)
 		wrap(w, "  ", fmt.Sprintf("%s %s screens kolo does not know, so the list will not say what %s doing, "+
@@ -132,8 +122,6 @@ func lends(w io.Writer, allows []string, kindsPath string) bool {
 	return well
 }
 
-// verdict is ok when nothing about this kind is missing, partial when
-// something is: the row itself says which.
 func verdict(kind adapter.Adapter) string {
 	if kind.Markers.Blank() || kind.Markers.Busy == "" || len(kind.Resume) == 0 {
 		return "partial"
@@ -141,7 +129,6 @@ func verdict(kind adapter.Adapter) string {
 	return "ok"
 }
 
-// can lists the three that vary, each either working or plainly not.
 func can(kind adapter.Adapter) string {
 	parts := []string{"status", "stop", "resume"}
 	if kind.Markers.Blank() {
@@ -165,8 +152,7 @@ func shown(command, path, program string) string {
 	return command + "  (" + path + ")"
 }
 
-// running is what this machine last wrote down about its own agents: the one
-// place markers that stopped fitting an upgraded CLI show up.
+// The one place markers that stopped fitting an upgraded CLI show up.
 func running(w io.Writer, records []host.Record) bool {
 	fmt.Fprintf(w, "what it is running\n")
 	if len(records) == 0 {
@@ -184,10 +170,8 @@ func running(w io.Writer, records []host.Record) bool {
 		switch {
 		case rec.State != "" && rec.State != "unknown":
 			fmt.Fprintf(table, "  %s\t%s%s\n", rec.Spec.Name, rec.State, held)
-		// A kind nobody described has no markers to stop fitting, so an
-		// unread screen is the limit lends already named, not a fault. Said
-		// here too, because "starting, nothing on its screen yet" promises a
-		// state that is never coming.
+		// A kind nobody described has no markers to stop fitting, so an unread
+		// screen is a limit rather than a fault.
 		case adapter.For(rec.Spec.Command).Markers.Blank():
 			fmt.Fprintf(table, "  %s\trunning%s, and kolo does not read this kind\n", rec.Spec.Name, held)
 		case !rec.Since.IsZero() && time.Since(rec.Since) < puzzled:
@@ -215,7 +199,6 @@ func firstWord(command string) string {
 	return command
 }
 
-// since renders time since t the way a person would say it.
 func since(t time.Time) string {
 	d := time.Since(t)
 	switch {

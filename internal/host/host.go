@@ -25,11 +25,10 @@ const (
 
 	writeTimeout = 10 * time.Second
 
-	// coder/websocket reads 32 KiB by default. What comes down this socket is
-	// the org's commands, and a pasted prompt rides in one of them.
+	// coder/websocket reads 32 KiB by default; a pasted prompt rides in one
+	// of these.
 	controlLimit = 1 << 20
 
-	// How a hub that went away without closing anything is noticed.
 	pingEvery  = 20 * time.Second
 	pingWithin = 10 * time.Second
 )
@@ -118,13 +117,11 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Commands come down while reports go up, neither waiting behind the other.
 	failed := make(chan error, 2)
 	go func() { failed <- obey(ctx, conn, agents) }()
 	go func() { failed <- report(ctx, conn, agents) }()
 	// A hub that went away without closing anything is otherwise never
-	// noticed: nothing is expected of it while the org is quiet, so this
-	// machine would sit lending itself to nobody.
+	// noticed while the org is quiet.
 	go func() {
 		defer cancel()
 		session.Keepalive(ctx, conn, pingEvery, pingWithin)
@@ -147,18 +144,16 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 		}
 		switch c.Type {
 		case "spawn":
-			// The refusal that counts: this machine runs the process. See
-			// hub.Registry.Add for the hub's copy of the checks.
+			// The refusal that counts: this machine runs the process.
+			// hub.Registry.Add holds the hub's copy of the checks.
 			if err := agents.Start(c.Agent); err != nil {
 				agents.report(c.Agent.Name, hub.StatusFailed, err.Error())
 			}
 		case "stop":
 			agents.Stop(c.Name)
 		case "keys":
-			// A keystroke arriving just after the agent stopped isn't worth a
-			// line on everybody's screen, so that stays silent. A refused
-			// paste is worth one: somebody meant to send it, and without this
-			// it disappears with nothing said anywhere.
+			// A late keystroke stays silent; a refused paste does not, since
+			// somebody meant to send it.
 			if err := agents.Type(c.Name, c.Keys); errors.Is(err, relay.ErrTooMuch) {
 				agents.refuse(c.Name, err.Error())
 			}
@@ -215,8 +210,7 @@ type command struct {
 	Agent hub.Agent `json:"agent"`
 }
 
-// wsURL turns a base URL into a websocket one, so https is never silently
-// connected to in the clear.
+// https is never silently connected to in the clear.
 func wsURL(base string) string {
 	base = strings.TrimSuffix(base, "/")
 	switch {

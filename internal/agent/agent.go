@@ -18,7 +18,6 @@ type Agent struct {
 	cmd *exec.Cmd
 	pty *os.File
 
-	// A write must be indivisible, or a line arrives split mid-way.
 	mu sync.Mutex
 }
 
@@ -62,7 +61,6 @@ func (a *Agent) Close() error {
 	return a.pty.Close()
 }
 
-// Pins TERM to what the emulator implements.
 func childEnv(env []string) []string {
 	drop := make(map[string]bool, len(scrubbed)+1)
 	for _, k := range scrubbed {

@@ -22,9 +22,7 @@ func versionCmd(args []string) error {
 	return nil
 }
 
-// versionLine is what this binary calls itself, with the platform and the Go
-// it was built by. A report naming the version alone usually needs a second
-// message asking for the other two.
+// Version, platform and Go build, since a report naming one needs the others.
 func versionLine() string {
 	return fmt.Sprintf("kolo %s %s/%s %s", version, runtime.GOOS, runtime.GOARCH, runtime.Version())
 }

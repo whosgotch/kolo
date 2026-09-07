@@ -26,10 +26,8 @@ func writeState(t *testing.T, state host.State) string {
 	return path
 }
 
-// installed says what this machine has, for the length of one test. Without
-// it these tests read the real PATH, so a report about "claude" passed on a
-// laptop with claude installed and failed everywhere else, including CI,
-// which is where it was finally noticed.
+// Without this these tests read the real PATH, and passed only on machines
+// with the agent installed.
 func installed(t *testing.T, names ...string) {
 	t.Helper()
 	was := lookPath
@@ -71,8 +69,7 @@ func agent(name, dir, command, state string, since time.Time) host.Record {
 }
 
 func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
-	// The file kolo names as the place to describe an agent is the one it
-	// was told to read, not the default path written into a sentence.
+	// The file named is the one it was told to read, not the default path.
 	installed(t, "claude", "sh")
 	kinds := filepath.Join(t.TempDir(), "kinds.json")
 	out, ok := report(t, host.State{Allows: []string{"claude", "sh"}}, kinds)
@@ -82,8 +79,7 @@ func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
 	for _, want := range []string{
 		"claude", "--resume {session}",
 		"sh", "watch and type only",
-		// Wrapped prose is asserted a word at a time: where the lines fall
-		// depends on how long the agent names are.
+		// A word at a time: where the lines fall depends on the agent names.
 		"browser", kinds,
 	} {
 		if !strings.Contains(out, want) {
@@ -92,9 +88,7 @@ func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
 	}
 }
 
-// The cost of an unknown agent is explained once, naming them, however many
-// there are: the same paragraph under each was most of what made the report
-// hard to read.
+// Explained once however many there are, not once per agent.
 func TestDoctorExplainsUnknownAgentsOnce(t *testing.T) {
 	installed(t, "sh", "cat", "env")
 	out, ok := report(t, host.State{Allows: []string{"sh", "cat", "env"}}, absent(t))
@@ -194,9 +188,8 @@ func TestDoctorOnAMachineThatHasDoneNothing(t *testing.T) {
 	}
 }
 
-// A kind nobody described never reads as anything, so time passing is not
-// evidence of a fault: lends already called it a limit, and a setup script
-// that ends in kolo doctor must not fail for lending a plain shell.
+// A kind nobody described never reads as anything, so time passing is not a
+// fault: kolo doctor must not fail for lending a plain shell.
 func TestDoctorDoesNotFaultAnAgentItWasNeverGoingToRead(t *testing.T) {
 	installed(t, "sh")
 	long := time.Now().Add(-3 * 24 * time.Hour)

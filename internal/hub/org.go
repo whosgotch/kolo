@@ -18,20 +18,17 @@ import (
 	"unicode"
 )
 
-// Org is an organisation and the people and machines in it, held in a file
-// the operator edits by hand; a running hub picks up edits as they land.
+// Org is an organisation and the people and machines in it, held in a file the
+// operator edits by hand; a running hub picks up edits as they land.
 type Org struct {
 	Name string `json:"org"`
-	// Where this org is reached, written down by whichever command started
-	// the hub. It is nothing the hub itself reads: it is here so kolo invite
-	// and kolo token can print a link that works from another machine
-	// instead of guessing at loopback.
+	// Where this org is reached, so kolo invite and kolo token can print a link
+	// that works from another machine. Nothing the hub itself reads.
 	Hub     string   `json:"hub,omitempty"`
 	Members []Member `json:"members"`
 	Hosts   []Host   `json:"hosts"`
 	Invites []Invite `json:"invites,omitempty"`
 
-	// Where this was loaded from; empty for an org built in memory.
 	path string
 }
 
@@ -41,8 +38,8 @@ type Host struct {
 	TokenHash string `json:"token_hash"`
 }
 
-// Member is one person in an org. Only the token hash is stored: the file
-// ends up in backups and version control.
+// Member is one person in an org. Only the token hash is stored: the file ends
+// up in backups and version control.
 type Member struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -57,12 +54,9 @@ type Member struct {
 type Invite struct {
 	ID        string `json:"id"`
 	TokenHash string `json:"token_hash"`
-	// The link's own token, kept where a member's never is. An invite
-	// only mints a member and expires on its own, and anyone who can read
-	// this file can already write themselves into it, so storing it costs
-	// nothing and means the one link can be shown again instead of a new
-	// one being minted every time somebody asks for it. Empty for invites
-	// written before kolo kept them.
+	// The link's own token, kept where a member's never is, so the one link can
+	// be shown again. Anyone who can read this file can already write
+	// themselves into it. Empty for invites written before kolo kept them.
 	Token string `json:"token,omitempty"`
 	// When it stops working; always set.
 	Expires time.Time `json:"expires"`
@@ -125,7 +119,7 @@ func SetHost(path string, h Host) (*Org, error) {
 }
 
 // SetHubURL records where this org is reached, for the commands that print
-// links. A hub that has moved says so at its next start.
+// links.
 func SetHubURL(path, url string) (*Org, error) {
 	return update(path, func(o *Org) error { o.Hub = url; return nil })
 }
@@ -160,11 +154,8 @@ func Init(path, name string) (created bool, err error) {
 	return true, nil
 }
 
-// replace writes org into path whole, by writing a file of its own and
-// renaming it over. The temporary carries a name nothing else will pick: a
-// shared one lets two writers write the same file and rename each other's
-// half-finished work into place, which is the opposite of what writing whole
-// and renaming is for.
+// The temporary carries a name nothing else will pick: a shared one lets two
+// writers rename each other's half-finished work into place.
 func replace(path string, org *Org) error {
 	b, err := json.MarshalIndent(org, "", "  ")
 	if err != nil {
@@ -190,15 +181,10 @@ func replace(path string, org *Org) error {
 	return nil
 }
 
-// update rewrites the org file: loaded, changed and written back under a lock
-// held across the whole of it, and written whole and renamed into place, since
-// a concurrently reloading hub must never see a partial file.
-//
-// The lock is what makes several writers safe. Members and invites are both
-// lists inside one file, so two writers that each loaded it before either
-// wrote leave only the later one's work: somebody joins, an invite is
-// withdrawn a moment later, and the member is gone with a token the hub
-// already told them was theirs.
+// update rewrites the org file under a lock held across the whole
+// read-modify-write. Members and invites are lists inside one file, so two
+// writers that each loaded it before either wrote leave only the later one's
+// work.
 func update(path string, change func(*Org) error) (*Org, error) {
 	unlock, err := lock(path)
 	if err != nil {
@@ -222,8 +208,7 @@ func update(path string, change func(*Org) error) (*Org, error) {
 	return org, nil
 }
 
-// validate rejects bad configs; ids share one namespace across members,
-// hosts and invites.
+// ids share one namespace across members, hosts and invites.
 func (o *Org) validate() error {
 	if o.Name == "" {
 		return fmt.Errorf("org needs a name")
@@ -294,8 +279,8 @@ func (o *Org) VerifyMember(token string) (Member, bool) {
 	return found, ok
 }
 
-// knowsMember needn't be constant-time: the hash comes from an already
-// authenticated connection.
+// Needn't be constant-time: the hash comes from an already authenticated
+// connection.
 func (o *Org) knowsMember(hash string) bool {
 	for _, m := range o.Members {
 		if m.TokenHash == hash {
@@ -425,7 +410,7 @@ func Claim(path, token, name string) (org *Org, member Member, memberToken strin
 	return org, member, memberToken, nil
 }
 
-// findInvite is constant-time per invite, like the Verify* methods.
+// Constant-time per invite, like the Verify* methods.
 func (o *Org) findInvite(token string) (int, bool) {
 	want := HashToken(token)
 	found, ok := 0, false
@@ -484,18 +469,9 @@ func (o *Org) Member(id string) (Member, bool) {
 	return Member{}, false
 }
 
-// RemoveMembers takes people out of the org in one write, the counterpart to
-// WithdrawInvites: a link that got somewhere it should not is withdrawn, and
-// somebody who should no longer be here is removed. It is the only way out of
-// an org, so it is worth saying what it does not touch. Agents they started
-// keep running, because an agent belongs to the org rather than to whoever
-// asked for it, and the journal keeps their name against what they did.
-//
-// A hub re-reads this file, so removal reaches a running one on its own,
-// including the connections already open under the token being removed.
-//
-// It removes none of them if any id is not there, for WithdrawInvites'
-// reason: a typo that half-worked would be worse than one that did nothing.
+// RemoveMembers takes people out of the org in one write. Agents they started
+// keep running, and the journal keeps their name against what they did. It
+// removes none of them if any id is not there.
 func RemoveMembers(path string, ids []string) (_ *Org, gone []string, err error) {
 	want := map[string]bool{}
 	for _, id := range ids {
@@ -531,10 +507,9 @@ func WithdrawInvite(path, id string) (*Org, error) {
 	return org, err
 }
 
-// WithdrawInvites removes several links in one write, so withdrawing a
-// drawer of stale ones is one command rather than one command each. It
-// removes none of them if any name is not there: a typo that half-worked
-// would be worse than one that did nothing.
+// WithdrawInvites removes several links in one write. It removes none of them
+// if any name is not there: a typo that half-worked would be worse than one
+// that did nothing.
 func WithdrawInvites(path string, ids []string) (_ *Org, gone []string, err error) {
 	want := map[string]bool{}
 	for _, id := range ids {

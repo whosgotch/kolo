@@ -52,8 +52,7 @@ func upCmd(args []string) error {
 	} else if err := resolveDirs(dirs); err != nil {
 		return err
 	}
-	// Before the -allow default below, so kinds configured here are offered
-	// if found installed.
+	// Before the -allow default below, so kinds configured here are offered.
 	if err := loadKinds(*kinds); err != nil {
 		return err
 	}
@@ -67,8 +66,7 @@ func upCmd(args []string) error {
 		}
 	}
 
-	// Every org write happens before the hub starts: it reads the file once
-	// and never again.
+	// Every org write happens before the hub starts.
 	created, err := hub.Init(*orgPath, orgName(*name))
 	if err != nil {
 		return err
@@ -77,7 +75,7 @@ func upCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	// Fresh every start; nothing keeps it. It goes straight to the host half.
+	// Fresh every start; goes straight to the host half.
 	hostToken, hostHash, err := hub.NewToken()
 	if err != nil {
 		return err
@@ -86,8 +84,7 @@ func upCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	// One standing link rather than a new one per start: an org ends up with
-	// a single invite it can always show, not a drawer of them.
+	// One standing link rather than a new one per start.
 	org, invite, minted, err := standingInvite(*orgPath, org)
 	if err != nil {
 		return err
@@ -106,8 +103,7 @@ func upCmd(args []string) error {
 	}
 	defer s.Close()
 
-	// shown is for people; local is what the host half dials. They differ
-	// with TLS: the org arrives by name over https, the host stays local.
+	// shown is for people; local is what the host half dials.
 	shown := browseURL(s.Addr())
 	local := "http://" + net.JoinHostPort("127.0.0.1", portOf(s.Addr()))
 	if len(domains) > 0 {
@@ -122,8 +118,7 @@ func upCmd(args []string) error {
 		local = "http://" + loopback
 	}
 
-	// Written down so kolo invite and kolo token print a link somebody else
-	// can open, rather than the loopback address they used to guess at.
+	// So kolo invite and kolo token print a link somebody else can open.
 	if _, err := hub.SetHubURL(*orgPath, shown); err != nil {
 		return err
 	}
@@ -135,8 +130,7 @@ func upCmd(args []string) error {
 		s.Close()
 	}()
 
-	// The host half dials the hub half like any other host would. One
-	// process is a deployment, not a second code path.
+	// The host half dials the hub half like any other host would.
 	agents := host.NewAgents(host.Config{
 		Hub:     local,
 		Token:   hostToken,
@@ -149,8 +143,6 @@ func upCmd(args []string) error {
 	served := make(chan error, 1)
 	go func() { served <- s.Serve() }()
 
-	// Four lines and a link: what somebody starting kolo has to know, with
-	// everything else a command away.
 	if created {
 		fmt.Printf("Created %s for %s.\n", *orgPath, org.Name)
 	}
@@ -185,8 +177,7 @@ func upCmd(args []string) error {
 			log.Printf("%v; retrying in %s", e.Err, e.Retry.Round(100_000_000))
 		}
 	})
-	// host.Run returns on signal, which also closes the hub; a Serve that
-	// ended on its own is the interesting error.
+	// host.Run returns on signal, which also closes the hub.
 	select {
 	case err := <-served:
 		return err
@@ -195,8 +186,6 @@ func upCmd(args []string) error {
 	}
 }
 
-// Same bounds kolo invite offers unless told otherwise, under the name kolo
-// keeps its standing link by.
 const (
 	inviteDays  = 7
 	defaultUses = 10
@@ -219,7 +208,6 @@ func orgName(given string) string {
 	return "kolo"
 }
 
-// machineID is the hostname, minus a trailing .local and the like.
 func machineID() (string, error) {
 	name, err := os.Hostname()
 	if err != nil {
@@ -231,7 +219,7 @@ func machineID() (string, error) {
 	return name, nil
 }
 
-// browseURL turns 0.0.0.0 into this machine's LAN address, for people to open.
+// 0.0.0.0 becomes this machine's LAN address, for people to open.
 func browseURL(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -289,9 +277,8 @@ func strayOrg(fs *flag.FlagSet) {
 		"pass -org org.json to use that one instead, or delete it.\n", cwd, config.Dir())
 }
 
-// standingInvite returns the org's one standing link, minting it only when
-// there isn't one to show: live invites made before kolo kept their tokens
-// can't be printed again, so they are replaced rather than left in the way.
+// Minted only when there isn't one to show: an invite made before kolo kept
+// its token can't be printed again, so it is replaced.
 func standingInvite(orgPath string, org *hub.Org) (_ *hub.Org, _ hub.Invite, minted bool, err error) {
 	if v, ok := org.Invite(standingID); ok && v.Showable(time.Now()) {
 		return org, v, false, nil

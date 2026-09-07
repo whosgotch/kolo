@@ -14,8 +14,7 @@ import (
 	"unicode/utf8"
 )
 
-// What one entry says happened. The set is small on purpose: a journal nobody
-// reads to the end is one nobody trusts.
+// What one entry says happened.
 const (
 	WhatCreated     = "created"
 	WhatSaid        = "said"
@@ -29,17 +28,13 @@ const (
 )
 
 const (
-	// How much history is kept. Both bounds apply: an org that talks all day
-	// stops at the count, one that works a week a month stops at the age.
 	keepEntries = 5000
 	keepFor     = 30 * 24 * time.Hour
-
-	// A said line is longer than a label because it is somebody's sentence.
-	maxSaid = 500
+	maxSaid     = 500
 )
 
-// Entry is one thing that happened to one agent, and who did it. Who is absent
-// when nobody did: an agent going quiet is news with no author.
+// Entry is one thing that happened to one agent. Who is absent when nobody
+// did it.
 type Entry struct {
 	At    time.Time `json:"at"`
 	Agent string    `json:"agent"`
@@ -48,20 +43,12 @@ type Entry struct {
 	Text  string    `json:"text,omitempty"`
 }
 
-// journal is the org's record of who asked for what.
-//
-// It lives on the hub because that is the only place a member's identity is
-// known, and because it has to outlive the machines: a host that disconnects
-// takes its agents off the list, and the record of what they did is not the
-// host's to take with it.
 type journal struct {
 	mu      sync.Mutex
 	file    *os.File
 	entries []Entry
-	// A partly typed line per agent, waiting for the Enter that makes it a
-	// sentence. See typed.
-	typing map[string]line
-	now    func() time.Time
+	typing  map[string]line
+	now     func() time.Time
 }
 
 type line struct {
@@ -69,9 +56,6 @@ type line struct {
 	text string
 }
 
-// journalPath puts the journal beside the org file it belongs to. An org with
-// no file gets no journal file either, which is a test's case and nothing
-// else's.
 func journalPath(org string) string {
 	if org == "" {
 		return ""
@@ -79,10 +63,8 @@ func journalPath(org string) string {
 	return filepath.Join(filepath.Dir(org), "journal.jsonl")
 }
 
-// openJournal reads back what is on disk and appends to it. The journal it
-// returns is usable whether or not the error is nil: losing the history is bad,
-// and a hub that will not start because of it is worse, so a caller that cannot
-// open the file says so and carries on in memory.
+// The journal returned is usable whether or not the error is nil, so a hub
+// that cannot open the file carries on in memory rather than refusing to start.
 func openJournal(path string) (*journal, error) {
 	j := &journal{typing: map[string]line{}, now: time.Now}
 	if path == "" {
@@ -95,8 +77,6 @@ func openJournal(path string) (*journal, error) {
 	}
 	j.entries = kept
 
-	// Rewritten only when something was dropped, so the usual start is a read
-	// and an open rather than a rewrite of the whole file.
 	if trimmed {
 		if err := writeJournal(path, kept); err != nil {
 			return j, err
@@ -121,9 +101,6 @@ func (j *journal) Close() error {
 	return err
 }
 
-// add records something that happened. Failing to write it down is not worth
-// failing the action that was written about, so the error goes nowhere: the
-// entry is in memory either way and the next read still sees it.
 func (j *journal) add(e Entry) {
 	e.At = j.now()
 	switch e.What {
@@ -148,8 +125,6 @@ func (j *journal) add(e Entry) {
 	}
 }
 
-// tail is the last entries, oldest first. An empty agent is every agent, which
-// is what the list of agents wants and one agent's page does not.
 func (j *journal) tail(agent string, limit int) []Entry {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -164,9 +139,6 @@ func (j *journal) tail(agent string, limit int) []Entry {
 	return out
 }
 
-// readJournal loads a journal file, dropping what has aged out. A line that will
-// not parse is skipped rather than fatal: the tail of a file a machine died
-// while writing is half a line, and the rest of the history is still good.
 func readJournal(path string, now time.Time) (kept []Entry, trimmed bool, err error) {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
@@ -198,9 +170,8 @@ func readJournal(path string, now time.Time) (kept []Entry, trimmed bool, err er
 	return kept, trimmed, nil
 }
 
-// writeJournal rewrites the file whole. The temporary carries a name nothing
-// else will pick, for the reason Org.replace does: a shared one lets two of
-// these write the same file and rename each other's half of it into place.
+// The temporary carries a name nothing else will pick, as in Org.replace: a
+// shared one lets two writers rename each other's half-finished work into place.
 func writeJournal(path string, entries []Entry) error {
 	dir, base := filepath.Split(path)
 	f, err := os.CreateTemp(dir, base+".*")
@@ -227,16 +198,6 @@ func writeJournal(path string, entries []Entry) error {
 	return nil
 }
 
-// typed reconstructs the line a member is sending from the keystrokes the hub is
-// passing on, and records it when they press Enter.
-//
-// A reconstruction rather than a transcript: the hub sees keys, not messages,
-// and reading the message off the screen instead would need the per-agent
-// knowledge the hub deliberately does not have. A paste, a completion the agent
-// filled in, or a menu chosen with the arrow keys will not read back exactly.
-//
-// Nothing is written down until Enter, so a line abandoned half typed is never
-// recorded, and the member credited is the one whose keys the hub passed on.
 func (j *journal) typed(agent string, who Person, keys string) {
 	j.mu.Lock()
 	held := j.typing[agent]
@@ -257,8 +218,6 @@ func (j *journal) typed(agent string, who Person, keys string) {
 				held.text = held.text[:n-size]
 			}
 		default:
-			// Bounded here as well as at the entry, so a member holding a key down
-			// cannot grow the buffer without ever pressing Enter.
 			if len(held.text) < maxSaid {
 				held.text += string(r)
 			}
@@ -274,18 +233,12 @@ func (j *journal) typed(agent string, who Person, keys string) {
 	j.typing[agent] = held
 }
 
-// forget drops a half typed line. What interrupts, restarts and stops have in
-// common is that whatever was on the input line is not going to be sent.
 func (j *journal) forget(agent string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	delete(j.typing, agent)
 }
 
-// strip removes the escape sequences a browser's terminal encodes arrow keys and
-// the like as, leaving the characters that make up a sentence. Anything it does
-// not understand it drops, which is the right way round: a stray escape in the
-// journal is somebody else's terminal doing something surprising.
 func strip(keys string) string {
 	var b strings.Builder
 	for i := 0; i < len(keys); i++ {
@@ -293,8 +246,6 @@ func strip(keys string) string {
 			b.WriteByte(keys[i])
 			continue
 		}
-		// CSI and OSC run until a byte in their own range; anything else after an
-		// escape is a two-byte sequence.
 		i++
 		if i < len(keys) && (keys[i] == '[' || keys[i] == 'O') {
 			for i++; i < len(keys) && keys[i] >= 0x20 && keys[i] < 0x40; i++ {

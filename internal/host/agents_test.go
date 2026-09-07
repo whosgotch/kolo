@@ -561,9 +561,8 @@ func TestTheStateFileSaysHowAScreenIsReading(t *testing.T) {
 	}
 }
 
-// TestAHostThatLendsAnyCommandRunsWhatsOnItsPath: with '*' the machine runs any
-// command named like one on PATH, and refuses a path or a program that is not
-// there. The hub cannot know either, so this is where both are found out.
+// With '*' the machine runs anything named like a command on PATH. The hub
+// cannot know, so this is where it is found out.
 func TestAHostThatLendsAnyCommandRunsWhatsOnItsPath(t *testing.T) {
 	dir := t.TempDir()
 	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{hub.AllowAny}}, "")
@@ -588,10 +587,7 @@ func TestAHostThatLendsAnyCommandRunsWhatsOnItsPath(t *testing.T) {
 	}
 }
 
-// TestAgentsThatNameTheirConversationsShareADirectory: the same rule the hub
-// checks, from the machine that actually knows the kinds. Two agents of a kind
-// that names its conversations work one directory; a kind that asks for "the
-// last conversation here" does not join them.
+// The same rule hub.Registry.Add checks, from the machine that knows the kinds.
 func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
 	robo(t)
 	dir := t.TempDir()
@@ -609,9 +605,7 @@ func TestAgentsThatNameTheirConversationsShareADirectory(t *testing.T) {
 	nextReport(t, a)
 }
 
-// TestTwoAgentsOfAPinnedKindShareADirectory: claude's arrangement, rehearsed
-// with a fake. Each agent is given its own identity at birth and comes back to
-// it at a restart, so neither can ever come back as the other.
+// Each agent gets its own identity at birth and comes back to it at a restart.
 func TestTwoAgentsOfAPinnedKindShareADirectory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kinds.json")
 	body := `{"pind": {"markers": {"busy": "working"},
@@ -651,9 +645,8 @@ sleep 30
 	}
 }
 
-// TestDifferentKindsShareADirectory: a claude and an opencode in one directory
-// cannot come back as each other: each kind's "last conversation here" is
-// read from a store the other never writes to.
+// Each kind's "last conversation here" comes from a store the other never
+// writes to.
 func TestDifferentKindsShareADirectory(t *testing.T) {
 	dir := t.TempDir()
 	claude := fakeAgentNamed(t, dir, "claude", `printf '? for shortcuts\r\n'

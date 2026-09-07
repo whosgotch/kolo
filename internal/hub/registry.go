@@ -23,16 +23,11 @@ const (
 const maxLabel = 64
 
 // AllowAny is the -allow entry that lends every command on the host's PATH.
-// A command under it is still named like one on PATH: program name, no directory.
 const AllowAny = "*"
 
-// DirAny is the -dir entry that lends the host's whole filesystem: agents may
-// be started in any directory.
+// DirAny is the -dir entry that lends the host's whole filesystem.
 const DirAny = "*"
 
-// runs reports whether a host lending allow may be asked to start command:
-// one of the command lines it named, or anything on PATH when it lent '*'.
-// Syntax only; whether the program exists is checked on the host.
 func runs(allow []string, command string) bool {
 	if slices.Contains(allow, command) {
 		return true
@@ -58,11 +53,9 @@ func (h *host) resumesByName(command string) bool {
 	return slices.Contains(h.info.ByName, command)
 }
 
-// Agent is one agent a host was asked to run. Name is its identifier: it
-// addresses the agent in every URL and protocol message, host included, so
-// it does not change once picked. Label is a member's own word for it, the
-// hub's alone to know: renaming is a label edit, nothing a host needs
-// telling or a live connection needs reopening for.
+// Agent is one agent a host was asked to run. Name addresses it in every URL
+// and protocol message, so it does not change once picked. Label is a member's
+// own word for it and the hub's alone to know.
 type Agent struct {
 	Name      string    `json:"name"`
 	Label     string    `json:"label,omitempty"`
@@ -79,15 +72,12 @@ type HostInfo struct {
 	ID    string   `json:"id"`
 	Dirs  []string `json:"dirs"`
 	Allow []string `json:"allow"`
-	// Found is which of the agent kinds kolo has heard of this machine has
-	// installed, offered as suggestions when the host lends any command.
-	// Suggestion is all it is: nothing here decides what may start.
+	// Which agent kinds kolo knows of are installed here. A suggestion only:
+	// nothing here decides what may start.
 	Found []string `json:"found,omitempty"`
-	// ByName is which of the lent commands resume by naming their
-	// conversation rather than asking for the last one. The host's word, not
-	// looked up here: what a kind does on restart is its machine's to know,
-	// and this is only carried so the one-agent-per-directory rule can bend
-	// where it is safe.
+	// Which lent commands resume by naming their conversation rather than
+	// asking for the last one. The host's word, carried so the
+	// one-agent-per-directory rule can bend where it is safe.
 	ByName []string  `json:"by_name,omitempty"`
 	Since  time.Time `json:"since"`
 }
@@ -139,9 +129,7 @@ func (r *Registry) Join(id string, dirs, allow, found, byName []string, running 
 	return nil
 }
 
-// Leave drops a host and reports the agents that went out of reach with it, which
-// is news the org is owed: they may still be running, but nothing here can watch
-// or stop them.
+// Leave drops a host and reports the agents that went out of reach with it.
 func (r *Registry) Leave(id string) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -218,9 +206,6 @@ func (r *Registry) Add(a Agent) (Sender, error) {
 		}
 		return nil, fmt.Errorf("%s does not run %s", a.Host, a.Command)
 	}
-	// One agent of each kind to a directory: a kind resuming "the last
-	// conversation here" would come back as its neighbour. Naming or pinning
-	// an id proves ownership, so such kinds may share.
 	for _, other := range h.agents {
 		if other.Dir != a.Dir {
 			continue
@@ -246,9 +231,8 @@ func (r *Registry) SetStatus(name, status, reason string) {
 	}
 }
 
-// SetLabel changes what an agent is called on screen. Name, which the host
-// and every open connection address it by, is untouched. This is the hub's
-// own field, so nothing beyond the registry needs to hear about it.
+// SetLabel changes what an agent is called on screen. Name, which the host and
+// every open connection address it by, is untouched.
 func (r *Registry) SetLabel(name, label string) (Agent, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -282,7 +266,7 @@ func (r *Registry) Remove(name string) (Sender, bool) {
 	return h.send, true
 }
 
-// find locates an agent by name across every host. Callers must hold r.mu.
+// Callers must hold r.mu.
 func (r *Registry) find(name string) (*Agent, *host) {
 	for _, h := range r.hosts {
 		if a, ok := h.agents[name]; ok {
@@ -308,8 +292,6 @@ func ValidName(s string) bool {
 	return true
 }
 
-// label reduces a client-chosen string to something safe to print; the bound
-// is the caller's.
 func label(s string, max int) string {
 	var b strings.Builder
 	for _, r := range strings.ToValidUTF8(s, "") {
