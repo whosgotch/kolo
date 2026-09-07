@@ -423,7 +423,13 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	created, _ := s.registry.Agent(agent.Name)
+	created, ok := s.registry.Agent(agent.Name)
+	if !ok {
+		// Deleted between the add and this read; spawning it now would ask the
+		// host for an agent nothing here is tracking.
+		http.Error(w, "the agent was stopped before it started", http.StatusConflict)
+		return
+	}
 	s.journal.add(Entry{
 		Agent: created.Name, What: WhatCreated, Who: member.Person(),
 		Text: created.Dir + " · " + created.Command,
