@@ -102,6 +102,13 @@ func (j *journal) Close() error {
 }
 
 func (j *journal) add(e Entry) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.addLocked(e)
+}
+
+// Callers must hold j.mu.
+func (j *journal) addLocked(e Entry) {
 	e.At = j.now()
 	switch e.What {
 	case WhatSaid:
@@ -109,9 +116,6 @@ func (j *journal) add(e Entry) {
 	default:
 		e.Text = label(e.Text, maxLabel)
 	}
-
-	j.mu.Lock()
-	defer j.mu.Unlock()
 
 	j.entries = append(j.entries, e)
 	if len(j.entries) > keepEntries {
@@ -198,11 +202,14 @@ func writeJournal(path string, entries []Entry) error {
 	return nil
 }
 
+// The lock is held throughout: two members typing at one agent otherwise read
+// the same half-line, and the second to finish writes the first one's
+// keystrokes back out.
 func (j *journal) typed(agent string, who Person, keys string) {
 	j.mu.Lock()
-	held := j.typing[agent]
-	j.mu.Unlock()
+	defer j.mu.Unlock()
 
+	held := j.typing[agent]
 	held.who = who
 	for _, r := range strip(keys) {
 		switch r {
@@ -210,7 +217,7 @@ func (j *journal) typed(agent string, who Person, keys string) {
 			said := strings.TrimSpace(held.text)
 			held.text = ""
 			if said != "" {
-				j.add(Entry{Agent: agent, What: WhatSaid, Who: who, Text: said})
+				j.addLocked(Entry{Agent: agent, What: WhatSaid, Who: who, Text: said})
 			}
 		case 0x7f, 0x08:
 			if n := len(held.text); n > 0 {
@@ -224,8 +231,6 @@ func (j *journal) typed(agent string, who Person, keys string) {
 		}
 	}
 
-	j.mu.Lock()
-	defer j.mu.Unlock()
 	if held.text == "" {
 		delete(j.typing, agent)
 		return
