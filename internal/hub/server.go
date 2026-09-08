@@ -23,17 +23,10 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
-// The org's page, compiled into the binary. It sits here rather than in a
-// package of its own because the hub is the only thing that serves it, and
-// go:embed reaches into a directory below the package it is written in but
-// never outside one.
-//
 //go:embed ui
 var files embed.FS
 
-// pages is files rooted at ui, so every path below is the path a browser asks
-// for: index.html, assets/xterm.js. Sub cannot fail on a directory the
-// compiler has just proved is there.
+// Rooted at ui, so every path below is the path a browser asks for.
 var pages, _ = fs.Sub(files, "ui")
 
 const (
@@ -41,20 +34,13 @@ const (
 	writeTimeout = 10 * time.Second
 )
 
-// What one frame may be. coder/websocket reads 32 KiB by default, which a
-// repaint outgrows: a snapshot is as big as the screen it redraws, and a
-// 120x40 grid in per-cell colour measures over 100 KB. The frame that is
-// refused is the first one a host sends, so the host reconnects and sends the
-// same one again for as long as the agent keeps drawing, and the agent simply
-// never appears.
+// coder/websocket reads 32 KiB by default, which a repaint outgrows: a 120x40
+// grid in per-cell colour measures over 100 KB.
 const (
 	screenLimit  = 4 << 20
 	controlLimit = 1 << 20
 )
 
-// How often a live connection is pinged, and how long a ping may go
-// unanswered before the peer counts as gone. Carried on the server rather
-// than read straight from here, so a test need not wait half a minute.
 const (
 	pingEvery  = 20 * time.Second
 	pingWithin = 10 * time.Second
@@ -71,6 +57,9 @@ type Server struct {
 	journal  *journal
 	// Held across any read-modify-write of the org file.
 	orgFile sync.Mutex
+	// Last read error for the org file, so a lasting one is logged once.
+	// Under orgFile.
+	unreadable string
 	// Open connections, so revocation reaches streams, not just next requests.
 	conns *conns
 	ln    net.Listener
@@ -83,7 +72,6 @@ type Server struct {
 	serving bool
 	extra   []net.Listener
 
-	// How a peer that stopped answering is noticed. See pingEvery.
 	ping, pingBy time.Duration
 
 	// Cancelled by Close, the only way to reach hijacked websockets.
@@ -104,9 +92,6 @@ func Listen(org *Org, addr string) (*Server, error) {
 		ping: pingEvery, pingBy: pingWithin,
 	}
 
-	// Beside the org file, because the record is the org's rather than the
-	// machine's. Moving one moves the other. An org with no file behind it keeps
-	// its journal in memory, which is what a test has and nothing else does.
 	s.journal, err = openJournal(journalPath(org.path))
 	if err != nil {
 		log.Printf("hub: %v. This run is not being written down", err)
@@ -129,15 +114,8 @@ func Listen(org *Org, addr string) (*Server, error) {
 	mux.HandleFunc("GET /{$}", s.handlePage)
 
 	// No other site's page may make kolo do something on a member's behalf.
-	// Safe methods are left alone, so the websockets, which upgrade on GET,
-	// keep their own Origin check and nothing else changes. A request with
-	// neither Sec-Fetch-Site nor Origin is a program rather than a page, so
-	// curl and the host half are unaffected.
-	//
-	// Worth having even though every mutating route already needs a token:
-	// /login mints the session rather than requiring one, so without this a
-	// page elsewhere could put somebody on a member they did not choose, and
-	// the log would carry that name against what they went on to do.
+	// /login mints a session rather than requiring one, so without this a page
+	// elsewhere could put somebody on a member they did not choose.
 	s.srv = &http.Server{Handler: http.NewCrossOriginProtection().Handler(mux)}
 	return s, nil
 }
@@ -252,16 +230,14 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request, token string) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		// Lax: mutating routes are POST or DELETE, and cross-site ones carry
-		// no cookie.
+		// Mutating routes are POST or DELETE, and cross-site ones carry no cookie.
 		SameSite: http.SameSiteLaxMode,
 		Secure:   overTLS(r),
 		MaxAge:   int((90 * 24 * time.Hour).Seconds()),
 	})
 }
 
-// handleJoinPage serves the join form. The invite rides in the URL fragment,
-// which never reaches the server.
+// The invite rides in the URL fragment, which never reaches the server.
 func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 	page, err := template.ParseFS(pages, "join.html")
 	if err != nil {
@@ -286,7 +262,6 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// One claim at a time: Claim reads and writes the org file.
 	s.orgFile.Lock()
 	defer s.orgFile.Unlock()
 
@@ -316,7 +291,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// overTLS reports whether this request arrived encrypted, proxy or not.
 func overTLS(r *http.Request) bool {
 	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
@@ -332,7 +306,6 @@ func (s *Server) authenticateHost(r *http.Request) (Host, bool) {
 func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	h, ok := s.authenticateHost(r)
 	if !ok {
-		// Before the upgrade, so refusals are a status code, not a dead socket.
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -359,7 +332,6 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		session.Keepalive(ctx, conn, s.ping, s.pingBy)
 	}()
 
-	// Recorded before the hello, so removal during connect drops the conn.
 	defer s.conns.add(held{id: h.ID, hash: h.TokenHash, isHost: true, cancel: cancel})()
 
 	hello, err := read[hostHello](ctx, conn, helloTimeout)
@@ -389,7 +361,6 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		// Unrecognised types are ignored, so newer hosts suit older hubs.
 		if report.Type == "status" {
 			s.registry.SetStatus(report.Name, report.Status, label(report.Error, maxLabel))
 			if report.Status == StatusFailed {
@@ -413,8 +384,6 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleLog is the record of who asked for what: an agent's own history, or
-// the whole org's when no agent is named.
 func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authenticate(r); !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -457,13 +426,18 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	created, _ := s.registry.Agent(agent.Name)
+	created, ok := s.registry.Agent(agent.Name)
+	if !ok {
+		// Deleted between the add and this read; spawning it now would ask the
+		// host for an agent nothing here is tracking.
+		http.Error(w, "the agent was stopped before it started", http.StatusConflict)
+		return
+	}
 	s.journal.add(Entry{
 		Agent: created.Name, What: WhatCreated, Who: member.Person(),
 		Text: created.Dir + " · " + created.Command,
 	})
 	if err := send(spawn{Type: "spawn", Agent: created}); err != nil {
-		// The host vanished between choosing and asking; drop the phantom.
 		s.registry.Remove(agent.Name)
 		s.journal.add(Entry{Agent: agent.Name, What: WhatFailed, Text: "the host went away"})
 		http.Error(w, "the host went away", http.StatusServiceUnavailable)
@@ -508,7 +482,6 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.journal.add(Entry{Agent: name, What: WhatStopped, Who: member.Person()})
 	s.journal.forget(name)
-	// A failed send means the host is already gone, which is the wanted state.
 	send(stop{Type: "stop", Name: name})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -531,7 +504,6 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
-	// Repaints arrive here, so this is the one that has to be generous.
 	conn.SetReadLimit(screenLimit)
 
 	ctx, cancel := context.WithCancel(s.ctx)
@@ -555,7 +527,6 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Markers come from the host; the hub knows no agent kinds itself.
 	live := s.screens.open(name, hello.Cols, hello.Rows, hello.Markers)
 	defer s.screens.close(name, live)
 
@@ -564,7 +535,6 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		// Binary goes onto the screen; text is kolo's own, announced unread.
 		if kind == websocket.MessageBinary {
 			live.Write(data)
 		} else {
@@ -591,12 +561,10 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
-	// A pasted prompt arrives as one keys message, so this is not 32 KiB either.
 	conn.SetReadLimit(controlLimit)
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
-	// Revocation has to reach open streams, not just later requests.
 	defer s.conns.add(held{id: member.ID, hash: member.TokenHash, cancel: cancel})()
 	go func() {
 		defer cancel()
@@ -618,13 +586,19 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	if err := session.Send(ctx, conn, catchUp(live)); err != nil {
 		return
 	}
-	// Joiners learn who typed last.
+	// To this joiner alone. Announce would send it to everybody watching, who
+	// have known who holds the keyboard since they arrived.
 	if who, typed := s.typists.get(name); typed {
-		live.Announce(struct {
+		b, err := json.Marshal(struct {
 			Type string `json:"type"`
 			Who  string `json:"who"`
 			ID   string `json:"id"`
 		}{"keyboard", who.Name, who.ID})
+		if err == nil {
+			if err := session.Send(ctx, conn, session.Message{Control: true, Data: b}); err != nil {
+				return
+			}
+		}
 	}
 	for {
 		select {
@@ -641,7 +615,6 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// catchUp announces the agent state a joiner missed before subscribing.
 func catchUp(live *session.Session) session.Message {
 	b, _ := json.Marshal(struct {
 		Type  string `json:"type"`
@@ -650,8 +623,8 @@ func catchUp(live *session.Session) session.Message {
 	return session.Message{Control: true, Data: b}
 }
 
-// takeFrom relays a member's messages to the host. Who a message is from
-// comes from the connection's credentials, never from the message.
+// Who a message is from comes from the connection's credentials, never from
+// the message.
 func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Member, name string) {
 	for {
 		msg, err := read[viewerMessage](ctx, conn, 0)
@@ -663,13 +636,11 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 			if msg.Keys == "" {
 				continue
 			}
-			// Typing is claiming: whoever's keys arrive last is the typist.
 			if was, changed := s.typists.set(name, member.Person()); changed {
 				s.sayKeyboard(name, member.Person(), was)
 			}
 			s.journal.typed(name, member.Person(), msg.Keys)
 		case "interrupt", "restart", "fresh":
-			// Whatever was half typed is not going to be sent now.
 			s.journal.add(Entry{Agent: name, What: done(msg.Type), Who: member.Person()})
 			s.journal.forget(name)
 		default:
@@ -707,8 +678,8 @@ func (s *Server) sayKeyboard(name string, who, was Person) {
 	}{"keyboard", who.Name, who.ID, was.Name})
 }
 
-// sender serialises writes to one host: two members dispatching at once must
-// not interleave frames on one websocket.
+// Serialises writes to one host: two members dispatching at once must not
+// interleave frames on one websocket.
 func sender(ctx context.Context, conn *websocket.Conn) Sender {
 	var mu sync.Mutex
 	return func(v any) error {
@@ -718,8 +689,6 @@ func sender(ctx context.Context, conn *websocket.Conn) Sender {
 	}
 }
 
-// build is what a host says it is running. Hosts that predate the hub reading
-// this said nothing, which is worth a word of its own rather than a blank.
 func build(version string) string {
 	if version == "" {
 		return "an unknown build"
@@ -739,7 +708,6 @@ type hostHello struct {
 
 type viewerMessage struct {
 	Type string `json:"type"`
-	// Raw terminal input, already encoded by the browser.
 	Keys string `json:"keys"`
 }
 
@@ -770,7 +738,6 @@ type agentReport struct {
 	Error  string `json:"error"`
 }
 
-// spawn carries the whole record; hosts replay it in their hello on reconnect.
 type spawn struct {
 	Type  string `json:"type"`
 	Agent Agent  `json:"agent"`
@@ -799,16 +766,14 @@ type listResponse struct {
 	Agents []Agent    `json:"agents"`
 }
 
-// defaultEntries is enough for a page to open on, without a browser that asked
-// for nothing being sent a month.
 const defaultEntries = 100
 
 type logResponse struct {
 	Entries []Entry `json:"entries"`
 }
 
-// read takes one JSON text frame; timeout 0 waits on ctx. An unreadable
-// frame yields the zero value, so new hosts suit old hubs.
+// Timeout 0 waits on ctx. An unreadable frame yields the zero value, so new
+// hosts suit old hubs.
 func read[T any](ctx context.Context, conn *websocket.Conn, timeout time.Duration) (T, error) {
 	var v T
 	if timeout > 0 {

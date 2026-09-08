@@ -53,8 +53,7 @@ func inviteCmd(args []string) error {
 		return fmt.Errorf("-days must be at least 1: an invite that has already expired is one nobody can use")
 	}
 
-	// The standing link unless it can't serve: gone, expired, spent, or made
-	// before kolo kept the token and so unshowable.
+	// The standing link unless it is gone, expired, spent or unshowable.
 	v, ok := org.Invite(*id)
 	made := false
 	if *fresh || !ok || !v.Showable(time.Now()) {
@@ -78,9 +77,6 @@ func inviteCmd(args []string) error {
 	return nil
 }
 
-// withdraw kills links by name, and by the two words that stand for a set of
-// them: an org that ended up with a drawer full has no interest in naming
-// each one.
 func withdraw(orgPath string, org *hub.Org, named []string) error {
 	ids, err := resolve(org, named)
 	if err != nil {
@@ -103,9 +99,7 @@ func withdraw(orgPath string, org *hub.Org, named []string) error {
 	return nil
 }
 
-// resolve turns what was asked for into invite ids: a name is itself, and
-// all and spent stand for a set, unless an invite is actually called that,
-// in which case its own name wins.
+// all and spent stand for a set, unless an invite is actually called that.
 func resolve(org *hub.Org, named []string) ([]string, error) {
 	var ids []string
 	seen := map[string]bool{}
@@ -138,9 +132,7 @@ func resolve(org *hub.Org, named []string) ([]string, error) {
 	return ids, nil
 }
 
-// listInvites is the table kolo up used to print on every start, and now
-// also what an org reads before deciding which links to be rid of, so it
-// shows the dead ones too, which are exactly the ones worth withdrawing.
+// Shows dead links too: those are the ones worth withdrawing.
 func listInvites(org *hub.Org) error {
 	if len(org.Invites) == 0 {
 		fmt.Printf("No links at all. kolo invite makes one.\n")

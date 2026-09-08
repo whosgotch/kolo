@@ -8,19 +8,15 @@ import (
 	"runtime/debug"
 )
 
-// version is what a host reports to the hub, and nothing stamps it at build
-// time: the toolchain has already written down where the binary came from, so
-// it is read back out rather than passed in.
+// What a host reports to the hub, read back out of the build rather than
+// passed in.
 var version = "dev"
 
 func init() { stamped() }
 
-// stamped fills in version from whatever the build left behind.
 func stamped() {
 	// A release build says what it is with -ldflags, and nothing below may
-	// argue: at a tagged commit the toolchain still reports the commit, and a
-	// binary somebody downloaded should call itself by the tag they chose it
-	// from.
+	// argue: at a tagged commit the toolchain still reports the commit.
 	if version != "dev" {
 		return
 	}
@@ -28,10 +24,8 @@ func stamped() {
 	if !ok {
 		return
 	}
-	// Built from a checkout: go build or go install of a path here. The
-	// commit is read before Main.Version because Main.Version holds a
-	// synthesised pseudo-version in this case (v0.0.0-<time>-<commit>), and
-	// the commit alone is the half of that anybody reads.
+	// Built from a checkout. The commit is read before Main.Version, which
+	// here holds a pseudo-version whose readable half is the commit.
 	if revision, dirty, ok := fromVCS(info); ok {
 		version = revision
 		if dirty {
@@ -39,16 +33,12 @@ func stamped() {
 		}
 		return
 	}
-	// Released: go install pkg@version, and the proxy knows the tag. A build
-	// from the module cache carries no VCS information to have preferred.
+	// Released: go install pkg@version, and the proxy knows the tag.
 	if v := info.Main.Version; v != "" && v != "(devel)" {
 		version = v
 	}
-	// Anything else, go run most often, stays "dev", which it is.
 }
 
-// fromVCS is the commit a binary was built from, shortened to what a person
-// quotes, and whether the tree had uncommitted changes in it.
 func fromVCS(info *debug.BuildInfo) (revision string, dirty, ok bool) {
 	for _, setting := range info.Settings {
 		switch setting.Key {
@@ -98,8 +88,7 @@ func main() {
 		overview(os.Stdout)
 		return
 	}
-	// Answered as flags too, because that is what people type before they
-	// think to look for a command.
+	// As flags too: that is what people type first.
 	if args[0] == "-v" || args[0] == "--version" || args[0] == "-version" {
 		fmt.Println(versionLine())
 		return

@@ -1,23 +1,15 @@
 package main
 
-// Turning what kolo found into lines a person reads: how names are said
-// together, and where the lines break.
-
 import (
 	"fmt"
 	"io"
 	"strings"
 )
 
-// referenceURL is the docs as a link rather than a path. Almost everybody
-// running kolo installed a binary and has no checkout to read docs/ out of,
-// so a bare docs/reference.md names a file that is not on their machine.
+// A link rather than a path: most people running kolo have no checkout.
 const referenceURL = "https://github.com/whosgotch/kolo/blob/main/docs/reference.md"
 
-// wrap prints prose broken at a width a terminal is not asked to reflow.
-// What kolo has to say about an org names its agents and its links, which
-// are as long as somebody made them, so where the lines fall can't be
-// written by hand.
+// Prose broken at a width a terminal is not asked to reflow.
 func wrap(w io.Writer, indent, text string) {
 	const width = 76
 	line := indent
@@ -36,7 +28,6 @@ func wrap(w io.Writer, indent, text string) {
 	}
 }
 
-// english joins names the way they would be said aloud.
 func english(names []string) string {
 	switch len(names) {
 	case 1:

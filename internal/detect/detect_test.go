@@ -119,9 +119,8 @@ const (
  Enter to confirm · Esc to cancel
 `
 
-	// OpenCode's three states, reconstructed from recordings the same way.
-	// The real ones carry provider names and paths. Its idle and busy both
-	// live in the status bar, and the busy bar carries the idle hints too.
+	// OpenCode's three states. Idle and busy share the status bar, and the
+	// busy bar carries the idle hints too.
 	ocIdleScreen = `
   ┃
   ┃  Ask anything... "What is the tech stack of this project?"

@@ -68,9 +68,8 @@ func TestResolveDeduplicates(t *testing.T) {
 	}
 }
 
-// Where a link says to go. kolo up serves 0.0.0.0 and shows a LAN address,
-// so a link that guessed at loopback was one only the lending machine could
-// open, which is nobody the link is for.
+// kolo up serves 0.0.0.0, so a link guessing at loopback opens only on the
+// lending machine.
 func TestReachAt(t *testing.T) {
 	lan := &hub.Org{Name: "acme", Hub: "http://192.168.0.12:7300"}
 	never := &hub.Org{Name: "acme"}

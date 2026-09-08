@@ -7,18 +7,24 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/creack/pty"
 )
 
-// COLORTERM breaks vt10x; the other stops nested transcript saving.
-var scrubbed = []string{"COLORTERM", "CLAUDE_CODE_CHILD_SESSION"}
+// KOLO_TOKEN and KOLO_JOIN are this machine's credential, and an agent is a
+// shell somebody else is typing into.
+var scrubbed = []string{
+	"COLORTERM",
+	"CLAUDE_CODE_CHILD_SESSION",
+	"KOLO_TOKEN",
+	"KOLO_JOIN",
+}
 
 type Agent struct {
 	cmd *exec.Cmd
 	pty *os.File
 
-	// A write must be indivisible, or a line arrives split mid-way.
 	mu sync.Mutex
 }
 
@@ -53,16 +59,19 @@ func (a *Agent) Resize(cols, rows int) error {
 
 func (a *Agent) Wait() error { return a.cmd.Wait() }
 
-// Close kills the process if it's still running, and releases the PTY,
-// ending any in-flight Read.
+// Close kills the process group and releases the PTY, ending any in-flight
+// Read. The group, because closing the PTY only sends children a SIGHUP they
+// are free to ignore.
 func (a *Agent) Close() error {
-	if a.cmd.Process != nil {
-		a.cmd.Process.Kill()
+	if p := a.cmd.Process; p != nil {
+		if pgid, err := syscall.Getpgid(p.Pid); err == nil {
+			syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+		p.Kill()
 	}
 	return a.pty.Close()
 }
 
-// Pins TERM to what the emulator implements.
 func childEnv(env []string) []string {
 	drop := make(map[string]bool, len(scrubbed)+1)
 	for _, k := range scrubbed {

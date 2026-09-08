@@ -14,16 +14,10 @@ import (
 	"github.com/whosgotch/kolo/internal/detect"
 )
 
-// maxKeys bounds one message. A browser sends a paste as a single one, and
-// pasting a prompt or a stack trace at an agent is most of what people do
-// here, so the ceiling is a paste's rather than a keystroke's. It is still a
-// ceiling: the write blocks until the agent has read it, and nothing else
-// reaches the agent meanwhile.
+// maxKeys bounds one message, sized for a paste rather than a keystroke.
 const maxKeys = 64 << 10
 
-// ErrTooMuch is a message past maxKeys. Worth telling the org about, where
-// keys arriving after an agent stopped are not: somebody meant to send this
-// and nothing else would say it went nowhere.
+// ErrTooMuch is a message past maxKeys.
 var ErrTooMuch = errors.New("relay: more than one paste at a time")
 
 type Sender interface {
@@ -33,8 +27,7 @@ type Sender interface {
 type Relay struct {
 	agent Sender
 	kind  adapter.Adapter
-	// Read fresh on every call: gating decides from the screen now, not an
-	// earlier reading.
+	// Read fresh on every call: gating decides from the screen now.
 	screen func() (string, time.Duration)
 
 	mu      sync.Mutex
@@ -75,8 +68,8 @@ func (r *Relay) Interrupt() error {
 	})
 }
 
-// exclusive serialises writes to the agent. Not held across the write itself,
-// so a write stuck on a full PTY buffer doesn't block the next read.
+// exclusive serialises writes to the agent. The mutex is not held across the
+// write, so one stuck on a full PTY buffer doesn't block the next read.
 func (r *Relay) exclusive(write func() error) error {
 	r.mu.Lock()
 	if r.sending {

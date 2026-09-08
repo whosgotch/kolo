@@ -192,10 +192,7 @@ func TestLoadRefusesAKeyNobodyCanPress(t *testing.T) {
 	}
 }
 
-// TestDiscoveredFindsWhatIsInstalled checks discovery against a PATH holding
-// exactly one agent, so the test does not depend on what the machine running it
-// happens to have. A name kolo has heard of but that is not there is not
-// reported: lending an absent command helps nobody.
+// A PATH holding exactly one agent, so this does not depend on the machine.
 func TestDiscoveredFindsWhatIsInstalled(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"aider", "not-an-agent"} {
@@ -211,9 +208,7 @@ func TestDiscoveredFindsWhatIsInstalled(t *testing.T) {
 	}
 }
 
-// TestAKindTheHostPinsItsIdentity: an agent whose conversation is named by the
-// host at birth needs no screen to read: the id is kolo's own, minted before
-// the agent could say anything, and filled in wherever it is asked for.
+// An agent whose conversation is named at birth needs no screen to read.
 func TestAKindTheHostPinsItsIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kinds.json")
 	body := `{"pinbot": {"markers": {"busy": "working"},

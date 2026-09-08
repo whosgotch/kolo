@@ -74,11 +74,9 @@ func (a Adapter) ResumeArgs(session string) ([]string, bool) {
 		return nil, false
 	}
 	if !slices.Contains(a.Resume, SessionPlaceholder) {
-		// Nothing to fill: the resume asks for whatever ran here last.
 		return slices.Clone(a.Resume), true
 	}
 	if session == "" {
-		// The command line wants an id and nobody has one to give it.
 		return nil, false
 	}
 	return withID(a.Resume, session), true
@@ -93,8 +91,6 @@ func (a Adapter) PinArgs(session string) ([]string, bool) {
 	return withID(a.Pin, session), true
 }
 
-// withID fills {session} in every argument. The placeholder is braces because
-// an agent's own flags do not use them.
 func withID(args []string, session string) []string {
 	out := make([]string, len(args))
 	for i, arg := range args {
@@ -124,8 +120,8 @@ func (a Adapter) SessionFrom(screen string) string {
 
 func unprintable(r rune) bool { return !unicode.IsPrint(r) }
 
-// compiled caches one regexp per pattern: the screen is read every few hundred
-// milliseconds per agent.
+// One regexp per pattern: the screen is read every few hundred milliseconds
+// per agent.
 var (
 	patternsMu sync.Mutex
 	patterns   = map[string]*regexp.Regexp{}
@@ -158,18 +154,13 @@ var kinds = map[string]Adapter{
 	},
 	"opencode": {
 		Markers: detect.Markers{
-			// Both states live in the status bar under the input box. Idle,
-			// the right half reads "tab agents ctrl+p commands"; working, the
-			// left half becomes "esc interrupt" and the rest stays, which is
-			// why Of reads busy before idle. After a turn the tab hint gives
-			// way to the directory and its context, so the command hint is
-			// the one that is always there to be read.
+			// Both states share the status bar, and the busy marker is added
+			// beside the idle one rather than replacing it, which is why Of
+			// reads busy first.
 			Idle: []string{"ctrl+p commands"},
 			Busy: "esc interrupt",
-			// A question draws its own box over the bar, and the last line of
-			// it carries these hints. Which choice is selected is drawn in
-			// colour alone and never reaches the text kolo reads, so there is
-			// no sigil here to mistake for one.
+			// A question draws its own box over the bar. Which choice is
+			// selected is colour alone, so there is no sigil to read.
 			DialogFooter: "enter confirm",
 		},
 		Resume: []string{"--continue"},
@@ -198,8 +189,8 @@ func Kinds() []string {
 	return names
 }
 
-// catalog is discovery data, not knowledge: a name here carries no markers
-// unless it is also in kinds or kinds.json.
+// Discovery data, not knowledge: a name here carries no markers unless it is
+// also in kinds or kinds.json.
 var catalog = []string{
 	"aider",
 	"amp",
@@ -215,8 +206,7 @@ var catalog = []string{
 }
 
 // Discovered is every name kolo has heard of that this machine can run,
-// sorted: shipped kinds, kinds.json, and the catalog. What kolo up lends
-// when nobody names anything.
+// sorted. What kolo up lends when nobody names anything.
 func Discovered() []string {
 	heard := make(map[string]bool, len(kinds)+len(catalog))
 	for _, kind := range Kinds() {
@@ -238,8 +228,7 @@ func Discovered() []string {
 }
 
 // ResumesByName says whether a restart comes back as itself even beside
-// another agent in the same directory: Session or Pin qualify, "last
-// conversation here" does not.
+// another agent in the same directory.
 func (a Adapter) ResumesByName() bool {
 	if !slices.Contains(a.Resume, SessionPlaceholder) {
 		return false
@@ -276,8 +265,8 @@ func (a Adapter) validate() error {
 	return nil
 }
 
-// Load merges agent kinds from a JSON file (docs/reference.md) into the shipped
-// ones, replacing any kind it names. Must run before any agent starts.
+// Load merges agent kinds from a JSON file into the shipped ones, replacing
+// any kind it names. Must run before any agent starts.
 func Load(path string) (added []string, err error) {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

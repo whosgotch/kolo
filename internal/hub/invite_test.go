@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-// newOrgFile is an org with nothing in it but a name, where an invite starts
-// from.
 func newOrgFile(t *testing.T) string {
 	t.Helper()
 	return orgFile(t, `{"org": "acme"}`)
@@ -32,8 +30,7 @@ func TestClaim(t *testing.T) {
 		t.Errorf("name = %q, want Dana Scully", member.Name)
 	}
 
-	// The token she was handed is what she now authenticates with; on disk it
-	// sits as a hash rather than as itself.
+	// On disk the token sits as a hash rather than as itself.
 	if got, ok := org.VerifyMember(token); !ok || got.ID != member.ID {
 		t.Error("the token Claim returned does not identify the member it made")
 	}

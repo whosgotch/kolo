@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// reloadEvery is how often the org file is re-read; a var so tests can shorten it.
 var reloadEvery = 2 * time.Second
 
 func (s *Server) watchOrg() {
@@ -35,18 +34,21 @@ func (s *Server) watchOrg() {
 	}
 }
 
-// reload re-reads the org file, returning contents that fail to load too, so
-// a broken file is logged once instead of every tick.
+// reload re-reads the org file, returning contents that fail to load too, so a
+// broken file is logged once instead of every tick.
 func (s *Server) reload(path string, last []byte) ([]byte, bool) {
-	// Held across read-and-swap so a concurrent claim cannot interleave.
 	s.orgFile.Lock()
 	defer s.orgFile.Unlock()
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		log.Printf("hub: %s cannot be read: %v; keeping the org already loaded", path, err)
+		if s.unreadable != err.Error() {
+			s.unreadable = err.Error()
+			log.Printf("hub: %s cannot be read: %v; keeping the org already loaded", path, err)
+		}
 		return nil, false
 	}
+	s.unreadable = ""
 	if bytes.Equal(raw, last) {
 		return nil, false
 	}

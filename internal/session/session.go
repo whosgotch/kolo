@@ -22,10 +22,9 @@ type Message struct {
 type Session struct {
 	markers detect.Markers
 
-	mu     sync.Mutex
-	screen *term.Screen
-	subs   map[*subscriber]struct{}
-	// Only used for markers whose idle is silence.
+	mu        sync.Mutex
+	screen    *term.Screen
+	subs      map[*subscriber]struct{}
 	settled   string
 	settledAt time.Time
 }
@@ -145,8 +144,8 @@ func (s *Session) Close() {
 	}
 }
 
-// send drops any viewer that's fallen behind: skipping bytes would corrupt
-// its escape-sequence stream. Callers must hold s.mu.
+// send drops any viewer that's fallen behind: skipping bytes would corrupt its
+// escape-sequence stream. Callers must hold s.mu.
 func (s *Session) send(m Message) {
 	for sub := range s.subs {
 		select {

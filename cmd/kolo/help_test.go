@@ -76,10 +76,8 @@ func TestOverviewLeadsWithUp(t *testing.T) {
 	}
 }
 
-// One rule about everything kolo says, so it is tested in one place even
-// though half of what it reaches lives in doctor.go: a reader of this text
-// installed a binary and has no checkout, so a bare docs/reference.md sends
-// them to a file that is not on their machine.
+// A reader of this text has no checkout, so a bare docs/reference.md names a
+// file that is not on their machine.
 func TestTheDocsAreALinkNotAPathOnSomebodyElsesMachine(t *testing.T) {
 	var overviewText bytes.Buffer
 	overview(&overviewText)

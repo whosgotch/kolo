@@ -88,7 +88,7 @@ func serveCmd(args []string) error {
 	return s.Serve()
 }
 
-// portOf uses net.SplitHostPort: cutting at the first colon breaks on [::]:7300.
+// net.SplitHostPort, because cutting at the first colon breaks on [::]:7300.
 func portOf(addr string) string {
 	if _, port, err := net.SplitHostPort(addr); err == nil {
 		return port
@@ -157,14 +157,10 @@ func tokenCmd(args []string) error {
 	return nil
 }
 
-// Where a hub is if nothing has said otherwise: an org whose hub has never
-// started has nowhere better to point at.
 const defaultHubURL = "http://127.0.0.1:7300"
 
-// reachAt is where somebody else will meet this hub: what was asked for, then
-// what the hub wrote down when it started, then loopback. Guessing at
-// loopback used to be the whole of it, so the link kolo invite printed for a
-// hub on a LAN address was one only that machine could open.
+// Where somebody else will meet this hub: what was asked for, then what the
+// hub wrote down when it started, then loopback.
 func reachAt(given string, org *hub.Org) string {
 	return cmp.Or(given, org.Hub, defaultHubURL)
 }
