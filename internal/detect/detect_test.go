@@ -1,7 +1,9 @@
 package detect_test
 
 import (
+	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -348,5 +350,101 @@ func TestOfARecording(t *testing.T) {
 	}
 	if got := claude.Of(screen.Text()); got.String() != want {
 		t.Errorf("Of(%s) = %s, want %s", path, got, want)
+	}
+}
+
+// A settle is written in seconds, because that is what docs/reference.md asks
+// for and what anybody describing an agent would type. Read as a bare
+// time.Duration it would have been a count of nanoseconds, and "settle": 3
+// would have made every screen idle three nanoseconds after it was asked.
+func TestSettleIsReadAsSeconds(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want time.Duration
+	}{
+		{"whole seconds", `{"settle": 3}`, 3 * time.Second},
+		{"a fraction of one", `{"settle": 1.5}`, 1500 * time.Millisecond},
+		{"a duration, for anyone who would rather say so", `{"settle": "1500ms"}`, 1500 * time.Millisecond},
+		{"nothing at all", `{"busy": "working"}`, 0},
+		{"null", `{"settle": null}`, 0},
+		{"zero", `{"settle": 0}`, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var m detect.Markers
+			if err := json.Unmarshal([]byte(tt.json), &m); err != nil {
+				t.Fatalf("Unmarshal(%s): %v", tt.json, err)
+			}
+			if m.Settle != tt.want {
+				t.Errorf("Unmarshal(%s) settle = %s, want %s", tt.json, m.Settle, tt.want)
+			}
+		})
+	}
+}
+
+func TestSettleRefusesWhatIsNotALengthOfTime(t *testing.T) {
+	for _, bad := range []string{`{"settle": -1}`, `{"settle": "-2s"}`, `{"settle": "soon"}`, `{"settle": true}`} {
+		var m detect.Markers
+		if err := json.Unmarshal([]byte(bad), &m); err == nil {
+			t.Errorf("Unmarshal(%s) was accepted as %s", bad, m.Settle)
+		}
+	}
+}
+
+// The host marshals its markers to the hub, which unmarshals them and reads
+// screens by them. A writer and a reader that disagreed on the unit would turn
+// two seconds into sixty-three years without either one erroring.
+func TestSettleSurvivesTheTripToTheHub(t *testing.T) {
+	sent := detect.Markers{
+		Idle:           []string{"? for shortcuts"},
+		Busy:           "esc to interrupt",
+		DialogFooter:   "Esc to cancel",
+		DialogSelected: "❯",
+		Settle:         2500 * time.Millisecond,
+	}
+	b, err := json.Marshal(sent)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var got detect.Markers
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("Unmarshal(%s): %v", b, err)
+	}
+	if !reflect.DeepEqual(sent, got) {
+		t.Errorf("markers arrived as %+v, want %+v (over %s)", got, sent, b)
+	}
+}
+
+// Marshal and Unmarshal each mirror Markers through an embedded type so that
+// adding a marker needs no edit there. This is what fails if that stops
+// holding.
+func TestEveryMarkerMakesTheTripNotJustSettle(t *testing.T) {
+	const wire = `{"idle":["ready"],"busy":"thinking","dialogFooter":"enter confirm",` +
+		`"dialogSelected":"›","settle":4}`
+	var m detect.Markers
+	if err := json.Unmarshal([]byte(wire), &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	want := detect.Markers{
+		Idle:           []string{"ready"},
+		Busy:           "thinking",
+		DialogFooter:   "enter confirm",
+		DialogSelected: "›",
+		Settle:         4 * time.Second,
+	}
+	if !reflect.DeepEqual(m, want) {
+		t.Errorf("read %+v, want %+v", m, want)
+	}
+}
+
+// A kind whose whole account of idleness is "it went quiet" is configured,
+// not unconfigured: Blank decides whether kolo claims anything about a screen.
+func TestASettleOnItsOwnIsNotBlank(t *testing.T) {
+	if (detect.Markers{Settle: time.Second}).Blank() {
+		t.Error("markers that read silence as idle reported themselves blank")
+	}
+	if !(detect.Markers{}).Blank() {
+		t.Error("the zero Markers did not report itself blank")
 	}
 }

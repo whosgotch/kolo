@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/whosgotch/kolo/internal/detect"
 )
@@ -246,5 +247,50 @@ func TestAKindTheHostPinsItsIdentity(t *testing.T) {
 	}
 	if _, err := Load(broken); err == nil {
 		t.Error("a pin without {session} was accepted")
+	}
+}
+
+// The path a person actually takes: a settle written in a kinds.json, in the
+// seconds docs/reference.md asks for.
+func TestLoadReadsSettleInSeconds(t *testing.T) {
+	defer restoreKinds()()
+	path := filepath.Join(t.TempDir(), "kinds.json")
+	write(t, path, `{"quiet": {"markers": {"busy": "working", "settle": 3}}}`)
+
+	if _, err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := For("quiet").Markers.Settle; got != 3*time.Second {
+		t.Errorf("settle of 3 read as %s, want 3s", got)
+	}
+}
+
+func TestLoadRefusesASettleThatIsNotALengthOfTime(t *testing.T) {
+	defer restoreKinds()()
+	dir := t.TempDir()
+	for _, bad := range []string{
+		`{"quiet": {"markers": {"busy": "working", "settle": -1}}}`,
+		`{"quiet": {"markers": {"busy": "working", "settle": "whenever"}}}`,
+	} {
+		path := filepath.Join(dir, "kinds.json")
+		write(t, path, bad)
+		if _, err := Load(path); err == nil {
+			t.Errorf("%s was accepted", bad)
+		}
+	}
+}
+
+// A kind whose only account of idleness is silence describes something, so
+// Load must not turn it away as saying nothing.
+func TestLoadTakesAKindThatOnlySettles(t *testing.T) {
+	defer restoreKinds()()
+	path := filepath.Join(t.TempDir(), "kinds.json")
+	write(t, path, `{"quiet": {"markers": {"settle": 2}, "resume": ["-c"]}}`)
+
+	if _, err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := For("quiet").Markers.Settle; got != 2*time.Second {
+		t.Errorf("settle read as %s, want 2s", got)
 	}
 }

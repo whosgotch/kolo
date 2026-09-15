@@ -3,6 +3,8 @@
 package detect
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -40,13 +42,81 @@ type Markers struct {
 	// box's placeholder, which wears the same sigil.
 	DialogSelected string `json:"dialogSelected,omitempty"`
 	// How long the screen must sit unchanged to read as idle; zero means
-	// silence proves nothing.
+	// silence proves nothing. Seconds in JSON: see MarshalJSON.
 	Settle time.Duration `json:"settle,omitempty"`
 }
 
-// Blank reports markers that match nothing, as an unconfigured kind has.
+// plain is Markers with no methods, so the two below can embed every marker
+// without this file listing them again and drifting when one is added.
+type plain Markers
+
+// MarshalJSON writes settle as seconds, which is what kinds.json documents and
+// what somebody describing an agent would write.
+//
+// Both halves of the pair are needed, and needed together. encoding/json
+// reads a bare time.Duration as its nanosecond count, so the documented
+// "settle": 3 used to mean three nanoseconds, and every screen read as idle
+// the moment it was asked. A host also marshals its markers to the hub, so
+// a reader expecting seconds beside a writer emitting nanoseconds would turn
+// two seconds into sixty-three years in transit.
+func (m Markers) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		plain
+		Settle float64 `json:"settle,omitempty"`
+	}{plain(m), m.Settle.Seconds()})
+}
+
+func (m *Markers) UnmarshalJSON(b []byte) error {
+	var v struct {
+		plain
+		// Shallower than the embedded field, so this is the one json fills.
+		Settle json.RawMessage `json:"settle,omitempty"`
+	}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	settle, err := parseSettle(v.Settle)
+	if err != nil {
+		return err
+	}
+	*m = Markers(v.plain)
+	m.Settle = settle
+	return nil
+}
+
+// parseSettle takes the seconds a person writes, or a duration string for
+// anyone who would rather be explicit than count zeroes.
+func parseSettle(raw json.RawMessage) (time.Duration, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0, nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		d, err := time.ParseDuration(text)
+		if err != nil {
+			return 0, fmt.Errorf("settle: %q is not a length of time; write 3 for three seconds, or \"1500ms\"", text)
+		}
+		return nonNegative(d)
+	}
+	var seconds float64
+	if err := json.Unmarshal(raw, &seconds); err != nil {
+		return 0, fmt.Errorf("settle: %s is neither a number of seconds nor a duration like \"1500ms\"", raw)
+	}
+	return nonNegative(time.Duration(seconds * float64(time.Second)))
+}
+
+func nonNegative(d time.Duration) (time.Duration, error) {
+	if d < 0 {
+		return 0, fmt.Errorf("settle: %s is a negative length of time, and a screen cannot sit still for less than no time", d)
+	}
+	return d, nil
+}
+
+// Blank reports markers that match nothing, as an unconfigured kind has. A
+// settle on its own still reads silence as idle, so it is not nothing.
 func (m Markers) Blank() bool {
-	return len(m.Idle) == 0 && m.Busy == "" && m.DialogFooter == "" && m.DialogSelected == ""
+	return len(m.Idle) == 0 && m.Busy == "" && m.DialogFooter == "" &&
+		m.DialogSelected == "" && m.Settle == 0
 }
 
 // OfSettled is Of, plus a settle-timeout fallback for a kind that says nothing

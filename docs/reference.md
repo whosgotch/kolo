@@ -94,7 +94,7 @@ kind completely. The two are never merged.
 | `idle` | hints the input box shows when it can take a line. Any one of them matching is enough |
 | `busy` | what the screen says while the agent is working. Without it, working looks the same as waiting |
 | `dialogFooter`, `dialogSelected` | how to recognise that a question is up. Never used to answer one |
-| `settle` | seconds the screen must sit unchanged before it reads as idle. For agents whose idle state is silence |
+| `settle` | how long the screen must sit unchanged before it reads as idle, in seconds (`3`, or `1.5`) or as a duration (`"1500ms"`). For agents whose idle state is silence |
 
 **Resuming a conversation.** These say how to bring one back after a restart.
 
