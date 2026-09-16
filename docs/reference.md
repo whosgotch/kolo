@@ -206,7 +206,8 @@ else.
 ## The log
 
 Every action a member takes is recorded on the hub, beside the org file, as
-JSON lines. Read it with `GET /v1/log`.
+JSON lines. Read it on the page, under the list icon in the sidebar, or with
+`GET /v1/log`.
 
 Recorded: created, said, interrupted, restarted, stopped, failed.
 
@@ -259,8 +260,8 @@ restart and resume (including pinned conversation ids), discovery of installed
 agents (`-allow '*'`), and the log.
 
 **Not built yet:** a notification when an agent stalls on a question and nobody
-is watching; the log shown in the browser; buttons for the interrupt, restart
-and start-fresh that the protocol already carries.
+is watching; buttons for the interrupt, restart and start-fresh that the
+protocol already carries.
 
 ## Repo layout
 
