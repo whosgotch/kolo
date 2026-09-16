@@ -41,7 +41,10 @@ fi
 case "$(uname -s)" in
   Linux)  os=linux ;;
   Darwin) os=darwin ;;
-  *) fail "kolo runs agents under a pseudo-terminal, which $(uname -s) does not have. Linux and macOS only." ;;
+  # Git Bash and its kin, where someone on Windows most likely lands.
+  MINGW*|MSYS*|CYGWIN*)
+    fail "there is no Windows build of kolo. Install it inside WSL2, which is Linux as far as kolo is concerned." ;;
+  *) fail "no kolo build for $(uname -s). Linux and macOS." ;;
 esac
 
 case "$(uname -m)" in
