@@ -209,7 +209,9 @@ Every action a member takes is recorded on the hub, beside the org file, as
 JSON lines. Read it on the page, under the list icon in the sidebar, or with
 `GET /v1/log`.
 
-Recorded: created, said, interrupted, restarted, stopped, failed.
+Recorded: created, said, interrupted, restarted, started fresh, renamed,
+stopped, failed, and the host going away. The last two are nobody's doing, so
+they are written down with no name against them.
 
 **Typed lines are rebuilt from keystrokes** and only written when you press
 Enter, so a line you abandon halfway is never recorded. Because it is a
@@ -260,8 +262,11 @@ restart and resume (including pinned conversation ids), discovery of installed
 agents (`-allow '*'`), and the log.
 
 **Not built yet:** a notification when an agent stalls on a question and nobody
-is watching; buttons for the interrupt, restart and start-fresh that the
-protocol already carries.
+is watching.
+
+Interrupt, restart and start fresh are built, and travel on the watch
+websocket. That the page draws no buttons for them is a decision, not a gap:
+see [What kolo can press for you](#what-kolo-can-press-for-you).
 
 ## Repo layout
 
