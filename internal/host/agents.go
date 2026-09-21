@@ -414,6 +414,20 @@ func (a *Agents) wait(name string, started *agent.Agent, closeScreen context.Can
 	a.report(name, hub.StatusStarting, reason)
 	time.Sleep(restartDelay)
 	if err := a.launch(name); err != nil {
+		// begin does this on an initial launch. A restart has already kept the
+		// record through the delay, so it must clean it up here too: otherwise
+		// a missing command or directory stays listed as starting forever.
+		a.mu.Lock()
+		p, still := a.running[name]
+		stopped := still && p.stopping
+		if still {
+			delete(a.running, name)
+		}
+		a.mu.Unlock()
+		a.save()
+		if !stopped {
+			a.report(name, hub.StatusFailed, reasonFor(err, "the agent could not be restarted"))
+		}
 		return
 	}
 	a.report(name, hub.StatusRunning, "")
