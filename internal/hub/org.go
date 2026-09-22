@@ -67,7 +67,7 @@ type Invite struct {
 // Showable is an invite whose link can be printed again.
 func (i Invite) Showable(now time.Time) bool { return i.Token != "" && !i.Spent(now) }
 
-func (i Invite) Spent(now time.Time) bool { return now.After(i.Expires) }
+func (i Invite) Spent(now time.Time) bool { return !now.Before(i.Expires) }
 
 // Person is a member as others see them, a separate type from Member so the
 // token hash can't leak into a response.

@@ -239,6 +239,13 @@ func TestLiveInvites(t *testing.T) {
 	}
 }
 
+func TestInviteExpiresAtItsDeadline(t *testing.T) {
+	now := time.Now()
+	if !(Invite{Expires: now}).Spent(now) {
+		t.Error("an invite was still live at its expiry")
+	}
+}
+
 // SetInvite is what keeps an org to one link: the same name, minted again,
 // replaces what was there rather than becoming team-2.
 func TestSetInviteReplacesByName(t *testing.T) {
