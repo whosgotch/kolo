@@ -536,14 +536,17 @@ func (a *Agents) Restore() error {
 	if err != nil {
 		return err
 	}
+	reserved := make([]string, 0, len(state.Agents))
 	for _, rec := range state.Agents {
 		if err := a.reserve(rec.Spec, false, rec.Session); err != nil {
 			a.report(rec.Spec.Name, hub.StatusFailed, err.Error())
+			continue
 		}
+		reserved = append(reserved, rec.Spec.Name)
 	}
-	for _, rec := range state.Agents {
-		if err := a.begin(rec.Spec.Name); err != nil {
-			a.report(rec.Spec.Name, hub.StatusFailed, err.Error())
+	for _, name := range reserved {
+		if err := a.begin(name); err != nil {
+			a.report(name, hub.StatusFailed, err.Error())
 		}
 	}
 	return nil

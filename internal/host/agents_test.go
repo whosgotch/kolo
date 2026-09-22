@@ -233,6 +233,31 @@ func TestTheStateFileBringsAgentsBack(t *testing.T) {
 	}
 }
 
+func TestRestoreReportsARejectedAgentOnce(t *testing.T) {
+	dir := t.TempDir()
+	state := filepath.Join(t.TempDir(), "agents.json")
+	b, err := json.Marshal(State{Agents: []Record{{Spec: spec("checkups", dir, "true")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(state, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := NewAgents(Config{Dirs: []string{dir}, Allow: []string{"cat"}}, state)
+
+	if err := a.Restore(); err != nil {
+		t.Fatal(err)
+	}
+	if got := nextReport(t, a); got.Status != hub.StatusFailed {
+		t.Fatalf("reported %+v", got)
+	}
+	select {
+	case got := <-a.reports:
+		t.Errorf("reported the rejected agent twice: %+v", got)
+	default:
+	}
+}
+
 func processOf(t *testing.T, a *Agents, name string) *agent.Agent {
 	t.Helper()
 	a.mu.Lock()
