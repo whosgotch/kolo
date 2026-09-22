@@ -116,6 +116,41 @@ func TestJournalSkipsAHalfWrittenLine(t *testing.T) {
 	}
 }
 
+// A line this large cannot have been written by Kolo. Say so rather than
+// silently pretending that the rest of the journal was all there was.
+func TestJournalReportsAnUnreadablyLongLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "journal.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Repeat("x", 64<<10)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	j, err := openJournal(path)
+	if err == nil {
+		t.Fatal("opened a journal with an unreadably long line without complaint")
+	}
+	defer j.Close()
+
+	// A broken old journal does not prevent the hub from keeping this run's log.
+	j.add(Entry{Agent: "checkups", What: WhatStopped, Who: dana()})
+	if got := j.tail("", 10); len(got) != 1 {
+		t.Fatalf("in memory = %+v", got)
+	}
+}
+
+func TestJournalStopsWritingAfterAnAppendFailure(t *testing.T) {
+	j, _ := journalFixture(t)
+	if err := j.file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	j.add(Entry{Agent: "checkups", What: WhatStopped, Who: dana()})
+	if j.file != nil {
+		t.Fatal("kept a journal file after its append failed")
+	}
+	if got := j.tail("", 10); len(got) != 1 {
+		t.Fatalf("in memory = %+v", got)
+	}
+}
+
 func TestJournalTailByAgent(t *testing.T) {
 	j, _ := journalFixture(t)
 	j.add(Entry{Agent: "checkups", What: WhatSaid, Who: dana(), Text: "one"})

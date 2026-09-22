@@ -149,7 +149,11 @@ func (j *journal) addLocked(e Entry) {
 		return
 	}
 	if b, err := json.Marshal(e); err == nil {
-		j.file.Write(append(b, '\n'))
+		if _, err := j.file.Write(append(b, '\n')); err != nil {
+			log.Printf("hub: journal %s: %v. This run is no longer being written down", j.path, err)
+			j.file.Close()
+			j.file = nil
+		}
 	}
 	if j.appended++; j.appended >= keepEntries {
 		j.compactLocked()
@@ -194,6 +198,9 @@ func readJournal(path string, now time.Time) (kept []Entry, trimmed bool, err er
 			continue
 		}
 		kept = append(kept, e)
+	}
+	if err := read.Err(); err != nil {
+		return kept, trimmed, fmt.Errorf("hub: journal %s: %w", path, err)
 	}
 	if len(kept) > keepEntries {
 		kept, trimmed = kept[len(kept)-keepEntries:], true
