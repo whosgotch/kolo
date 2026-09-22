@@ -697,6 +697,26 @@ func TestSignInRefusesAndSignsOut(t *testing.T) {
 	}
 }
 
+func TestLoginAndJoinRefuseLargeForms(t *testing.T) {
+	s, _, _ := hubFixture(t)
+	tooLarge := strings.Repeat("x", formLimit)
+	for _, tc := range []struct {
+		path string
+		form url.Values
+	}{
+		{"/login", url.Values{"token": {tooLarge}}},
+		{"/join", url.Values{"invite": {tooLarge}, "name": {"Dana"}}},
+	} {
+		resp := post(t, s, tc.path, tc.form, nil)
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Errorf("POST %s: %s, want refusal redirect", tc.path, resp.Status)
+		}
+		if sessionOf(resp) != nil {
+			t.Errorf("POST %s set a session cookie", tc.path)
+		}
+	}
+}
+
 func TestThePageIsServed(t *testing.T) {
 	s, _, _ := hubFixture(t)
 

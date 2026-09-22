@@ -192,7 +192,10 @@ func (s *Server) Close() error {
 	return s.srv.Close()
 }
 
-const sessionCookie = "kolo_session"
+const (
+	sessionCookie = "kolo_session"
+	formLimit     = 4 << 10
+)
 
 func (s *Server) authenticate(r *http.Request) (Member, bool) {
 	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
@@ -215,6 +218,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, formLimit)
 	token := strings.TrimSpace(r.FormValue("token"))
 	if _, ok := s.verifyMember(token); !ok {
 		http.Redirect(w, r, "/?refused=1", http.StatusSeeOther)
@@ -249,6 +253,7 @@ func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, formLimit)
 	invite := strings.TrimSpace(r.FormValue("invite"))
 	name := strings.TrimSpace(r.FormValue("name"))
 	if invite == "" || name == "" {
