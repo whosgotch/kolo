@@ -32,6 +32,14 @@ func TestArgvSplitsOnWhitespace(t *testing.T) {
 	}
 }
 
+func TestArgvHonoursQuotesAndEscapes(t *testing.T) {
+	got := Argv("\"/opt/Kolo Agents/claude\" --model \"opus 4\" 'two words' escaped\\ value C:\\Users\\kolo")
+	want := []string{"/opt/Kolo Agents/claude", "--model", "opus 4", "two words", "escaped value", "C:\\Users\\kolo"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Argv() = %q, want %q", got, want)
+	}
+}
+
 func TestLoadAddsAKindKoloDoesNotShip(t *testing.T) {
 	defer restoreKinds()()
 	path := filepath.Join(t.TempDir(), "kinds.json")

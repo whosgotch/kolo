@@ -167,8 +167,58 @@ var kinds = map[string]Adapter{
 	},
 }
 
-// Argv splits a command line into program and arguments, on whitespace only.
-func Argv(command string) []string { return strings.Fields(command) }
+// Argv splits a command line into program and arguments. Single and double
+// quotes preserve whitespace. A backslash escapes whitespace, either quote,
+// or another backslash, except inside single quotes. It deliberately does not
+// expand shell syntax.
+func Argv(command string) []string {
+	var argv []string
+	var word strings.Builder
+	var quote rune
+	escaped, started := false, false
+	flush := func() {
+		if started {
+			argv = append(argv, word.String())
+			word.Reset()
+			started = false
+		}
+	}
+	for _, r := range command {
+		switch {
+		case escaped:
+			if unicode.IsSpace(r) || r == '\\' || r == '\'' || r == '"' {
+				word.WriteRune(r)
+			} else {
+				// Backslashes in an unquoted Windows path are not escapes.
+				word.WriteByte('\\')
+				word.WriteRune(r)
+			}
+			escaped = false
+		case r == '\\' && quote != '\'':
+			escaped = true
+			started = true
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				word.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote = r
+			started = true
+		case unicode.IsSpace(r):
+			flush()
+		default:
+			word.WriteRune(r)
+			started = true
+		}
+	}
+	if escaped {
+		word.WriteByte('\\')
+	}
+	flush()
+	return argv
+}
 
 // For looks up a kind by the binary name at the front of the command line.
 func For(command string) Adapter {
