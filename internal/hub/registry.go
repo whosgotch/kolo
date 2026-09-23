@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/whosgotch/kolo/internal/adapter"
 )
 
 // Agent status values. Starting lasts until the host reports otherwise.
@@ -42,11 +44,11 @@ func runs(allow []string, command string) bool {
 // Program is the word at the front of a command line, or empty when there is
 // none.
 func Program(command string) string {
-	fields := strings.Fields(command)
-	if len(fields) == 0 {
+	argv := adapter.Argv(command)
+	if len(argv) == 0 {
 		return ""
 	}
-	return fields[0]
+	return argv[0]
 }
 
 func (h *host) resumesByName(command string) bool {

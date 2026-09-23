@@ -2,6 +2,7 @@ package hub
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -43,6 +44,42 @@ func TestClaim(t *testing.T) {
 	}
 	if _, ok := reloaded.VerifyMember(invite); ok {
 		t.Error("an invite authenticates as a member; it is not supposed to be one")
+	}
+}
+
+func TestClaimNormalizesTheMemberName(t *testing.T) {
+	path := newOrgFile(t)
+	_, invite, err := AddInvite(path, "team", time.Now().Add(time.Hour), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, member, _, err := Claim(path, invite, "  Dana\tScully\u200b ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.Name != "Dana Scully" {
+		t.Errorf("name = %q, want Dana Scully", member.Name)
+	}
+	if len(member.Name) > maxMemberName {
+		t.Errorf("name is %d bytes, want at most %d", len(member.Name), maxMemberName)
+	}
+	_, member, _, err = Claim(path, invite, strings.Repeat("a", maxMemberName+1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(member.Name) != maxMemberName {
+		t.Errorf("long name is %d bytes, want %d", len(member.Name), maxMemberName)
+	}
+}
+
+func TestClaimRefusesANameWithoutVisibleText(t *testing.T) {
+	path := newOrgFile(t)
+	_, invite, err := AddInvite(path, "team", time.Now().Add(time.Hour), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := Claim(path, invite, "\t\u200b\n"); !errors.Is(err, ErrNoMemberName) {
+		t.Errorf("claiming with no visible name: %v, want ErrNoMemberName", err)
 	}
 }
 

@@ -272,7 +272,7 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 
 	org, member, token, err := Claim(path, invite, name)
 	if err != nil {
-		if errors.Is(err, ErrNoInvite) || errors.Is(err, ErrInviteSpent) {
+		if errors.Is(err, ErrNoInvite) || errors.Is(err, ErrInviteSpent) || errors.Is(err, ErrNoMemberName) {
 			http.Redirect(w, r, "/join?refused=1", http.StatusSeeOther)
 			return
 		}

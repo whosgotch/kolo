@@ -49,6 +49,8 @@ type Member struct {
 	Via    string    `json:"via,omitempty"`
 }
 
+const maxMemberName = 40
+
 // Invite is a join link, weaker than a member token: it only mints a member,
 // and stops working at Expires.
 type Invite struct {
@@ -378,6 +380,10 @@ func (o *Org) Invite(id string) (Invite, bool) {
 
 // Claim spends an invite on a new member and returns them with a fresh token.
 func Claim(path, token, name string) (org *Org, member Member, memberToken string, err error) {
+	name = label(name, maxMemberName)
+	if name == "" {
+		return nil, Member{}, "", ErrNoMemberName
+	}
 	memberToken, hash, err := NewToken()
 	if err != nil {
 		return nil, Member{}, "", err
@@ -458,6 +464,8 @@ func slug(name string) string {
 var ErrNoSuchInvite = errors.New("hub: no invite by that name")
 
 var ErrNoSuchMember = errors.New("hub: nobody in this org by that id")
+
+var ErrNoMemberName = errors.New("hub: a member needs a name")
 
 // Member finds somebody by the id they are known by in the file.
 func (o *Org) Member(id string) (Member, bool) {
