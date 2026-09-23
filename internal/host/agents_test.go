@@ -233,6 +233,16 @@ func TestTheStateFileBringsAgentsBack(t *testing.T) {
 	}
 }
 
+func TestWriteStateReportsAnUnwritableParent(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(parent, []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeState(filepath.Join(parent, "agents.json"), []byte(`{}`)); err == nil {
+		t.Fatal("wrote state below a file")
+	}
+}
+
 func TestRestoreReportsARejectedAgentOnce(t *testing.T) {
 	dir := t.TempDir()
 	state := filepath.Join(t.TempDir(), "agents.json")

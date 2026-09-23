@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -553,6 +554,9 @@ func (a *Agents) Restore() error {
 }
 
 func (a *Agents) save() {
+	a.saveMu.Lock()
+	defer a.saveMu.Unlock()
+
 	a.mu.Lock()
 	closing := a.closing
 	a.mu.Unlock()
@@ -567,20 +571,40 @@ func (a *Agents) save() {
 		return
 	}
 
-	a.saveMu.Lock()
-	defer a.saveMu.Unlock()
+	if err := writeState(a.state, b); err != nil {
+		log.Printf("host: save %s: %v; agents will not be restored after a restart", a.state, err)
+	}
+}
 
-	if err := os.MkdirAll(filepath.Dir(a.state), 0o700); err != nil {
-		return
+// writeState replaces a state file only after its whole replacement reached
+// disk. Its unique temporary name keeps two host processes from clobbering
+// each other's in-progress write.
+func writeState(path string, b []byte) error {
+	dir, base := filepath.Split(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("make directory: %w", err)
 	}
-	// Written whole and renamed: a half-written file reads as an empty machine.
-	tmp := a.state + ".new"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return
+	f, err := os.CreateTemp(dir, base+".*")
+	if err != nil {
+		return fmt.Errorf("make temporary file: %w", err)
 	}
-	if err := os.Rename(tmp, a.state); err != nil {
-		os.Remove(tmp)
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	defer f.Close()
+
+	if _, err := f.Write(b); err != nil {
+		return fmt.Errorf("write: %w", err)
 	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("replace: %w", err)
+	}
+	return nil
 }
 
 // Oldest first, so a machine coming back restores in the order the org made them.
