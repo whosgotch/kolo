@@ -113,6 +113,8 @@
   .group-head .chip { flex: none; width: 17px; height: 17px; border-radius: 5px; background: var(--raised);
                        border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
                        color: var(--dim); }
+  .group-head .chip.problem { color: var(--kolo-state-failed); border-color: var(--kolo-state-failed); }
+  .host-problem { flex: none; color: var(--kolo-state-failed); font: 700 11px var(--ui); }
   .group-head .label { font: 600 11px var(--ui); text-transform: uppercase; letter-spacing: 0.6px;
                         color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .group-head:hover .label { color: var(--text); }
@@ -736,6 +738,7 @@ function drawGroups(agents) {
 
   for (const host of order) {
     const members = byHost.get(host) || [];
+    const hostInfo = hosts.find((item) => item.id === host);
     const group = document.createElement('div');
     group.className = 'group';
 
@@ -751,6 +754,15 @@ function drawGroups(agents) {
         <svg width="12" height="12" viewBox="0 0 13 13"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>`;
     head.querySelector('.label').textContent = host;
+    if (hostInfo && hostInfo.error) {
+      head.title = hostInfo.error;
+      head.querySelector('.chip').classList.add('problem');
+      const problem = document.createElement('span');
+      problem.className = 'host-problem';
+      problem.textContent = '!';
+      problem.title = hostInfo.error;
+      head.querySelector('.spacer').before(problem);
+    }
     const isCollapsed = !!collapsed[host];
     head.querySelector('.chevron').classList.toggle('open', !isCollapsed);
     head.onclick = () => {

@@ -56,6 +56,10 @@ type Agents struct {
 
 	// One writer to the state file at a time.
 	saveMu sync.Mutex
+	// The last persistence failure, reported once when it changes and cleared
+	// after the next successful save.
+	healthMu sync.Mutex
+	health   string
 }
 
 type process struct {
@@ -572,8 +576,32 @@ func (a *Agents) save() {
 	}
 
 	if err := writeState(a.state, b); err != nil {
+		reason := fmt.Sprintf("state is not being saved: %v", err)
 		log.Printf("host: save %s: %v; agents will not be restored after a restart", a.state, err)
+		a.setHealth(reason)
+		return
 	}
+	a.setHealth("")
+}
+
+func (a *Agents) setHealth(reason string) {
+	a.healthMu.Lock()
+	if a.health == reason {
+		a.healthMu.Unlock()
+		return
+	}
+	a.health = reason
+	a.healthMu.Unlock()
+	select {
+	case a.reports <- hostReport{Type: "host", Error: reason}:
+	default:
+	}
+}
+
+func (a *Agents) Health() string {
+	a.healthMu.Lock()
+	defer a.healthMu.Unlock()
+	return a.health
 }
 
 // writeState replaces a state file only after its whole replacement reached
@@ -641,6 +669,11 @@ type statusReport struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Error  string `json:"error,omitempty"`
+}
+
+type hostReport struct {
+	Type  string `json:"type"`
+	Error string `json:"error,omitempty"`
 }
 
 func reasonFor(err error, fallback string) string {

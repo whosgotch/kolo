@@ -84,6 +84,7 @@ type HostInfo struct {
 	// asking for the last one. The host's word, carried so the
 	// one-agent-per-directory rule can bend where it is safe.
 	ByName []string  `json:"by_name,omitempty"`
+	Error  string    `json:"error,omitempty"`
 	Since  time.Time `json:"since"`
 }
 
@@ -164,6 +165,14 @@ func (r *Registry) Hosts() []HostInfo {
 	}
 	slices.SortFunc(out, func(a, b HostInfo) int { return cmp.Compare(a.ID, b.ID) })
 	return out
+}
+
+func (r *Registry) SetHostError(id, reason string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if h, ok := r.hosts[id]; ok {
+		h.info.Error = label(reason, maxLabel)
+	}
 }
 
 // Agents lists every reachable agent, oldest first.

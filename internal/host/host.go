@@ -98,7 +98,7 @@ func connect(ctx context.Context, cfg Config, agents *Agents, onWelcome func(wel
 	hello, _ := json.Marshal(map[string]any{
 		"type": "hello", "dirs": cfg.Dirs, "allow": cfg.Allow,
 		"found": adapter.Discovered(), "by_name": byName,
-		"agents": agents.Specs(), "version": cfg.Version,
+		"agents": agents.Specs(), "version": cfg.Version, "error": agents.Health(),
 	})
 	if err := send(ctx, conn, hello); err != nil {
 		return fmt.Errorf("host: hello: %w", err)

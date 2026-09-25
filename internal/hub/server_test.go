@@ -175,6 +175,25 @@ func TestHostJoins(t *testing.T) {
 	}
 }
 
+func TestAHostPersistenceFailureReachesTheAgentList(t *testing.T) {
+	s, memberToken, hostToken := hubFixture(t)
+	ctx := testContext(t)
+	conn := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+
+	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"host","error":"state is not being saved"}`)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		hosts := s.Registry().Hosts()
+		return len(hosts) == 1 && hosts[0].Error != ""
+	})
+	got := list(t, s, memberToken)
+	if len(got.Hosts) != 1 || got.Hosts[0].Error != "state is not being saved" {
+		t.Fatalf("hosts = %+v", got.Hosts)
+	}
+}
+
 func TestCreateReachesTheHost(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)

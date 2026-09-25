@@ -243,6 +243,23 @@ func TestWriteStateReportsAnUnwritableParent(t *testing.T) {
 	}
 }
 
+func TestAStateFailureAndRecoveryAreReported(t *testing.T) {
+	a, _ := agentsFixture(t)
+	a.setHealth("state is not being saved")
+	got, ok := (<-a.reports).(hostReport)
+	if !ok || got.Error == "" {
+		t.Fatalf("failure report = %#v", got)
+	}
+	if a.Health() != got.Error {
+		t.Fatalf("health = %q, want %q", a.Health(), got.Error)
+	}
+	a.setHealth("")
+	got, ok = (<-a.reports).(hostReport)
+	if !ok || got.Error != "" {
+		t.Fatalf("recovery report = %#v", got)
+	}
+}
+
 func TestRestoreReportsARejectedAgentOnce(t *testing.T) {
 	dir := t.TempDir()
 	state := filepath.Join(t.TempDir(), "agents.json")

@@ -351,6 +351,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		conn.Close(websocket.StatusPolicyViolation, err.Error())
 		return
 	}
+	s.registry.SetHostError(h.ID, hello.Error)
 	log.Printf("hub: %s joined %s, running %s", h.ID, s.orgName(), build(hello.Version))
 	defer func() {
 		for _, name := range s.registry.Leave(h.ID) {
@@ -368,11 +369,14 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		if report.Type == "status" {
+		switch report.Type {
+		case "status":
 			s.registry.SetStatus(report.Name, report.Status, label(report.Error, maxLabel))
 			if report.Status == StatusFailed {
 				s.journal.add(Entry{Agent: report.Name, What: WhatFailed, Text: report.Error})
 			}
+		case "host":
+			s.registry.SetHostError(h.ID, report.Error)
 		}
 	}
 }
@@ -746,6 +750,7 @@ type hostHello struct {
 	ByName  []string `json:"by_name"`
 	Agents  []Agent  `json:"agents"`
 	Version string   `json:"version"`
+	Error   string   `json:"error,omitempty"`
 }
 
 type viewerMessage struct {
