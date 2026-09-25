@@ -22,7 +22,7 @@ import (
 func upCmd(args []string) error {
 	fs := flag.NewFlagSet("up", flag.ExitOnError)
 	var dirs, allow list
-	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default any directory)")
+	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default current directory)")
 	fs.Var(&allow, "allow", "an agent command line the org may run, flags and all (repeat; '*' lends any command on PATH; default whichever kolo knows and finds installed)")
 	orgPath := fs.String("org", config.Path("org.json"), "org file, created if it is not there")
 	name := fs.String("name", "", "org name, used only when creating the org file (default this directory's name)")
@@ -48,7 +48,11 @@ func upCmd(args []string) error {
 	strayOrg(fs)
 
 	if len(dirs) == 0 {
-		dirs = list{hub.DirAny}
+		var err error
+		dirs, err = defaultDirs()
+		if err != nil {
+			return err
+		}
 	} else if err := resolveDirs(dirs); err != nil {
 		return err
 	}

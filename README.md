@@ -34,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/whosgotch/kolo/main/install | sh
 $ kolo up
 
 api is up at http://192.168.0.12:7300
-Lending anywhere · claude opencode · 3 members
+Lending /home/alex/work/api · claude opencode · 3 members
 
 Invite  http://192.168.0.12:7300/join#kolo_yPNNK8ZnHdvgKFDiQV2Oc…
         10 uses left, until Mon 31 Aug 20:34

@@ -20,7 +20,7 @@ import (
 func hostCmd(args []string) error {
 	fs := flag.NewFlagSet("host", flag.ExitOnError)
 	var dirs, allow list
-	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default any directory)")
+	fs.Var(&dirs, "dir", "a directory the org may run agents in (repeat for more; default current directory)")
 	fs.Var(&allow, "allow", "an agent command line the org may run, flags and all (repeat, or comma-separated; '*' lends any command on PATH)")
 	join := fs.String("join", os.Getenv("KOLO_JOIN"), "the join string the hub printed for this machine; supplies both -hub and -token (default $KOLO_JOIN)")
 	hubURL := fs.String("hub", os.Getenv("KOLO_HUB"), "hub to join, if not joining with -join (default $KOLO_HUB)")
@@ -58,7 +58,11 @@ func hostCmd(args []string) error {
 	}
 
 	if len(dirs) == 0 {
-		dirs = list{hub.DirAny}
+		var err error
+		dirs, err = defaultDirs()
+		if err != nil {
+			return err
+		}
 	} else if err := resolveDirs(dirs); err != nil {
 		return err
 	}
@@ -119,6 +123,14 @@ func resolveDirs(dirs list) error {
 		dirs[i] = abs
 	}
 	return nil
+}
+
+func defaultDirs() (list, error) {
+	dirs := list{"."}
+	if err := resolveDirs(dirs); err != nil {
+		return nil, fmt.Errorf("current directory: %w", err)
+	}
+	return dirs, nil
 }
 
 // list is a repeatable flag; each occurrence may be comma-separated.
