@@ -112,7 +112,7 @@ func TestReloadIgnoresAnUnchangedFile(t *testing.T) {
 }
 
 func TestReloadDisconnectsARevokedHost(t *testing.T) {
-	s, path, _, hostToken := fileHub(t)
+	s, path, memberToken, hostToken := fileHub(t)
 	go s.Serve()
 	ctx := testContext(t)
 
@@ -120,11 +120,20 @@ func TestReloadDisconnectsARevokedHost(t *testing.T) {
 	if hosts := s.registry.Hosts(); len(hosts) != 1 {
 		t.Fatalf("%d hosts connected, want 1", len(hosts))
 	}
+	resp := create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create: %s", resp.Status)
+	}
+	var spawn spawn
+	readFrame(t, ctx, conn, &spawn)
+	screen := openScreen(t, ctx, s, hostToken, "checkups")
+	waitFor(t, func() bool { _, ok := s.screens.get("checkups"); return ok })
 
 	writeOrg(t, path, Org{Name: "acme", Members: []Member{{ID: "artem", TokenHash: HashToken("y")}}})
 	s.reload(path, nil)
 
 	mustClose(t, conn, "a host removed from the org stayed connected")
+	mustClose(t, screen, "a revoked host kept streaming an agent screen")
 	waitFor(t, func() bool { return len(s.registry.Hosts()) == 0 })
 }
 

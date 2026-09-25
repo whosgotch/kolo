@@ -523,6 +523,7 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
+	defer s.conns.add(held{id: h.ID, hash: h.TokenHash, isHost: true, cancel: cancel})()
 	go func() {
 		select {
 		case <-r.Context().Done():
