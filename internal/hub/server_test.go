@@ -826,6 +826,56 @@ func TestKeysReachTheHost(t *testing.T) {
 	}
 }
 
+func TestACommandThatCannotReachTheHostIsRefused(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, _ := hubFixture(t)
+	r := NewRegistry()
+	if err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, nil, nil,
+		func(any) error { return errors.New("connection ended") }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Add(agentFixture("checkups", "/work/api")); err != nil {
+		t.Fatal(err)
+	}
+	s.registry = r
+	live := s.screens.open("checkups", 120, 40, detect.Markers{})
+	defer s.screens.close("checkups", live)
+
+	viewer := watch(t, ctx, s, memberToken, "checkups")
+	readUntilBytes(t, ctx, viewer)
+	if err := viewer.Write(ctx, websocket.MessageText, []byte(`{"type":"keys","keys":"rm -rf nope\r"}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for {
+		kind, data, err := viewer.Read(deadline)
+		if err != nil {
+			t.Fatalf("no refusal reached the viewer: %v", err)
+		}
+		if kind != websocket.MessageText {
+			continue
+		}
+		var event struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(data, &event) == nil && event.Type == "refused" {
+			if !strings.Contains(event.Text, "host went away") {
+				t.Errorf("refusal = %q", event.Text)
+			}
+			break
+		}
+	}
+	if entries := s.journal.tail("checkups", 10); len(entries) != 0 {
+		t.Errorf("an undelivered command was journaled: %+v", entries)
+	}
+	if _, typed := s.typists.get("checkups"); typed {
+		t.Error("an undelivered command claimed the keyboard")
+	}
+}
+
 func TestAJoinerIsToldWhatTheAgentIsDoing(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, _, screen := withAgent(t, ctx)

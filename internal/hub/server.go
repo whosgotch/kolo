@@ -646,27 +646,44 @@ func (s *Server) takeFrom(ctx context.Context, conn *websocket.Conn, member Memb
 		if err != nil {
 			return
 		}
-		switch msg.Type {
-		case "keys":
-			if msg.Keys == "" {
-				continue
-			}
-			if was, changed := s.typists.set(name, member.Person()); changed {
-				s.sayKeyboard(name, member.Person(), was)
-			}
-			s.journal.typed(name, member.Person(), msg.Keys)
-		case "interrupt", "restart", "fresh":
-			s.journal.add(Entry{Agent: name, What: done(msg.Type), Who: member.Person()})
-			s.journal.forget(name)
-		default:
+		if msg.Type == "keys" && msg.Keys == "" {
+			continue
+		}
+		if msg.Type != "keys" && msg.Type != "interrupt" && msg.Type != "restart" && msg.Type != "fresh" {
 			continue
 		}
 		send, ok := s.registry.Sender(name)
 		if !ok {
+			s.refuseViewer(name, "the agent is no longer available")
 			continue
 		}
-		send(toAgent{Type: msg.Type, Name: name, From: member.Name, Keys: msg.Keys})
+		if err := send(toAgent{Type: msg.Type, Name: name, From: member.Name, Keys: msg.Keys}); err != nil {
+			s.refuseViewer(name, "the host went away before the command could be delivered")
+			continue
+		}
+
+		switch msg.Type {
+		case "keys":
+			if was, changed := s.typists.set(name, member.Person()); changed {
+				s.sayKeyboard(name, member.Person(), was)
+			}
+			s.journal.typed(name, member.Person(), msg.Keys)
+		default:
+			s.journal.add(Entry{Agent: name, What: done(msg.Type), Who: member.Person()})
+			s.journal.forget(name)
+		}
 	}
+}
+
+func (s *Server) refuseViewer(name, reason string) {
+	live, ok := s.screens.get(name)
+	if !ok {
+		return
+	}
+	live.Announce(struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}{"refused", reason})
 }
 
 func done(action string) string {
