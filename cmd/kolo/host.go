@@ -66,6 +66,11 @@ func hostCmd(args []string) error {
 	} else if err := resolveDirs(dirs); err != nil {
 		return err
 	}
+	unlockState, err := host.LockState(*state)
+	if err != nil {
+		return err
+	}
+	defer unlockState()
 
 	cfg := host.Config{
 		Hub:     *hubURL,

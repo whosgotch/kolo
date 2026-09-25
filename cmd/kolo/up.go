@@ -69,6 +69,11 @@ func upCmd(args []string) error {
 				strings.Join(adapter.Kinds(), ", "), *kinds)
 		}
 	}
+	unlockState, err := host.LockState(*state)
+	if err != nil {
+		return err
+	}
+	defer unlockState()
 
 	// Every org write happens before the hub starts.
 	created, err := hub.Init(*orgPath, orgName(*name))
