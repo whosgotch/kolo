@@ -113,7 +113,8 @@ func lends(w io.Writer, allows []string, kindsPath string) bool {
 	if len(unreadable) > 0 {
 		fmt.Fprintln(w)
 		wrap(w, "  ", fmt.Sprintf("%s %s screens kolo does not know, so the list will not say what %s doing, "+
-			"kolo cannot interrupt one safely, and each restart starts it fresh. "+
+			"but watching, typing and stopping still work in the browser. Kolo cannot interrupt one safely, "+
+			"and each restart starts it fresh. "+
 			"Describe one in %s. See %s.",
 			english(unreadable), verb(unreadable, "draws", "draw"), verb(unreadable, "it is", "they are"),
 			kindsPath, referenceURL))
