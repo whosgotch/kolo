@@ -70,6 +70,7 @@ type process struct {
 	input    *relay.Relay
 	started  time.Time
 	stopping bool
+	stopped  chan struct{}
 	fails    int
 	// fresh means the next launch must not resume.
 	fresh bool
@@ -176,7 +177,10 @@ func (a *Agents) reserve(spec hub.Agent, fresh bool, session string) error {
 	}
 	// Reserved before the process exists, so two spawns can't both find the
 	// name free.
-	a.running[spec.Name] = &process{spec: spec, status: hub.StatusStarting, fresh: fresh, session: session}
+	a.running[spec.Name] = &process{
+		spec: spec, status: hub.StatusStarting, fresh: fresh, session: session,
+		stopped: make(chan struct{}),
+	}
 	a.mu.Unlock()
 	return nil
 }
@@ -421,7 +425,19 @@ func (a *Agents) wait(name string, started *agent.Agent, closeScreen context.Can
 	a.mu.Unlock()
 
 	a.report(name, hub.StatusStarting, reason)
-	time.Sleep(restartDelay)
+	timer := time.NewTimer(restartDelay)
+	select {
+	case <-timer.C:
+	case <-p.stopped:
+		timer.Stop()
+		a.mu.Lock()
+		if current, ok := a.running[name]; ok && current == p {
+			delete(a.running, name)
+		}
+		a.mu.Unlock()
+		a.save()
+		return
+	}
 	if err := a.launch(name); err != nil {
 		// begin does this on an initial launch. A restart has already kept the
 		// record through the delay, so it must clean it up here too: otherwise
@@ -447,9 +463,10 @@ func (a *Agents) Stop(name string) {
 	a.mu.Lock()
 	p, ok := a.running[name]
 	var running *agent.Agent
-	if ok {
+	if ok && !p.stopping {
 		// Set before the kill, so wait's restart doesn't race this stop.
 		p.stopping = true
+		close(p.stopped)
 		running = p.agent
 	}
 	a.mu.Unlock()

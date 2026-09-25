@@ -145,6 +145,25 @@ func TestAnAgentThatDiesComesBack(t *testing.T) {
 	waitFor(t, func() bool { return processOf(t, a, "checkups") != first })
 }
 
+func TestStoppingCancelsAWaitingRestart(t *testing.T) {
+	wasDelay := restartDelay
+	restartDelay = 30 * time.Second
+	t.Cleanup(func() { restartDelay = wasDelay })
+	a, dir := agentsFixture(t)
+
+	if err := a.Start(spec("checkups", dir, "cat")); err != nil {
+		t.Fatal(err)
+	}
+	nextReport(t, a)
+	processOf(t, a, "checkups").Close()
+	if got := nextReport(t, a); got.Status != hub.StatusStarting {
+		t.Fatalf("after dying, reported %+v", got)
+	}
+
+	a.Stop("checkups")
+	waitFor(t, func() bool { return len(a.Names()) == 0 })
+}
+
 // A restart can fail before it makes a process—for example, when a checkout
 // containing an allowed command was removed. It must not leave a dead record
 // looking like an agent still starting.
