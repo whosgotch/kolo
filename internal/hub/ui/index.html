@@ -293,9 +293,17 @@
 
   /* One line, always: a note appearing and going must not resize the screen
      above it, which would cost every watcher a repaint at a new size. */
-  .note { height: 30px; margin: 0; padding: 7px 16px; color: var(--dim);
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .watch-bar { height: 30px; padding: 4px 10px 4px 16px; display: flex;
+               align-items: center; gap: 10px; }
+  .watch-bar .note { flex: 1; min-width: 0; margin: 0; color: var(--dim);
+                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dialog-note { min-height: 30px; margin: 0; padding: 7px 16px; color: var(--dim);
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .note.problem { color: var(--kolo-state-failed); }
+  .watch-action { flex: none; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px;
+                  color: var(--dim); font: 11.5px var(--ui); }
+  .watch-action:hover:not(:disabled) { background: var(--raised); color: var(--text); }
+  .watch-action:disabled { cursor: default; opacity: 0.35; }
 
   /* ---- the log ------------------------------------------------------------ */
 
@@ -392,7 +400,10 @@
         </div>
         <span class="typist" hidden></span>
       </div>
-      <p class="note"></p>
+      <div class="watch-bar">
+        <p class="note"></p>
+        <button type="button" class="watch-action restart" disabled>restart</button>
+      </div>
     </section>
 
     <!-- What stands in for roles. Everyone may do everything, so everyone can
@@ -1125,6 +1136,7 @@ function close() {
   watching = null;
   offer('unknown');
   typist = null; keyboardChanged();
+  el('.watch .restart').disabled = true;
   if (socket) { const was = socket; socket = null; was.close(); }
 }
 
@@ -1138,6 +1150,7 @@ function connect(name) {
   // reports its own close, which would land after the replacement opened.
   ws.onopen = () => {
     if (ws !== socket) return;
+    el('.watch .restart').disabled = false;
     say('.watch .note', `watching ${name}`);
   };
 
@@ -1193,6 +1206,7 @@ function connect(name) {
     // about: the agent may be restarting, or gone.
     offer('unknown');
     typist = null; keyboardChanged();
+    el('.watch .restart').disabled = true;
     say('.watch .note', `waiting for ${name} to show a screen`);
     setTimeout(() => { if (watching === name) connect(name); }, 1000);
   };
@@ -1237,6 +1251,11 @@ function tell(what) {
   socket.send(JSON.stringify(what));
   return true;
 }
+
+el('.watch .restart').onclick = () => {
+  if (!confirm('Restart this agent? Its current work will be interrupted. Kolo will resume its conversation when this agent supports it.')) return;
+  tell({ type: 'restart' });
+};
 
 
 // ---- the log -----------------------------------------------------------
