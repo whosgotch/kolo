@@ -1302,7 +1302,7 @@ function entryRow(e) {
   put('who', who || 'nobody');
   put('what', didWhat(e.what));
   put('on', labelOf(e.agent));
-  if (e.text) put('said', e.text);
+  if (e.text) put('said', e.text + (e.truncated ? ' … [truncated]' : ''));
   return row;
 }
 

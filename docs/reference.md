@@ -216,7 +216,9 @@ they are written down with no name against them.
 **Typed lines are rebuilt from keystrokes** and only written when you press
 Enter, so a line you abandon halfway is never recorded. Because it is a
 reconstruction, pasted text and menu choices made with arrow keys will not read
-back exactly.
+back exactly. A line longer than 500 bytes is marked as truncated. If more than
+one member contributed to a line, the entry is left unattributed rather than
+crediting the person who happened to press Enter.
 
 **Nothing an agent prints is kept.** Only what people did.
 

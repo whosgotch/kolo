@@ -37,11 +37,12 @@ const (
 // Entry is one thing that happened to one agent. Who is absent when nobody
 // did it.
 type Entry struct {
-	At    time.Time `json:"at"`
-	Agent string    `json:"agent"`
-	What  string    `json:"what"`
-	Who   Person    `json:"who,omitzero"`
-	Text  string    `json:"text,omitempty"`
+	At        time.Time `json:"at"`
+	Agent     string    `json:"agent"`
+	What      string    `json:"what"`
+	Who       Person    `json:"who,omitzero"`
+	Text      string    `json:"text,omitempty"`
+	Truncated bool      `json:"truncated,omitempty"`
 }
 
 type journal struct {
@@ -55,8 +56,10 @@ type journal struct {
 }
 
 type line struct {
-	who  Person
-	text string
+	who       Person
+	text      string
+	mixed     bool
+	truncated bool
 }
 
 func journalPath(org string) string {
@@ -244,23 +247,34 @@ func (j *journal) typed(agent string, who Person, keys string) {
 	defer j.mu.Unlock()
 
 	held := j.typing[agent]
-	held.who = who
+	if held.text != "" && held.who.ID != "" && held.who.ID != who.ID {
+		held.mixed = true
+	}
 	for _, r := range strip(keys) {
 		switch r {
 		case '\r', '\n':
 			said := strings.TrimSpace(held.text)
-			held.text = ""
 			if said != "" {
-				j.addLocked(Entry{Agent: agent, What: WhatSaid, Who: who, Text: said})
+				actor := held.who
+				if held.mixed {
+					actor = Person{}
+				}
+				j.addLocked(Entry{Agent: agent, What: WhatSaid, Who: actor, Text: said, Truncated: held.truncated})
 			}
+			held = line{}
 		case 0x7f, 0x08:
 			if n := len(held.text); n > 0 {
 				_, size := utf8.DecodeLastRuneInString(held.text)
 				held.text = held.text[:n-size]
 			}
 		default:
+			if held.who.ID == "" {
+				held.who = who
+			}
 			if len(held.text) < maxSaid {
 				held.text += string(r)
+			} else {
+				held.truncated = true
 			}
 		}
 	}

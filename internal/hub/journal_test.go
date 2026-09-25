@@ -211,6 +211,33 @@ func TestTypedForgotten(t *testing.T) {
 	}
 }
 
+func TestAParagraphTypedByTwoPeopleIsNotMisattributed(t *testing.T) {
+	j, _ := journalFixture(t)
+	j.typed("checkups", dana(), "run the ")
+	j.typed("checkups", Person{ID: "artem", Name: "Artem"}, "migrations\r")
+
+	got := j.tail("checkups", 10)
+	if len(got) != 1 || got[0].Text != "run the migrations" {
+		t.Fatalf("entries = %+v", got)
+	}
+	if got[0].Who != (Person{}) {
+		t.Fatalf("a mixed line was attributed to %+v", got[0].Who)
+	}
+}
+
+func TestAClippedTypedLineSaysItWasTruncated(t *testing.T) {
+	j, _ := journalFixture(t)
+	j.typed("checkups", dana(), strings.Repeat("x", maxSaid+20)+"\r")
+
+	got := j.tail("checkups", 10)
+	if len(got) != 1 || !got[0].Truncated {
+		t.Fatalf("entries = %+v", got)
+	}
+	if len(got[0].Text) != maxSaid {
+		t.Fatalf("kept %d bytes, want %d", len(got[0].Text), maxSaid)
+	}
+}
+
 func TestJournalRecordsWhatMembersDo(t *testing.T) {
 	s, memberToken, hostToken := hubFixture(t)
 	ctx := testContext(t)
