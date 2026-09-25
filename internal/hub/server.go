@@ -37,8 +37,10 @@ const (
 // coder/websocket reads 32 KiB by default, which a repaint outgrows: a 120x40
 // grid in per-cell colour measures over 100 KB.
 const (
-	screenLimit  = 4 << 20
-	controlLimit = 1 << 20
+	screenLimit   = 4 << 20
+	controlLimit  = 1 << 20
+	maxScreenCols = 500
+	maxScreenRows = 200
 )
 
 const (
@@ -538,8 +540,9 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	hello, err := read[screenHello](ctx, conn, helloTimeout)
-	if err != nil || hello.Type != "screen" || hello.Cols <= 0 || hello.Rows <= 0 {
-		conn.Close(websocket.StatusPolicyViolation, "expected a screen size")
+	if err != nil || hello.Type != "screen" || hello.Cols <= 0 || hello.Rows <= 0 ||
+		hello.Cols > maxScreenCols || hello.Rows > maxScreenRows {
+		conn.Close(websocket.StatusPolicyViolation, "expected a reasonable screen size")
 		return
 	}
 

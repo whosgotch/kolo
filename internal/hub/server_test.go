@@ -466,6 +466,29 @@ func openScreenWith(t *testing.T, ctx context.Context, s *Server, token, name st
 	return conn
 }
 
+func TestAHostCannotAllocateAnUnboundedScreen(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, hostToken := hubFixture(t)
+	control := joinAsHost(t, ctx, s, hostToken)
+	waitFor(t, func() bool { return len(s.Registry().Hosts()) == 1 })
+	create(t, s, memberToken, `{"name":"checkups","host":"devbox","dir":"/work/api","command":"claude"}`)
+	var cmd spawn
+	readFrame(t, ctx, control, &cmd)
+
+	screen := dialScreen(t, ctx, s, hostToken, "checkups")
+	hello, err := json.Marshal(screenHello{Type: "screen", Cols: maxScreenCols + 1, Rows: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := screen.Write(ctx, websocket.MessageText, hello); err != nil {
+		t.Fatal(err)
+	}
+	mustClose(t, screen, "an oversized screen connection stayed open")
+	if _, ok := s.screens.get("checkups"); ok {
+		t.Fatal("an oversized terminal allocated a screen")
+	}
+}
+
 func withAgent(t *testing.T, ctx context.Context) (_ *Server, memberToken, hostToken string, screen *websocket.Conn) {
 	t.Helper()
 	s, memberToken, hostToken := hubFixture(t)
