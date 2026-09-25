@@ -78,7 +78,7 @@ func TestDoctorSaysWhatEachAgentKindCosts(t *testing.T) {
 	}
 	for _, want := range []string{
 		"claude", "--resume {session}",
-		"sh", "watch and type only",
+		"sh", "watch, type and stop",
 		// A word at a time: where the lines fall depends on the agent names.
 		"browser", kinds,
 	} {
@@ -100,6 +100,9 @@ func TestDoctorExplainsUnknownAgentsOnce(t *testing.T) {
 	}
 	if !strings.Contains(out, "sh, cat and env") {
 		t.Errorf("the report does not name them together:\n%s", out)
+	}
+	if strings.Contains(out, "cannot stop") || !strings.Contains(out, "cannot interrupt") {
+		t.Errorf("the report confuses stopping a process with interrupting its work:\n%s", out)
 	}
 }
 

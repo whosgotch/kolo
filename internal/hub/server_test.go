@@ -783,6 +783,18 @@ func TestThePageIsServed(t *testing.T) {
 	}
 }
 
+func TestThePageDoesNotClaimUnknownScreensBlockTyping(t *testing.T) {
+	s, _, _ := hubFixture(t)
+	resp := call(t, s, "GET", "/", "", "")
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(body, []byte("nothing will be sent")) || !bytes.Contains(body, []byte("typing still works")) {
+		t.Fatal("the page gives the wrong expectation for an unrecognised screen")
+	}
+}
+
 // The join page is the one that goes through a template rather than being
 // served whole, so it reaches the embedded files by a different route than
 // the page above and is worth asking for separately.

@@ -95,7 +95,7 @@ func lends(w io.Writer, allows []string, kindsPath string) bool {
 		}
 		name, kind := filepath.Base(argv[0]), adapter.For(command)
 		if kind.Markers.Blank() && len(kind.Resume) == 0 {
-			fmt.Fprintf(table, "  %s\tlimited\twatch and type only\n", shown(command, path, argv[0]))
+			fmt.Fprintf(table, "  %s\tlimited\twatch, type and stop\n", shown(command, path, argv[0]))
 			unreadable = append(unreadable, name)
 			continue
 		}
@@ -113,7 +113,7 @@ func lends(w io.Writer, allows []string, kindsPath string) bool {
 	if len(unreadable) > 0 {
 		fmt.Fprintln(w)
 		wrap(w, "  ", fmt.Sprintf("%s %s screens kolo does not know, so the list will not say what %s doing, "+
-			"nobody can stop one from the browser, and each restart starts it fresh. "+
+			"kolo cannot interrupt one safely, and each restart starts it fresh. "+
 			"Describe one in %s. See %s.",
 			english(unreadable), verb(unreadable, "draws", "draw"), verb(unreadable, "it is", "they are"),
 			kindsPath, referenceURL))
@@ -130,12 +130,12 @@ func verdict(kind adapter.Adapter) string {
 }
 
 func can(kind adapter.Adapter) string {
-	parts := []string{"status", "stop", "resume"}
+	parts := []string{"status", "interrupt", "resume"}
 	if kind.Markers.Blank() {
 		parts[0] = "no status"
 	}
 	if kind.Markers.Busy == "" {
-		parts[1] = "no stop"
+		parts[1] = "no interrupt"
 	}
 	if len(kind.Resume) == 0 {
 		parts[2] = "no resume"
