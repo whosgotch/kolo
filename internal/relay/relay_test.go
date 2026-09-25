@@ -144,10 +144,10 @@ func TestSilenceIsIdleOnlyForAKindThatSaysSo(t *testing.T) {
 func TestOneWriteAtATime(t *testing.T) {
 	r, _, _ := fixture(detect.Busy)
 	started := make(chan struct{})
-	done := make(chan error, 1)
+	first := make(chan error, 1)
 
 	go func() {
-		done <- r.exclusive(func() error {
+		first <- r.exclusive(func() error {
 			close(started)
 			time.Sleep(50 * time.Millisecond)
 			return nil
@@ -155,13 +155,17 @@ func TestOneWriteAtATime(t *testing.T) {
 	}()
 	<-started
 
-	if err := r.Type("x"); err == nil {
-		t.Error("a keystroke landed while something else was being written")
+	second := make(chan error, 1)
+	go func() { second <- r.Type("x") }()
+	select {
+	case err := <-second:
+		t.Fatalf("the second write did not wait: %v", err)
+	case <-time.After(10 * time.Millisecond):
 	}
-	if err := <-done; err != nil {
+	if err := <-first; err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Type("x"); err != nil {
+	if err := <-second; err != nil {
 		t.Fatal(err)
 	}
 }

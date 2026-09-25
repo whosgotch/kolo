@@ -30,8 +30,7 @@ type Relay struct {
 	// Read fresh on every call: gating decides from the screen now.
 	screen func() (string, time.Duration)
 
-	mu      sync.Mutex
-	sending bool
+	mu sync.Mutex
 }
 
 func New(agent Sender, screen func() (string, time.Duration), kind adapter.Adapter) *Relay {
@@ -68,21 +67,10 @@ func (r *Relay) Interrupt() error {
 	})
 }
 
-// exclusive serialises writes to the agent. The mutex is not held across the
-// write, so one stuck on a full PTY buffer doesn't block the next read.
+// exclusive serialises writes to the agent. A second member waits for the
+// current paste or keystroke instead of losing input because both typed at once.
 func (r *Relay) exclusive(write func() error) error {
 	r.mu.Lock()
-	if r.sending {
-		r.mu.Unlock()
-		return fmt.Errorf("relay: something else is being sent")
-	}
-	r.sending = true
-	r.mu.Unlock()
-
-	err := write()
-
-	r.mu.Lock()
-	r.sending = false
-	r.mu.Unlock()
-	return err
+	defer r.mu.Unlock()
+	return write()
 }

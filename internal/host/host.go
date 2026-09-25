@@ -5,7 +5,6 @@ package host
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -15,7 +14,6 @@ import (
 	"github.com/coder/websocket"
 	"github.com/whosgotch/kolo/internal/adapter"
 	"github.com/whosgotch/kolo/internal/hub"
-	"github.com/whosgotch/kolo/internal/relay"
 	"github.com/whosgotch/kolo/internal/session"
 )
 
@@ -152,9 +150,7 @@ func obey(ctx context.Context, conn *websocket.Conn, agents *Agents) error {
 		case "stop":
 			agents.Stop(c.Name)
 		case "keys":
-			// A late keystroke stays silent; a refused paste does not, since
-			// somebody meant to send it.
-			if err := agents.Type(c.Name, c.Keys); errors.Is(err, relay.ErrTooMuch) {
+			if err := agents.Type(c.Name, c.Keys); err != nil {
 				agents.refuse(c.Name, err.Error())
 			}
 		case "interrupt":
