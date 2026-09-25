@@ -946,6 +946,24 @@ func TestAJoinerIsToldWhatTheAgentIsDoing(t *testing.T) {
 	}
 }
 
+func TestTheAgentListShowsWhichScreenNeedsAttention(t *testing.T) {
+	ctx := testContext(t)
+	s, memberToken, _, screen := withAgent(t, ctx)
+	dialog := " Do you want to create note.txt?\r\n ❯ 1. Yes\r\n   2. No\r\n\r\n Esc to cancel\r\n"
+	if err := screen.Write(ctx, websocket.MessageBinary, []byte(dialog)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		live, ok := s.screens.get("checkups")
+		return ok && live.State() == detect.Dialog
+	})
+
+	got := list(t, s, memberToken)
+	if len(got.Agents) != 1 || got.Agents[0].ScreenState != "dialog" {
+		t.Fatalf("listed agents = %+v, want a dialog screen", got.Agents)
+	}
+}
+
 func TestAnAgentKindWithNoMarkersClaimsNothing(t *testing.T) {
 	ctx := testContext(t)
 	s, memberToken, hostToken := hubFixture(t)

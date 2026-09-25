@@ -383,11 +383,17 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	agents := s.registry.Agents()
+	for i := range agents {
+		if live, ok := s.screens.get(agents[i].Name); ok {
+			agents[i].ScreenState = live.State().String()
+		}
+	}
 	writeJSON(w, http.StatusOK, listResponse{
 		Org:    s.orgName(),
 		You:    member.Person(),
 		Hosts:  s.registry.Hosts(),
-		Agents: s.registry.Agents(),
+		Agents: agents,
 	})
 }
 

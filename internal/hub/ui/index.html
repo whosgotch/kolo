@@ -161,6 +161,10 @@
 
   .dot { width: 7px; height: 7px; border-radius: 999px; flex: none; background: var(--kolo-state-idle); }
   .dot.failed { background: var(--kolo-state-failed); }
+  .dot.unknown { background: var(--faint); }
+  .dot.dialog { background: var(--kolo-state-running); }
+  .attention { flex: none; color: var(--kolo-state-running); font: 600 10px var(--ui);
+               text-transform: uppercase; letter-spacing: 0.35px; }
   .spinner { flex: none; }
   .spinner .track { stroke: color-mix(in srgb, var(--kolo-state-running) 20%, transparent); }
   .spinner .arc { stroke: var(--kolo-state-running); stroke-dasharray: 9 22.4; transform-origin: 6.5px 6.5px;
@@ -773,10 +777,10 @@ function drawGroups(agents) {
         <span class="row"></span>
         <span class="dir"></span>`;
       const rowInner = row.querySelector('.row');
-      // The registry only knows starting/running/failed. Busy-vs-idle is a
-      // fact about the live screen, which only exists for whichever agent
-      // is actually being watched right now.
-      const busy = a.name === open && doing === 'busy';
+      // Lifecycle comes from the host control connection; busy, idle and a
+      // question waiting come from the live terminal screen.
+      const screenState = a.screen_state || 'unknown';
+      const busy = screenState === 'busy';
       if (busy) {
         const spinner = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         spinner.setAttribute('class', 'spinner');
@@ -786,7 +790,7 @@ function drawGroups(agents) {
         rowInner.append(spinner);
       } else {
         const dot = document.createElement('span');
-        dot.className = 'dot' + (a.status === 'failed' ? ' failed' : '');
+        dot.className = `dot ${a.status === 'failed' ? 'failed' : screenState}`;
         rowInner.append(dot);
       }
       if (a.name === renamingId) {
@@ -812,6 +816,12 @@ function drawGroups(agents) {
         name.ondblclick = (ev) => { ev.stopPropagation(); startRename(a); };
         rowInner.append(name);
       }
+      if (screenState === 'dialog') {
+        const attention = document.createElement('span');
+        attention.className = 'attention';
+        attention.textContent = 'needs you';
+        rowInner.append(attention);
+      }
       const chip = document.createElement('span');
       chip.className = 'kind-chip';
       chip.title = programOf(a.command) || a.command;
@@ -826,7 +836,8 @@ function drawGroups(agents) {
       drop.onclick = (ev) => { ev.stopPropagation(); stop(a.name); };
       rowInner.append(drop);
       row.querySelector('.dir').textContent = a.dir;
-      row.title = a.error ? `${a.status}: ${a.error}` : a.status;
+      row.title = a.error ? `${a.status}: ${a.error}` :
+        (screenState === 'unknown' ? a.status : screenState);
       row.onclick = () => { location.hash = `#/agent/${a.name}`; };
       row.onkeydown = (ev) => {
         if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); location.hash = `#/agent/${a.name}`; }
@@ -1024,10 +1035,6 @@ try {
   console.warn('canvas renderer unavailable, falling back to the DOM', e);
 }
 
-// What the open agent's screen is doing, which is the only place brass is
-// earned: the hub says this about the screen being watched and no other.
-let doing = null;
-
 // Who typed at the agent being watched last.
 let typist = null;
 
@@ -1134,7 +1141,6 @@ function watch(name) {
 
 function close() {
   watching = null;
-  offer('unknown');
   typist = null; keyboardChanged();
   el('.watch .restart').disabled = true;
   if (socket) { const was = socket; socket = null; was.close(); }
@@ -1193,18 +1199,12 @@ function connect(name) {
         say('.watch .note', msg.text, true);
         break;
     }
-    // What can be done comes from the same events as what the agent is doing, so
-    // stop is never offered for a screen the agent has left behind.
-    if (msg.state) offer(msg.state);
   };
 
   // Falling behind, an agent restarting, and one not started yet all end the
   // same way: reconnect, and the next repaint resyncs.
   ws.onclose = () => {
     if (ws !== socket) return;
-    // Nothing may be offered about a screen this page is no longer being told
-    // about: the agent may be restarting, or gone.
-    offer('unknown');
     typist = null; keyboardChanged();
     el('.watch .restart').disabled = true;
     say('.watch .note', `waiting for ${name} to show a screen`);
@@ -1225,13 +1225,6 @@ function describe(state) {
     case 'dialog': return 'waiting on a person: type to answer it';
     default: return 'kolo does not recognise this screen; typing still works';
   }
-}
-
-// offer records what the watched screen is doing. Read back by drawGroups
-// for the sidebar's busy spinner, the only thing left that depends on it,
-// now that the web UI has no controls of its own that care.
-function offer(state) {
-  doing = state;
 }
 
 // keyboardChanged redraws who typed last.
