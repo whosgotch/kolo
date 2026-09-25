@@ -46,8 +46,9 @@ no token to paste.
 **One screen, everybody on it.** Watch an agent work, type at it, take over
 mid-sentence. Whoever typed last drives, and everyone sees who.
 
-**Nothing to open.** The host dials out over one websocket. No inbound port,
-no firewall rule, no tunnel.
+**Hosts dial out.** A machine running `kolo host` needs no inbound port or
+tunnel. The hub still has to accept browser and host connections; `kolo up`
+runs that hub on the same machine and listens on the address it prints.
 
 **Anything that draws a terminal.** Claude Code and opencode out of the box,
 and one small file describes another.

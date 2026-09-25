@@ -35,7 +35,7 @@ There are two halves:
       │            │                        │ kolo host       │
       └─────┬──────┘                        │   ├ agent (PTY) │
             ▼                               │   ├ agent (PTY) │
-        ┌───────┐ ◄──── outbound websocket ─┤   └ agent (PTY) │
+        ┌───────┐ ◄── outbound websockets ──┤   └ agent (PTY) │
         │  hub  │                           └─────────────────┘
         └───────┘
 ```
@@ -43,8 +43,10 @@ There are two halves:
 `kolo up` runs both halves in one process, which is the usual way to start.
 `kolo serve` and `kolo host` split them across machines.
 
-**The host dials out.** It opens one websocket to the hub and never accepts an
-inbound connection. No open port, no firewall rule, no tunnel.
+**The host dials out.** It opens a control websocket and one screen websocket
+per running agent, and never accepts an inbound connection. A separate host
+needs no open port, firewall rule, or tunnel. The hub does accept connections;
+with `kolo up`, the hub and host happen to run in the same process.
 
 **Only hosts install kolo.** Everyone else opens a link. It is one Go binary
 with nothing beside it.
