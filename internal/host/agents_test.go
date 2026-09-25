@@ -136,6 +136,9 @@ func TestAnAgentThatDiesComesBack(t *testing.T) {
 	if got := nextReport(t, a); got.Status != hub.StatusStarting {
 		t.Fatalf("after dying, reported %+v", got)
 	}
+	if got := a.Specs(); len(got) != 1 || got[0].Status != hub.StatusStarting {
+		t.Fatalf("reconnect snapshot while restarting = %+v", got)
+	}
 	if got := nextReport(t, a); got.Status != hub.StatusRunning {
 		t.Fatalf("after restarting, reported %+v", got)
 	}

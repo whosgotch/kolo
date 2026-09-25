@@ -64,6 +64,7 @@ type Agents struct {
 
 type process struct {
 	spec     hub.Agent
+	status   string
 	agent    *agent.Agent
 	live     *session.Session
 	input    *relay.Relay
@@ -175,7 +176,7 @@ func (a *Agents) reserve(spec hub.Agent, fresh bool, session string) error {
 	}
 	// Reserved before the process exists, so two spawns can't both find the
 	// name free.
-	a.running[spec.Name] = &process{spec: spec, fresh: fresh, session: session}
+	a.running[spec.Name] = &process{spec: spec, status: hub.StatusStarting, fresh: fresh, session: session}
 	a.mu.Unlock()
 	return nil
 }
@@ -234,6 +235,7 @@ func (a *Agents) launch(name string) error {
 	input := relay.New(started, live.Screen, kind)
 	screen, closeScreen := context.WithCancel(context.Background())
 	p.agent, p.started, p.live, p.input = started, time.Now(), live, input
+	p.status = hub.StatusRunning
 	p.resumed, p.fresh, p.bounced = resumed, false, false
 	p.state, p.since = detect.Unknown, time.Now()
 	a.mu.Unlock()
@@ -282,6 +284,7 @@ func (a *Agents) bounce(name, from string, fresh bool) error {
 		return fmt.Errorf("%s is not running here", name)
 	}
 	p.bounced = true
+	p.status = hub.StatusStarting
 	if fresh {
 		// The id goes too, or a dying process brings back what was cleared.
 		p.fresh, p.session = true, ""
@@ -414,6 +417,7 @@ func (a *Agents) wait(name string, started *agent.Agent, closeScreen context.Can
 		a.report(name, hub.StatusFailed, reasonFor(err, "it will not stay running"))
 		return
 	}
+	p.status = hub.StatusStarting
 	a.mu.Unlock()
 
 	a.report(name, hub.StatusStarting, reason)
@@ -479,10 +483,7 @@ func (a *Agents) Specs() []hub.Agent {
 	out := make([]hub.Agent, 0, len(a.running))
 	for _, p := range a.running {
 		spec := p.spec
-		spec.Status = hub.StatusRunning
-		if p.agent == nil {
-			spec.Status = hub.StatusStarting
-		}
+		spec.Status = p.status
 		out = append(out, spec)
 	}
 	slices.SortFunc(out, func(x, y hub.Agent) int { return x.CreatedAt.Compare(y.CreatedAt) })
