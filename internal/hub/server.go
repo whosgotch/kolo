@@ -480,14 +480,24 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	send, ok := s.registry.Remove(name)
+	send, ok := s.registry.Sender(name)
 	if !ok {
 		http.Error(w, "no agent called "+name, http.StatusNotFound)
 		return
 	}
+	if err := send(stop{Type: "stop", Name: name}); err != nil {
+		http.Error(w, "the host went away before the agent could be stopped", http.StatusServiceUnavailable)
+		return
+	}
+	// Keep the agent visible until its host has accepted the stop. Removing it
+	// first made a failed delivery look successful and left the process running
+	// with no way for the org to address it.
+	if _, ok := s.registry.Remove(name); !ok {
+		http.Error(w, "the agent was already stopped", http.StatusConflict)
+		return
+	}
 	s.journal.add(Entry{Agent: name, What: WhatStopped, Who: member.Person()})
 	s.journal.forget(name)
-	send(stop{Type: "stop", Name: name})
 	w.WriteHeader(http.StatusNoContent)
 }
 

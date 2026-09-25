@@ -697,6 +697,30 @@ func TestSignInRefusesAndSignsOut(t *testing.T) {
 	}
 }
 
+func TestDeleteKeepsAnAgentWhenTheHostCannotBeTold(t *testing.T) {
+	s, memberToken, _ := hubFixture(t)
+	r := NewRegistry()
+	if err := r.Join("devbox", []string{"/work/api"}, []string{"claude"}, nil, nil, nil,
+		func(any) error { return errors.New("connection ended") }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Add(agentFixture("checkups", "/work/api")); err != nil {
+		t.Fatal(err)
+	}
+	s.registry = r
+
+	got := call(t, s, "DELETE", "/v1/agents/checkups", memberToken, "")
+	if got.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("delete = %s, want 503", got.Status)
+	}
+	if _, ok := s.Registry().Agent("checkups"); !ok {
+		t.Fatal("the failed stop removed the agent while its process may still be running")
+	}
+	if entries := s.journal.tail("checkups", 10); len(entries) != 0 {
+		t.Errorf("a failed stop was journaled as successful: %+v", entries)
+	}
+}
+
 func TestLoginAndJoinRefuseLargeForms(t *testing.T) {
 	s, _, _ := hubFixture(t)
 	tooLarge := strings.Repeat("x", formLimit)
