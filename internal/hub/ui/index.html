@@ -600,17 +600,38 @@ let me = {};
 // The agents from the last successful refresh, kept so a rename can redraw
 // the side without waiting on a round trip that has nothing to do with it.
 let lastAgents = [];
+let refreshRun = 0;
 
 async function refresh() {
-  const resp = await fetch('/v1/agents');
+  const run = ++refreshRun;
+  let resp;
+  try {
+    resp = await fetch('/v1/agents');
+  } catch (_) {
+    if (run === refreshRun && signedIn) el('.me .status').textContent = 'connection lost';
+    return null;
+  }
+  // A slower request must not overwrite the result of one made after it.
+  if (run !== refreshRun) return null;
   signedIn = resp.status !== 401;
   if (!signedIn) {
     show('signin');
     el('.signin .problem').hidden = !location.search.includes('refused');
     return null;
   }
-  const data = await resp.json();
+  if (!resp.ok) {
+    el('.me .status').textContent = `hub error ${resp.status}`;
+    return null;
+  }
+  let data;
+  try {
+    data = await resp.json();
+  } catch (_) {
+    el('.me .status').textContent = 'unreadable response';
+    return null;
+  }
   show('app');
+  el('.me .status').textContent = 'online';
   el('.me .name').textContent = data.you.name;
   el('.me .initial').textContent = (data.you.name.trim().slice(0, 1) || '?').toUpperCase();
   me = data.you;
@@ -653,12 +674,16 @@ async function commitRename() {
     return;
   }
   renamingId = null;
-  const resp = await fetch(`/v1/agents/${id}`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label: draft }),
-  });
-  if (!resp.ok) alert((await resp.text()).trim());
-  refresh();
+  try {
+    const resp = await fetch(`/v1/agents/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: draft }),
+    });
+    if (!resp.ok) alert((await resp.text()).trim() || `rename failed (${resp.status})`);
+  } catch (_) {
+    alert('Could not reach the hub. The agent was not renamed.');
+  }
+  await refresh();
 }
 
 // drawGroups redraws the side: one collapsible group per host lending
@@ -902,6 +927,9 @@ el('.scrim').onclick = (ev) => { if (ev.target === el('.scrim')) closeCreate(); 
 
 el('form.create').onsubmit = async (ev) => {
   ev.preventDefault();
+  const submit = ev.target.querySelector('button[type=submit]');
+  if (submit.disabled) return;
+  submit.disabled = true;
   const form = new FormData(ev.target);
   const lendingAny = !el('input[name=command]').hidden;
   const command = lendingAny ? form.get('command') : pickedCommand;
@@ -909,25 +937,38 @@ el('form.create').onsubmit = async (ev) => {
     name: form.get('name'), host: form.get('host'),
     dir: form.get('dir'), command,
   });
-  const resp = await fetch('/v1/agents', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
-  });
-  if (!resp.ok) {
-    say('.dialog-note', (await resp.text()).trim(), true);
-    return;
+  try {
+    const resp = await fetch('/v1/agents', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+    });
+    if (!resp.ok) {
+      say('.dialog-note', (await resp.text()).trim() || `create failed (${resp.status})`, true);
+      return;
+    }
+    const made = await resp.json();
+    closeCreate();
+    await refresh();
+    location.hash = `#/agent/${made.name}`;
+  } catch (_) {
+    say('.dialog-note', 'Could not reach the hub. Nothing was created.', true);
+  } finally {
+    submit.disabled = false;
   }
-  const made = await resp.json();
-  closeCreate();
-  await refresh();
-  location.hash = `#/agent/${made.name}`;
 };
 
 async function stop(name) {
   if (!confirm(`Stop ${name}? Its conversation goes with it.`)) return;
-  const resp = await fetch(`/v1/agents/${name}`, { method: 'DELETE' });
-  if (!resp.ok) alert((await resp.text()).trim());
-  if (agentInURL() === name) location.hash = '';
-  refresh();
+  try {
+    const resp = await fetch(`/v1/agents/${name}`, { method: 'DELETE' });
+    if (!resp.ok) {
+      alert((await resp.text()).trim() || `stop failed (${resp.status})`);
+      return;
+    }
+    if (agentInURL() === name) location.hash = '';
+    await refresh();
+  } catch (_) {
+    alert('Could not reach the hub. The agent may still be running.');
+  }
 }
 
 function say(sel, message, problem) {
